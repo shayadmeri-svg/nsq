@@ -93,9 +93,15 @@ def load_and_preprocess_data():
     # 1. Identify Dissolution Failures
     # Checks failure reasons or general text rows for "dissolution"
     text_search_space = df[['Failure reason', 'NSQ Result', 'Name of Product']].fillna('').astype(str)
-    df['Is_Dissolution'] = text_search_space.apply(
-        lambda row: row.str.contains('dissolution|Dissolution', case=False).any(), axis=1
-    )
+    if text_search_space.empty:
+        # pandas' .apply(axis=1) on a zero-row frame can't infer a Series
+        # return shape and sometimes yields a DataFrame instead, which
+        # breaks the column assignment below. Short-circuit explicitly.
+        df['Is_Dissolution'] = pd.Series(dtype=bool)
+    else:
+        df['Is_Dissolution'] = text_search_space.apply(
+            lambda row: row.str.contains('dissolution|Dissolution', case=False).any(), axis=1
+        )
 
     # 2. Parse Date Features
     df['Parsed_Date'] = pd.to_datetime(df['Reporting Month & Year'], format='%b-%Y', errors='coerce')

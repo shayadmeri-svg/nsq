@@ -17,9 +17,9 @@ variable "environment" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type. t3.micro / t4g.micro are free-tier eligible in most accounts."
+  description = "EC2 instance type. t3.micro (1GB RAM) is free-tier eligible but can run out of memory during the on-boot Docker build (two Python/Streamlit images). t3.small (2GB RAM) is recommended to avoid SSH/OOM issues; still cheap (~$15/mo)."
   type        = string
-  default     = "t3.micro"
+  default     = "t3.small"
 }
 
 variable "root_volume_size_gb" {
