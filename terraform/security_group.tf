@@ -1,6 +1,6 @@
 resource "aws_security_group" "app" {
   name        = "${local.name}-app"
-  description = "Single-box NSQ platform — SSH + Streamlit ports."
+  description = "Single-box NSQ platform - SSH + Streamlit ports."
   vpc_id      = data.aws_vpc.default.id
 
   ingress {

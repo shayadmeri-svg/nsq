@@ -8,7 +8,7 @@
 # (boot-time reads only, negligible).
 
 resource "aws_kms_key" "secrets" {
-  description             = "${local.name} — encrypts REDIS_URL / GEMINI_API_KEY in SSM Parameter Store"
+  description             = "${local.name} - encrypts REDIS_URL / GEMINI_API_KEY in SSM Parameter Store"
   deletion_window_in_days = 7
   enable_key_rotation     = true
 
