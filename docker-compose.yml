@@ -1,0 +1,60 @@
+name: nsq-platform
+
+# Both services read live data from Redis (populated by
+# redis-loader/load_nsq_redis.py — see redis-loader/README or the
+# top-level README for that step). Set REDIS_URL in a .env file next to
+# this compose file before running `docker compose up`:
+#
+#   echo 'REDIS_URL=rediss://default:PASSWORD@your-instance.upstash.io:6379' > .env
+#
+# Never commit .env — it's already gitignored.
+
+services:
+  analytics:
+    build:
+      context: ./analytics
+    image: nsq-analytics:local
+    container_name: nsq-analytics
+    ports:
+      - "8501:8501"
+    environment:
+      - REDIS_URL=${REDIS_URL}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - nsq-net
+
+  simulator:
+    build:
+      context: ./simulator
+    image: nsq-simulator:local
+    container_name: nsq-simulator
+    ports:
+      - "8502:8502"
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      # Optional — paste a Gemini key to switch D3 diagnostics from the
+      # local heuristic engine to live generative output. Leave unset to
+      # stay fully offline.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    depends_on:
+      analytics:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - nsq-net
+
+networks:
+  nsq-net:
+    driver: bridge

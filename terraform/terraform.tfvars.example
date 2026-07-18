@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars —
+# it's already gitignored (it will contain your Redis URL).
+
+aws_region    = "us-east-1"
+instance_type = "t3.micro" # free-tier eligible; bump to t3.small if Streamlit feels sluggish
+
+# Create this first if you don't have one:
+#   aws ec2 create-key-pair --key-name nsq-platform \
+#     --query 'KeyMaterial' --output text > nsq-platform.pem
+#   chmod 400 nsq-platform.pem
+key_pair_name = "nsq-platform"
+
+# Lock this down to your own IP for anything beyond a throwaway demo:
+#   curl -s https://checkip.amazonaws.com
+ssh_cidr = "0.0.0.0/0"
+
+# Reuse your existing Upstash instance — no Redis runs on the EC2 box,
+# keeping this the cheapest possible setup. Stored as a KMS-encrypted
+# SSM SecureString (see secrets.tf) — the instance fetches it at boot
+# via its IAM role, never baked into user_data in plaintext.
+redis_url = "rediss://default:PASSWORD@your-instance.upstash.io:6379"
+
+# Optional — leave blank to keep the simulator fully offline.
+gemini_api_key = ""
+
+# Must be public (or see terraform/README.md for a private-repo variant).
+github_repo_url = "https://github.com/your-org/nsq-platform-merged.git"
+git_ref          = "main"
