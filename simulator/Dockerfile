@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY shared/ shared/
+COPY intelligence/ intelligence/
 
 EXPOSE 8502
 

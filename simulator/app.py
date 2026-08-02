@@ -26,15 +26,24 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from intelligence.ui_components import (
+    MONOCHROME_CSS,
+    anime_entrance,
+    bioicon_inline,
+    feature_card,
+    mock_data_badge,
+    stepper,
+)
+
 
 # ---------------------------------------------------------------------------
 # Page configuration — must be the first Streamlit call.
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="In-Silico NSQ Agent",
-    page_icon="🛡️",
+    page_title="CDMO Off-Patent Intelligence Engine",
+    page_icon="🧬",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 
@@ -58,12 +67,86 @@ CUSTOM_CSS = """
 
   /* Header bar */
   .nsq-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 16px 24px; background: #ffffff;
-    border-bottom: 1px solid #e2e8f0; box-shadow: 0 1px 0 rgba(15,23,42,0.02);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    box-shadow: 0 1px 0 rgba(15,23,42,0.02);
+    flex-wrap: nowrap;
+    gap: 16px;
+    overflow: hidden;
+    width: 100%;
+    box-sizing: border-box;
   }
-  .nsq-header h1 { font-size: 18px; font-weight: 800; margin: 0; color: #0f172a; letter-spacing: -0.01em; }
-  .nsq-header p  { font-size: 11px; color: #64748b; margin: 2px 0 0 0; }
+  .nsq-header-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .nsq-header-titles {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .nsq-header-titles h1 {
+    font-size: 16px;
+    font-weight: 800;
+    margin: 0;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nsq-header-titles p {
+    font-size: 10px;
+    color: #64748b;
+    margin: 2px 0 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nsq-header-status {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    flex-shrink: 0;
+  }
+  .nsq-header-status .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    line-height: 1;
+    height: auto;
+    min-height: 0;
+    vertical-align: middle;
+  }
+  .nsq-header-status .pill svg,
+  .nsq-header-status .pill::before {
+    width: 8px;
+    height: 8px;
+    display: inline-block;
+    flex: 0 0 8px;
+    line-height: 1;
+  }
+  @media (max-width: 640px) {
+    .nsq-header { padding: 10px 12px; gap: 10px; }
+    .nsq-header-status { flex-direction: column; align-items: flex-end; }
+    .nsq-header-status .pill { font-size: 9px; }
+  }
 
   /* Section cards (white, hairline border, tight shadow) */
   .nsq-card {
@@ -192,6 +275,10 @@ CUSTOM_CSS = """
 """
 
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# Inject monochrome engine theme on top of legacy CSS.
+st.markdown(MONOCHROME_CSS, unsafe_allow_html=True)
+anime_entrance(".cdmo-feature-card")
 
 
 # ---------------------------------------------------------------------------
@@ -1201,28 +1288,37 @@ def _reset_for_drug(drug_id: str) -> None:
 # ---------------------------------------------------------------------------
 def render_header() -> None:
     api_active = bool(st.session_state.api_key)
+    data_status = "LIVE CDSCO" if USING_LIVE_DATA else "STATIC CATALOG"
+    title_group = f"""
+    <div class="nsq-header-title-group">
+      {bioicon_inline('molecule', 28, '#0f172a')}
+      <div class="nsq-header-titles">
+        <h1>CDMO Off-Patent Intelligence Engine</h1>
+        <p>Patent · Regulatory · Demand · Plant Readiness · Portfolio</p>
+      </div>
+    </div>
+    """
+    status_group = f"""
+    <div class="nsq-header-status">
+      <span class="pill" style="color:{'#15803d' if api_active else '#64748b'}; background:{'#f0fdf4' if api_active else '#f8fafc'}; border:1px solid {'#bbf7d0' if api_active else '#e2e8f0'};">
+        {'● Gemini API active' if api_active else '○ Local AI mode'}
+      </span>
+      <span class="pill" style="color:{'#15803d' if USING_LIVE_DATA else '#a16207'}; background:{'#f0fdf4' if USING_LIVE_DATA else '#fffbeb'}; border:1px solid {'#bbf7d0' if USING_LIVE_DATA else '#fde68a'};">
+        ● {data_status} · {len(LIVE_ALERT_STATS)} drugs
+      </span>
+    </div>
+    """
     st.markdown(
         f"""
         <div class="nsq-header">
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div style="font-size:24px;">🛡️</div>
-            <div>
-              <h1>In-Silico NSQ Agent</h1>
-              <p>Root Cause Analysis &amp; GxP Compliance Workbench</p>
-            </div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-size:11px; color:{'#15803d' if api_active else '#64748b'}; font-weight:700;">
-              {'● API ACTIVE' if api_active else '○ LOCAL MODE'}
-            </div>
-            <div style="font-size:11px; color:{'#15803d' if USING_LIVE_DATA else '#a16207'}; font-weight:700; margin-top:2px;">
-              {'● LIVE CDSCO DATA (' + str(len(LIVE_ALERT_STATS)) + ' drugs matched)' if USING_LIVE_DATA else '○ STATIC CATALOG DATA'}
-            </div>
-          </div>
+          {title_group}
+          {status_group}
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    mock_data_badge(use_mock=True)
 
     # Settings toggle (replaces React's settings modal — uses an expander)
     with st.expander("⚙  Modular Gemini-3-Flash API", expanded=st.session_state.show_settings):
@@ -1247,91 +1343,84 @@ def render_header() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar — product catalog with search filter
+# In-page product catalog (replaces the legacy sidebar catalog)
 # ---------------------------------------------------------------------------
 def render_catalog() -> None:
-    with st.sidebar:
+    st.markdown(
+        """
+        <div style="padding: 12px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px;">
+          <div class="cdmo-section-title">Product Catalog &amp; Active Alerts</div>
+          <p style="font-size:11px; color:#94a3b8; margin:4px 0 0 0;">Sourced from CDSCO regulatory histories.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    query = st.text_input(
+        "Filter formulations",
+        value=st.session_state.search_query,
+        placeholder=f"Filter {len(PRODUCT_CATALOG)} solid formulations…",
+    )
+    if query != st.session_state.search_query:
+        st.session_state.search_query = query
+        st.rerun()
+
+    q = query.lower().strip()
+    matches = [
+        (k, d) for k, d in PRODUCT_CATALOG.items()
+        if q in d.name.lower() or q in d.dosage_form.lower()
+    ]
+
+    if not matches:
         st.markdown(
-            """
-            <div style="padding: 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc80;">
-              <div class="nsq-eyebrow">Product Catalog & Active Alerts</div>
-              <div style="font-size:10px; color:#94a3b8; margin-top:4px;">
-                Sourced from CDSCO regulatory histories.
-              </div>
-            </div>
-            """,
+            "<div style='padding:32px; text-align:center; color:#94a3b8; font-size:11px;"
+            "border:1px dashed #e2e8f0; border-radius:6px;'>No solid tablets match query.</div>",
             unsafe_allow_html=True,
         )
+        return
 
-        query = st.text_input(
-            "Filter",
-            value=st.session_state.search_query,
-            placeholder=f"Filter {len(PRODUCT_CATALOG)} solid formulations…",
-            label_visibility="collapsed",
-        )
-        if query != st.session_state.search_query:
-            st.session_state.search_query = query
-            st.rerun()
-
-        q = query.lower().strip()
-        matches = [
-            (k, d) for k, d in PRODUCT_CATALOG.items()
-            if q in d.name.lower() or q in d.dosage_form.lower()
-        ]
-
-        if not matches:
+    # Render catalog as a horizontal scrollable row of cards.
+    cols = st.columns(min(len(matches), 4))
+    for i, (drug_id, drug) in enumerate(matches[:16]):
+        active = drug_id == st.session_state.selected_drug_id
+        border = "#0f172a" if active else "#e2e8f0"
+        bg = "#ffffff" if active else "#f8fafc"
+        with cols[i % len(cols)]:
+            if st.button(
+                f"{drug.name}\n{drug.dose} • {drug.dosage_form}",
+                key=f"drug_{drug_id}",
+                use_container_width=True,
+            ):
+                if drug_id != st.session_state.selected_drug_id:
+                    st.session_state.selected_drug_id = drug_id
+                    _reset_for_drug(drug_id)
+                    st.rerun()
             st.markdown(
-                "<div style='padding:32px; text-align:center; color:#94a3b8; font-size:11px;'>"
-                "No solid tablets match query.</div>",
+                f"""
+                <div style="background:{bg}; border:1px solid {border}; border-radius:4px; padding:10px; margin-top:-8px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-size:10px; font-weight:700; color:#0f172a;">{drug.name}</span>
+                    <span class="alerts-pill">{drug.total_alerts} Alerts</span>
+                  </div>
+                  <div style="font-size:10px; color:#64748b; margin-top:4px;">{drug.dose} • {drug.dosage_form}</div>
+                  <div style="margin-top:6px; background:#ffffff; border:1px solid #e2e8f0; padding:6px 8px; border-radius:3px; font-size:10px;">
+                    <span style="font-weight:600; color:#991b1b;">♥ VigiBase Risk Profile</span>
+                    <p style="color:#475569; margin:4px 0 0 0; font-size:9px; line-height:1.4;">{drug.vigibase_risks[0]['hazard']}: {drug.vigibase_risks[0]['desc']}</p>
+                  </div>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
-        else:
-            for drug_id, drug in matches:
-                active = drug_id == st.session_state.selected_drug_id
-                cls = "cat-item active" if active else "cat-item"
-                if st.button(
-                    f"{drug.name}\n{drug.dose} • {drug.dosage_form}",
-                    key=f"drug_{drug_id}",
-                    use_container_width=True,
-                ):
-                    if drug_id != st.session_state.selected_drug_id:
-                        st.session_state.selected_drug_id = drug_id
-                        _reset_for_drug(drug_id)
-                        st.rerun()
-                # Render the rich card content underneath the button via container
-                # (Streamlit buttons can't contain arbitrary HTML, so we put the
-                # card content right below the button using a stable key).
-                with st.container():
-                    st.markdown(
-                        f"""
-                        <div class="{cls}" style="margin-top:-8px; padding:8px 14px 14px;">
-                          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                            <div></div>
-                            <span class="alerts-pill">{drug.total_alerts} Alerts</span>
-                          </div>
-                          <div style="margin-top:6px; background:#ffffff; border:1px solid #e2e8f0;
-                                      padding:6px 8px; border-radius:3px; font-size:11px;">
-                            <span style="font-weight:600; color:#991b1b;">♥ VigiBase Risk Profile</span>
-                            <p style="color:#475569; margin:4px 0 0 0; font-size:10px; line-height:1.4;">
-                              {drug.vigibase_risks[0]['hazard']}: {drug.vigibase_risks[0]['desc']}
-                            </p>
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
 
-        st.markdown(
-            """
-            <div class="cat-footer" style="padding:16px; background:#f8fafc; border-top:1px solid #e2e8f0;">
-              <span style="font-weight:700; color:#475569; display:block; margin-bottom:6px;">
-                Linked Database:
-              </span>
-              <code>CDSCO Not of Standard Quality (NSQ) Drug Alerts List - Consolidated(1)_2.csv</code>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        """
+        <div class="cat-footer" style="padding:12px 0; margin-top:12px; border-top:1px solid #e2e8f0;">
+          <span style="font-weight:700; color:#475569; font-size:11px;">Linked Database:</span>
+          <code style="font-size:10px;">CDSCO Not of Standard Quality (NSQ) Drug Alerts List - Consolidated(1)_2.csv</code>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1676,25 +1765,79 @@ def render_results() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Feature-card navigation + stepper
+# ---------------------------------------------------------------------------
+_FEATURE_CARDS = [
+    ("catalog", "NSQ Catalog", "CDSCO alert history, formulation core, excipient editor, process diagnostics.", "pill", 0),
+    ("demand", "Demand Radar", "Compare molecules by patent, regulatory, and demand signals.", "chart", 1),
+    ("patent", "Patent Radar", "LOE timelines, export-eligible geographies, and FTO heatmaps.", "dna", 2),
+    ("plant", "Plant Match", "Score molecule requirements against plant capability.", "factory", 3),
+    ("readiness", "Plant Readiness", "Manufacturing complexity, customer fit, and roadmaps.", "microscope", 4),
+    ("regulatory", "Regulatory Passport", "Pharmacopeia monographs, RLD/TE, and exclusivity.", "document", 5),
+    ("portfolio", "Portfolio Builder", "Rank candidates, tune weights, export launch calendar.", "beaker", 6),
+]
+
+
+def render_feature_cards(active_tab_index: int) -> None:
+    """Render clickable feature-card navigation above the tab bar."""
+    st.markdown('<div style="margin-bottom: 8px;">', unsafe_allow_html=True)
+    cols = st.columns(len(_FEATURE_CARDS))
+    for col, (key, title, desc, icon, tab_index) in zip(cols, _FEATURE_CARDS):
+        with col:
+            if feature_card(key, title, desc, icon, active=tab_index == active_tab_index):
+                st.session_state["active_tab_index"] = tab_index
+                st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_stepper(active_tab_index: int) -> None:
+    """Render a stepper that matches the selected feature-card tab."""
+    step_labels = ["Catalog", "Demand", "Patent", "Match Plant", "Readiness", "Regulatory", "Portfolio"]
+    stepper(step_labels, current_index=active_tab_index)
+
+
+# ---------------------------------------------------------------------------
 # Page composition
 # ---------------------------------------------------------------------------
 def main() -> None:
     render_header()
-    render_catalog()
 
-    drug = PRODUCT_CATALOG[st.session_state.selected_drug_id]
-    render_active_drug(drug)
+    active_tab = st.session_state.get("active_tab_index", 6)
+    if active_tab >= 7:
+        active_tab = 6
 
-    # Two-column workspace (mirrors the React layout)
-    left, right = st.columns([2.2, 1], gap="medium")
+    render_stepper(active_tab)
+    render_feature_cards(active_tab)
 
-    with left:
-        render_excipient_editor()
-        render_pharmacopeia(drug)
-
-    with right:
-        render_process_deck(drug)
-        render_results()
+    if active_tab == 0:
+        render_catalog()
+        drug = PRODUCT_CATALOG[st.session_state.selected_drug_id]
+        render_active_drug(drug)
+        left, right = st.columns([2.2, 1], gap="medium")
+        with left:
+            render_excipient_editor()
+            render_pharmacopeia(drug)
+        with right:
+            render_process_deck(drug)
+            render_results()
+    elif active_tab == 1:
+        from intelligence.pages import demand_radar
+        demand_radar.render()
+    elif active_tab == 2:
+        from intelligence.pages import patent_radar
+        patent_radar.render()
+    elif active_tab == 3:
+        from intelligence.pages import plant_match
+        plant_match.render()
+    elif active_tab == 4:
+        from intelligence.pages import plant_readiness
+        plant_readiness.render()
+    elif active_tab == 5:
+        from intelligence.pages import regulatory_passport
+        regulatory_passport.render()
+    elif active_tab == 6:
+        from intelligence.pages import portfolio
+        portfolio.render()
 
 
 main()

@@ -1,0 +1,3055 @@
+{
+  "_comment": "Hand-curated seed for the off-patent drug intelligence engine. Includes per-country geo_coverage, LOE timelines, and export eligibility. LOE dates are publicly reported estimates and should be refreshed via FDA Orange Book / EMA / India IPO APIs in later phases.",
+  "molecules": [
+    {
+      "molecule_key": "pembrolizumab",
+      "brand_name": "Keytruda",
+      "api_name": "Pembrolizumab",
+      "therapeutic_area": "Oncology",
+      "originator": "Merck & Co.",
+      "estimated_loe_us": "2028-09",
+      "estimated_loe_eu": "2028-09",
+      "estimated_loe_in": "2029-03",
+      "market_size_usd_bn": 25.0,
+      "formulation_patents": [
+        {
+          "description": "Anti-PD-1 antibody formulations",
+          "expiry_date": "2028-09",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        },
+        {
+          "description": "High-concentration liquid formulations",
+          "expiry_date": "2031-04",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Cell-culture production process",
+          "expiry_date": "2033-07",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Subcutaneous administration device/method",
+          "expiry_date": "2036-02",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "fto_risk": "high",
+      "notes": "Biosimilar entry expected 2028-2029 in US/EU; India likely 6-12 months later. Heavy defensive thicket around formulation and device.",
+      "source_url": "https://www.fda.gov/drugs/drug-supplement-approval-biosimilar",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2028-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2028-09"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2028-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2028-09"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2029-03",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-03"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-09"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-09"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2030-03",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-03"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-09"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-09"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2030-03",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-03"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2030-03",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-03"
+        }
+      ]
+    },
+    {
+      "molecule_key": "daratumumab",
+      "brand_name": "Darzalex",
+      "api_name": "Daratumumab",
+      "therapeutic_area": "Oncology",
+      "originator": "Johnson & Johnson",
+      "estimated_loe_us": "2029-11",
+      "estimated_loe_eu": "2029-11",
+      "estimated_loe_in": "2030-05",
+      "market_size_usd_bn": 9.0,
+      "formulation_patents": [
+        {
+          "description": "Anti-CD38 antibody compositions",
+          "expiry_date": "2029-11",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Manufacturing process for anti-CD38 antibodies",
+          "expiry_date": "2034-01",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Subcutaneous formulation (Darzalex Faspro)",
+          "expiry_date": "2038-06",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "fto_risk": "high",
+      "notes": "Subcutaneous Darzalex Faspro has additional formulation/device patents extending protection. Intravenous biosimilar path likely earlier.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2029-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-11"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2029-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-11"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2030-05",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-05"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2030-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-11"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2030-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-11"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2031-05",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2031-05"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2030-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-11"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2030-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-11"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2031-05",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2031-05"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2031-05",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2031-05"
+        }
+      ]
+    },
+    {
+      "molecule_key": "nivolumab",
+      "brand_name": "Opdivo",
+      "api_name": "Nivolumab",
+      "therapeutic_area": "Oncology",
+      "originator": "Bristol-Myers Squibb",
+      "estimated_loe_us": "2028-06",
+      "estimated_loe_eu": "2028-06",
+      "estimated_loe_in": "2029-01",
+      "market_size_usd_bn": 9.0,
+      "formulation_patents": [
+        {
+          "description": "Anti-PD-1 antibody formulations",
+          "expiry_date": "2028-06",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Production cell lines and purification",
+          "expiry_date": "2032-03",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Combination therapy claims",
+          "expiry_date": "2035-08",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "fto_risk": "medium",
+      "notes": "First-wave PD-1 biosimilars expected 2028. Process and secondary patents present but subcutaneous/device thicket lighter than Keytruda.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2028-06",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2028-06"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2028-06",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2028-06"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2029-01",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-01"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2029-06",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-06"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2029-06",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-06"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2030-01",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-01"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2029-06",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-06"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2029-06",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-06"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2030-01",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-01"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2030-01",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-01"
+        }
+      ]
+    },
+    {
+      "molecule_key": "osimertinib",
+      "brand_name": "Tagrisso",
+      "api_name": "Osimertinib",
+      "therapeutic_area": "Oncology",
+      "originator": "AstraZeneca",
+      "estimated_loe_us": "2027-03",
+      "estimated_loe_eu": "2027-03",
+      "estimated_loe_in": "2028-09",
+      "market_size_usd_bn": 5.5,
+      "formulation_patents": [
+        {
+          "description": "Osimertinib mesylate salt/polymorph",
+          "expiry_date": "2027-03",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Synthesis of osimertinib intermediates",
+          "expiry_date": "2031-11",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "EGFR T790M combination regimens",
+          "expiry_date": "2033-05",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "fto_risk": "medium",
+      "notes": "Small-molecule EGFR inhibitor; LOE expected 2027 in US/EU. India may lag by 12-18 months. Formulation freedom-to-operate should be manageable if polymorph patents are designed around.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2027-03",
+          "export_eligible": true,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2027-03"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2027-03",
+          "export_eligible": true,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2027-03"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2028-09",
+          "export_eligible": false,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2028-09"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2028-03",
+          "export_eligible": true,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2028-03"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2028-03",
+          "export_eligible": true,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2028-03"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2029-09"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2028-03",
+          "export_eligible": true,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2028-03"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2028-03",
+          "export_eligible": true,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2028-03"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2029-09"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "formulation",
+          "notes": "Composition of matter patent expires 2029-09"
+        }
+      ]
+    },
+    {
+      "molecule_key": "durvalumab",
+      "brand_name": "Imfinzi",
+      "api_name": "Durvalumab",
+      "therapeutic_area": "Oncology",
+      "originator": "AstraZeneca",
+      "estimated_loe_us": "2030-05",
+      "estimated_loe_eu": "2030-05",
+      "estimated_loe_in": "2031-01",
+      "market_size_usd_bn": 3.0,
+      "formulation_patents": [
+        {
+          "description": "Anti-PD-L1 antibody compositions",
+          "expiry_date": "2030-05",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Antibody manufacturing and purification",
+          "expiry_date": "2034-09",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Combination with chemoradiation",
+          "expiry_date": "2036-12",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "fto_risk": "medium",
+      "notes": "PD-L1 biologic; later LOE than PD-1 leaders. Strong oncology demand signal expected through 2030.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2030-05",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-05"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2030-05",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-05"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2031-01",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-01"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2031-05",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-05"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2031-05",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-05"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2032-01",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2032-01"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2031-05",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-05"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2031-05",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-05"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2032-01",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2032-01"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2032-01",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2032-01"
+        }
+      ]
+    },
+    {
+      "molecule_key": "abemaciclib",
+      "brand_name": "Verzenio",
+      "api_name": "Abemaciclib",
+      "therapeutic_area": "Oncology",
+      "originator": "Eli Lilly",
+      "estimated_loe_us": "2029-10",
+      "estimated_loe_eu": "2029-10",
+      "estimated_loe_in": "2030-06",
+      "market_size_usd_bn": 3.5,
+      "formulation_patents": [
+        {
+          "description": "Abemaciclib salt and polymorph forms",
+          "expiry_date": "2029-10",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "CDK4/6 inhibitor synthesis route",
+          "expiry_date": "2032-08",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Combination with endocrine therapy",
+          "expiry_date": "2034-02",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "fto_risk": "medium",
+      "notes": "Oral CDK4/6 inhibitor for breast cancer. Small-molecule launch fits a mid-tier oral-solid CDMO well.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2029-10",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2029-10"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2029-10",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2029-10"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2030-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-06"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2030-10",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-10"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2030-10",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-10"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2031-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-06"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2030-10",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-10"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2030-10",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-10"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2031-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-06"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2031-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-06"
+        }
+      ]
+    },
+    {
+      "molecule_key": "ribociclib",
+      "brand_name": "Kisqali",
+      "api_name": "Ribociclib",
+      "therapeutic_area": "Oncology",
+      "originator": "Novartis",
+      "estimated_loe_us": "2029-06",
+      "estimated_loe_eu": "2029-06",
+      "estimated_loe_in": "2030-03",
+      "market_size_usd_bn": 2.0,
+      "formulation_patents": [
+        {
+          "description": "Ribociclib succinate salt and polymorph",
+          "expiry_date": "2029-06",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Pyrazolopyrimidine synthesis",
+          "expiry_date": "2033-04",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "CDK4/6 inhibitor combinations",
+          "expiry_date": "2035-01",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "fto_risk": "medium",
+      "notes": "Oral CDK4/6 inhibitor; similar profile to Verzenio. Strong fit for oral-solid CDMO capabilities.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2029-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2029-06"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2029-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2029-06"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2030-03",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-03"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2030-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-06"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2030-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-06"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2031-03",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-03"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2030-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-06"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2030-06",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2030-06"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2031-03",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-03"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2031-03",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2031-03"
+        }
+      ]
+    },
+    {
+      "molecule_key": "palbociclib",
+      "brand_name": "Ibrance",
+      "api_name": "Palbociclib",
+      "therapeutic_area": "Oncology",
+      "originator": "Pfizer",
+      "estimated_loe_us": "2027-04",
+      "estimated_loe_eu": "2027-04",
+      "estimated_loe_in": "2028-01",
+      "market_size_usd_bn": 5.0,
+      "formulation_patents": [
+        {
+          "description": "Palbociclib isethionate salt/polymorph",
+          "expiry_date": "2027-04",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Pyridopyrimidine synthesis",
+          "expiry_date": "2030-07",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Combination with letrozole",
+          "expiry_date": "2032-09",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "fto_risk": "medium",
+      "notes": "First-to-market oral CDK4/6 inhibitor; LOE expected 2027. High-volume oral solid opportunity for a mid-tier CDMO.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2027-04",
+          "export_eligible": true,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2027-04"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2027-04",
+          "export_eligible": true,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2027-04"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2028-01",
+          "export_eligible": true,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2028-01"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2028-04",
+          "export_eligible": true,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2028-04"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2028-04",
+          "export_eligible": true,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2028-04"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2029-01",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2029-01"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2028-04",
+          "export_eligible": true,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2028-04"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2028-04",
+          "export_eligible": true,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2028-04"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2029-01",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2029-01"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2029-01",
+          "export_eligible": false,
+          "patent_barrier": "composition",
+          "notes": "Composition of matter patent expires 2029-01"
+        }
+      ]
+    },
+    {
+      "molecule_key": "semaglutide",
+      "brand_name": "Ozempic",
+      "api_name": "Semaglutide",
+      "therapeutic_area": "Diabetes / Obesity",
+      "originator": "Novo Nordisk",
+      "estimated_loe_us": "2031-12",
+      "estimated_loe_eu": "2031-12",
+      "estimated_loe_in": "2032-08",
+      "market_size_usd_bn": 14.0,
+      "formulation_patents": [
+        {
+          "description": "Semaglutide GLP-1 analog composition",
+          "expiry_date": "2031-12",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "Peptide synthesis and purification",
+          "expiry_date": "2035-03",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Pen-injector device and administration",
+          "expiry_date": "2039-07",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "fto_risk": "high",
+      "notes": "Peptide injectable with massive demand but complex IP and device thicket. Most mid-tier small-molecule CDMOs are poorly positioned unless they partner on peptide fill/finish.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2031-12",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2031-12"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2031-12",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2031-12"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2032-08",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2032-08"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2032-12",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2032-12"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2032-12",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2032-12"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2033-08",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2033-08"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2032-12",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2032-12"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2032-12",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2032-12"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2033-08",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2033-08"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2033-08",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2033-08"
+        }
+      ]
+    },
+    {
+      "molecule_key": "dupilumab",
+      "brand_name": "Dupixent",
+      "api_name": "Dupilumab",
+      "therapeutic_area": "Immunology / Dermatology",
+      "originator": "Sanofi / Regeneron",
+      "estimated_loe_us": "2028-11",
+      "estimated_loe_eu": "2028-11",
+      "estimated_loe_in": "2029-09",
+      "market_size_usd_bn": 11.0,
+      "formulation_patents": [
+        {
+          "description": "Anti-IL-4Ralpha antibody compositions",
+          "expiry_date": "2028-11",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "process_patents": [
+        {
+          "description": "High-yield cell-culture process",
+          "expiry_date": "2033-10",
+          "jurisdiction": "US",
+          "risk_level": "medium"
+        }
+      ],
+      "secondary_patents": [
+        {
+          "description": "Prefilled syringe / auto-injector",
+          "expiry_date": "2037-05",
+          "jurisdiction": "US",
+          "risk_level": "high"
+        }
+      ],
+      "fto_risk": "high",
+      "notes": "Large-market biologic; LOE expected late 2028. Device/formulation patents extend commercial risk. Requires biologics capability.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "loe_pending",
+          "loe_date": "2028-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2028-11"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "loe_pending",
+          "loe_date": "2028-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2028-11"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "loe_pending",
+          "loe_date": "2029-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-09"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "loe_pending",
+          "loe_date": "2029-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-11"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "loe_pending",
+          "loe_date": "2029-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-11"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "loe_pending",
+          "loe_date": "2030-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-09"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "loe_pending",
+          "loe_date": "2029-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-11"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "loe_pending",
+          "loe_date": "2029-11",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2029-11"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "loe_pending",
+          "loe_date": "2030-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-09"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "loe_pending",
+          "loe_date": "2030-09",
+          "export_eligible": false,
+          "patent_barrier": "device",
+          "notes": "Composition of matter patent expires 2030-09"
+        }
+      ]
+    },
+    {
+      "molecule_key": "paracetamol",
+      "brand_name": "Paracetamol",
+      "api_name": "Paracetamol",
+      "therapeutic_area": "Fever / Pain",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.8,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Mature, commoditized API. No relevant patent barriers. High NSQ alert history informs quality risk premium.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "tamoxifen_citrate",
+      "brand_name": "Tamoxifen Citrate",
+      "api_name": "Tamoxifen Citrate",
+      "therapeutic_area": "Oncology",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.4,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent hormonal oncology oral solid. CDSCO NSQ data shows dissolution and uniformity risks.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "rabeprazole_sodium",
+      "brand_name": "Rabeprazole Sodium",
+      "api_name": "Rabeprazole Sodium",
+      "therapeutic_area": "Antacid / Antiulcer",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.6,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent PPI enteric-coated tablet. High humidity sensitivity; strong QbD fit for existing simulator.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "pantoprazole_sodium",
+      "brand_name": "Pantoprazole Sodium",
+      "api_name": "Pantoprazole Sodium",
+      "therapeutic_area": "Antacid / Antiulcer",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.7,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent PPI delayed-release tablet. Volume oral solid opportunity with known dissolution failure modes.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "esomeprazole_magnesium",
+      "brand_name": "Esomeprazole Magnesium",
+      "api_name": "Esomeprazole Magnesium",
+      "therapeutic_area": "Antacid / Antiulcer",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.6,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent PPI MUPS tablet. Pellet integrity and compression force are critical quality attributes.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "telmisartan",
+      "brand_name": "Telmisartan",
+      "api_name": "Telmisartan",
+      "therapeutic_area": "Hypertension / Cardiovascular",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.5,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent ARB oral solid. Known CDSCO dissolution failures due to alkalizer distribution.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "metformin_hcl",
+      "brand_name": "Metformin HCl",
+      "api_name": "Metformin HCl",
+      "therapeutic_area": "Antidiabetic",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 1.2,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent biguanide extended-release tablet. Large volume, well-understood matrix formulation risks.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "glimepiride",
+      "brand_name": "Glimepiride",
+      "api_name": "Glimepiride",
+      "therapeutic_area": "Antidiabetic",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.3,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent sulfonylurea micro-dose tablet. Uniformity of content is the dominant NSQ failure mode.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "amlodipine_besylate",
+      "brand_name": "Amlodipine Besylate",
+      "api_name": "Amlodipine Besylate",
+      "therapeutic_area": "Hypertension / Cardiovascular",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.9,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent calcium channel blocker oral solid. Hydrolytic and transesterification degradation drive assay failures.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "losartan_potassium",
+      "brand_name": "Losartan Potassium",
+      "api_name": "Losartan Potassium",
+      "therapeutic_area": "Hypertension / Cardiovascular",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.6,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent ARB oral solid. Film-coat sintering and core degradation are common NSQ defects.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "ramipril",
+      "brand_name": "Ramipril",
+      "api_name": "Ramipril",
+      "therapeutic_area": "Hypertension / Cardiovascular",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.4,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent ACE inhibitor oral solid. Diketopiperazine cyclization is the key degradation pathway.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "atenolol",
+      "brand_name": "Atenolol",
+      "api_name": "Atenolol",
+      "therapeutic_area": "Hypertension / Cardiovascular",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.3,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent beta-blocker oral solid. Hydrate-state transitions affect dissolution.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "atorvastatin_calcium",
+      "brand_name": "Atorvastatin Calcium",
+      "api_name": "Atorvastatin Calcium",
+      "therapeutic_area": "Dyslipidemia / Cardiovascular",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 1.0,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent statin oral solid. Acid-catalyzed lactonization impurity is the dominant NSQ defect.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "rosuvastatin_calcium",
+      "brand_name": "Rosuvastatin Calcium",
+      "api_name": "Rosuvastatin Calcium",
+      "therapeutic_area": "Dyslipidemia / Cardiovascular",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.8,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent statin oral solid. Photo-oxidation and discoloration are the key stability risks.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "sitagliptin_phosphate",
+      "brand_name": "Sitagliptin Phosphate",
+      "api_name": "Sitagliptin Phosphate",
+      "therapeutic_area": "Antidiabetic",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.5,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent DPP-4 inhibitor oral solid. Bilayer interface degradation is a known failure mode.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    },
+    {
+      "molecule_key": "vildagliptin",
+      "brand_name": "Vildagliptin",
+      "api_name": "Vildagliptin",
+      "therapeutic_area": "Antidiabetic",
+      "originator": "Generic",
+      "estimated_loe_us": null,
+      "estimated_loe_eu": null,
+      "estimated_loe_in": null,
+      "market_size_usd_bn": 0.4,
+      "formulation_patents": [],
+      "process_patents": [],
+      "secondary_patents": [],
+      "fto_risk": "low",
+      "notes": "Off-patent DPP-4 inhibitor oral solid. Hygroscopic cyclization degradation drives assay loss.",
+      "source_url": "",
+      "geo_coverage": [
+        {
+          "country_code": "US",
+          "country_name": "United States",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "EU",
+          "country_name": "European Union",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "IN",
+          "country_name": "India",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "JP",
+          "country_name": "Japan",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "CA",
+          "country_name": "Canada",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "BR",
+          "country_name": "Brazil",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "GB",
+          "country_name": "United Kingdom",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "AU",
+          "country_name": "Australia",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "MX",
+          "country_name": "Mexico",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        },
+        {
+          "country_code": "ZA",
+          "country_name": "South Africa",
+          "market_status": "off_patent",
+          "loe_date": null,
+          "export_eligible": true,
+          "patent_barrier": "none",
+          "notes": "Off-patent; generic export permitted"
+        }
+      ]
+    }
+  ]
+}

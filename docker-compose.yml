@@ -38,6 +38,7 @@ services:
       - "8502:8502"
     environment:
       - REDIS_URL=${REDIS_URL}
+      - CDMO_ENGINE_URL=http://engine:8000
       # Optional — paste a Gemini key to switch D3 diagnostics from the
       # local heuristic engine to live generative output. Leave unset to
       # stay fully offline.
@@ -45,8 +46,29 @@ services:
     depends_on:
       analytics:
         condition: service_healthy
+      engine:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - nsq-net
+
+  engine:
+    build:
+      context: ./engine
+    image: nsq-engine:local
+    container_name: nsq-engine
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=${REDIS_URL}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3

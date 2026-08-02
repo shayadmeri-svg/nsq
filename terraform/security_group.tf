@@ -1,6 +1,6 @@
 resource "aws_security_group" "app" {
   name        = "${local.name}-app"
-  description = "Single-box NSQ platform - SSH + HTTP (nginx reverse proxy)."
+  description = "Single-box NSQ platform - SSH + Streamlit ports."
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
@@ -12,9 +12,17 @@ resource "aws_security_group" "app" {
   }
 
   ingress {
-    description = "HTTP (nginx reverse proxy for analytics and simulator)"
-    from_port   = 80
-    to_port     = 80
+    description = "analytics (Streamlit)"
+    from_port   = 8501
+    to_port     = 8501
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "simulator (Streamlit)"
+    from_port   = 8502
+    to_port     = 8502
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }

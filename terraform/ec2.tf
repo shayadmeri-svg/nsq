@@ -46,13 +46,11 @@ resource "aws_instance" "app" {
   # visible to anyone with ec2:DescribeInstanceAttribute on this
   # instance/account, so keeping it secret-free is the point.
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
-    github_repo_url  = var.github_repo_url
-    git_ref          = var.git_ref
-    aws_region       = var.aws_region
-    redis_url_param  = aws_ssm_parameter.redis_url.name
-    gemini_key_param = aws_ssm_parameter.gemini_api_key.name
-    nginx_conf       = file("${path.module}/nginx-nsq.conf")
-    deploy_script    = file("${path.module}/deploy.sh.tpl")
+    github_repo_url    = var.github_repo_url
+    git_ref            = var.git_ref
+    aws_region         = var.aws_region
+    redis_url_param    = aws_ssm_parameter.redis_url.name
+    gemini_key_param   = aws_ssm_parameter.gemini_api_key.name
   })
 
   tags = merge(local.common_tags, { Name = "${local.name}-app" })

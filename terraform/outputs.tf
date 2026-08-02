@@ -15,12 +15,12 @@ output "public_dns" {
 
 output "analytics_url" {
   description = "Analytics dashboard."
-  value       = "http://${aws_instance.app.public_dns}/analytics"
+  value       = "http://${aws_instance.app.public_dns}:8501"
 }
 
 output "simulator_url" {
   description = "Simulator workbench."
-  value       = "http://${aws_instance.app.public_dns}/simulator"
+  value       = "http://${aws_instance.app.public_dns}:8502"
 }
 
 output "ssh_command" {

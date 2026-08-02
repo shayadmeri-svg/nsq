@@ -1,6 +1,6 @@
 # NSQ Platform — merged local stack
 
-Two independent Streamlit services, orchestrated with Docker Compose,
+2 independent Streamlit services, orchestrated with Docker Compose,
 both reading live data from a shared Redis instance.
 
 ```

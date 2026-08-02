@@ -1,0 +1,454 @@
+{
+  "_comment": "Representative mid-tier CDMO asset registry enriched with equipment trains, talent depth, certifications, and experience years for Phase 4 manufacturing-readiness evaluation.",
+  "assets": [
+    {
+      "asset_id": "baddi-osd-a",
+      "site_name": "Baddi OSD Plant A",
+      "city": "Baddi",
+      "state": "Himachal Pradesh",
+      "country": "India",
+      "capabilities": [
+        "wet_granulation",
+        "dry_granulation",
+        "compression",
+        "film_coating",
+        "enteric_coating",
+        "blister_packing",
+        "bottle_packing",
+        "fluid_bed_drying"
+      ],
+      "approved_forms": [
+        "solid_oral",
+        "enteric_tablet",
+        "uncoated_tablet",
+        "film_coated_tablet"
+      ],
+      "containment_class": "standard",
+      "batch_capacity_kg": 500,
+      "certifications": [
+        "WHO_GMP",
+        "EU_GMP"
+      ],
+      "small_molecule_experience": true,
+      "biologics_experience": false,
+      "talent_profile": [
+        "formulation",
+        "analytical",
+        "regulatory"
+      ],
+      "equipment_highlights": [
+        "Rapid mixer granulator (200 L)",
+        "Fluid bed dryer (500 kg/hr)",
+        "Rotary tablet press (45 stations, double-sided)",
+        "Auto-coating pan (500 kg)",
+        "Blister line (Alu-Alu / PVC)",
+        "HPLC / GC analytical suite"
+      ],
+      "notes": "Workhorse oral-solid plant. Best for high-volume tablets, enteric coatings, and extended-release matrices. Not qualified for biologics or cytotoxic oncology.",
+      "equipment_trains": [
+        {
+          "name": "Wet granulation train",
+          "capability": "wet_granulation",
+          "capacity": "200 L",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Dry granulation / roller compaction",
+          "capability": "dry_granulation",
+          "capacity": "100 kg/hr",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Rotary tablet press",
+          "capability": "compression",
+          "capacity": "45 stations",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Enteric / film coating pan",
+          "capability": "enteric_coating",
+          "capacity": "500 kg",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Blister packing line",
+          "capability": "blister_packing",
+          "capacity": "high_speed",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "HPLC / UV analytical suite",
+          "capability": "analytical_qc",
+          "capacity": "full",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        }
+      ],
+      "talent_depth": {
+        "formulation": 85,
+        "analytical": 80,
+        "regulatory_affairs": 70,
+        "bioprocess": 10,
+        "quality": 75,
+        "sterile_manufacturing": 15,
+        "cytotoxic_handling": 10
+      },
+      "certifications_active": [
+        "WHO_GMP",
+        "EU_GMP"
+      ],
+      "small_molecule_experience_years": 18,
+      "biologics_experience_years": 0,
+      "api_sourcing_experience": true
+    },
+    {
+      "asset_id": "ahmedabad-osd-liquid",
+      "site_name": "Ahmedabad OSD + Liquid Orals Plant",
+      "city": "Ahmedabad",
+      "state": "Gujarat",
+      "country": "India",
+      "capabilities": [
+        "wet_granulation",
+        "compression",
+        "film_coating",
+        "blister_packing",
+        "bottle_packing",
+        "liquid_oral_filling",
+        "suspension_manufacturing"
+      ],
+      "approved_forms": [
+        "solid_oral",
+        "syrup",
+        "suspension",
+        "drops"
+      ],
+      "containment_class": "standard",
+      "batch_capacity_kg": 350,
+      "certifications": [
+        "WHO_GMP",
+        "USFDA"
+      ],
+      "small_molecule_experience": true,
+      "biologics_experience": false,
+      "talent_profile": [
+        "formulation",
+        "analytical",
+        "regulatory",
+        "packaging"
+      ],
+      "equipment_highlights": [
+        "High-shear granulator (150 L)",
+        "Multi-station tablet press",
+        "Peristaltic liquid-filling line",
+        "Screw-cap bottle packaging line",
+        "Stability chambers (ICH)",
+        "Complete QC microbiology lab"
+      ],
+      "notes": "Versatile solid + liquid orals plant. USFDA inspected. Suitable for pediatric syrups, suspensions, and conventional tablets.",
+      "equipment_trains": [
+        {
+          "name": "Solid oral train",
+          "capability": "compression",
+          "capacity": "medium",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Liquid oral filling line",
+          "capability": "liquid_oral_filling",
+          "capacity": "bottle",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Suspension manufacturing vessel",
+          "capability": "suspension_manufacturing",
+          "capacity": "500 L",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Microbiology / sterility lab",
+          "capability": "microbiology",
+          "capacity": "full",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        }
+      ],
+      "talent_depth": {
+        "formulation": 75,
+        "analytical": 78,
+        "regulatory_affairs": 80,
+        "bioprocess": 10,
+        "quality": 72,
+        "sterile_manufacturing": 20,
+        "cytotoxic_handling": 10
+      },
+      "certifications_active": [
+        "WHO_GMP",
+        "USFDA"
+      ],
+      "small_molecule_experience_years": 15,
+      "biologics_experience_years": 0,
+      "api_sourcing_experience": true
+    },
+    {
+      "asset_id": "hyderabad-oncology-injectables",
+      "site_name": "Hyderabad Oncology + Sterile Injectables Suite",
+      "city": "Hyderabad",
+      "state": "Telangana",
+      "country": "India",
+      "capabilities": [
+        "sterile_liquid",
+        "aseptic_fill",
+        "lyophilization",
+        "terminal_sterilization",
+        "isolator_technology",
+        "vial_capping",
+        "visual_inspection"
+      ],
+      "approved_forms": [
+        "injection",
+        "vial",
+        "lyophilized_vial"
+      ],
+      "containment_class": "cytotoxic",
+      "batch_capacity_kg": 50,
+      "certifications": [
+        "WHO_GMP",
+        "EU_GMP"
+      ],
+      "small_molecule_experience": true,
+      "biologics_experience": false,
+      "talent_profile": [
+        "sterile_manufacturing",
+        "analytical",
+        "regulatory",
+        "validation"
+      ],
+      "equipment_highlights": [
+        "RABS restricted-access barrier system",
+        "Isolator filling line (vials)",
+        "Lyophilizer (300 L shelf)",
+        "Autoclave / depyrogenation tunnel",
+        "100% camera-based visual inspection",
+        "Endotoxin / sterility testing suite"
+      ],
+      "notes": "Specialty injectables suite with cytotoxic containment. Can handle small-molecule oncology injectables and lyophilized products. Not equipped for monoclonal antibodies or peptide biologics.",
+      "equipment_trains": [
+        {
+          "name": "RABS isolator filling line",
+          "capability": "aseptic_fill",
+          "capacity": "vials",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Lyophilizer",
+          "capability": "lyophilization",
+          "capacity": "300 L shelf",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Terminal sterilization tunnel",
+          "capability": "terminal_sterilization",
+          "capacity": "continuous",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Visual inspection line",
+          "capability": "visual_inspection",
+          "capacity": "100%",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Sterility / endotoxin lab",
+          "capability": "sterility_testing",
+          "capacity": "full",
+          "readiness_level": "commercial",
+          "gmp_status": "validated"
+        }
+      ],
+      "talent_depth": {
+        "formulation": 50,
+        "analytical": 85,
+        "regulatory_affairs": 75,
+        "bioprocess": 25,
+        "quality": 85,
+        "sterile_manufacturing": 90,
+        "cytotoxic_handling": 85
+      },
+      "certifications_active": [
+        "WHO_GMP",
+        "EU_GMP"
+      ],
+      "small_molecule_experience_years": 12,
+      "biologics_experience_years": 0,
+      "api_sourcing_experience": false
+    },
+    {
+      "asset_id": "pune-pilot-rnd",
+      "site_name": "Pune Pilot / R&D Scale-Up Center",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "country": "India",
+      "capabilities": [
+        "wet_granulation",
+        "dry_granulation",
+        "compression",
+        "film_coating",
+        "analytical_development",
+        "process_validation",
+        "stability_testing"
+      ],
+      "approved_forms": [
+        "solid_oral",
+        "enteric_tablet",
+        "pilot_batch"
+      ],
+      "containment_class": "potent",
+      "batch_capacity_kg": 25,
+      "certifications": [
+        "WHO_GMP"
+      ],
+      "small_molecule_experience": true,
+      "biologics_experience": false,
+      "talent_profile": [
+        "formulation",
+        "analytical",
+        "process_development"
+      ],
+      "equipment_highlights": [
+        "Bench-top high-shear granulator",
+        "Single-punch / 8-station R&D press",
+        "Mini coating pan",
+        "UPLC / dissolution testing",
+        "Thermal / XRD characterization suite",
+        "GMP-compliant pilot suites"
+      ],
+      "notes": "Fast scale-up and tech-transfer hub. Potent-containment capable for early oncology / hormone programs. Not a commercial biologics facility.",
+      "equipment_trains": [
+        {
+          "name": "R&D high-shear granulator",
+          "capability": "wet_granulation",
+          "capacity": "bench",
+          "readiness_level": "pilot",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "R&D tablet press",
+          "capability": "compression",
+          "capacity": "8 station",
+          "readiness_level": "pilot",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "Mini coating pan",
+          "capability": "film_coating",
+          "capacity": "pilot",
+          "readiness_level": "pilot",
+          "gmp_status": "validated"
+        },
+        {
+          "name": "UPLC / dissolution / thermal suite",
+          "capability": "analytical_development",
+          "capacity": "full",
+          "readiness_level": "pilot",
+          "gmp_status": "validated"
+        }
+      ],
+      "talent_depth": {
+        "formulation": 90,
+        "analytical": 88,
+        "regulatory_affairs": 60,
+        "bioprocess": 15,
+        "quality": 70,
+        "sterile_manufacturing": 20,
+        "cytotoxic_handling": 50
+      },
+      "certifications_active": [
+        "WHO_GMP"
+      ],
+      "small_molecule_experience_years": 10,
+      "biologics_experience_years": 0,
+      "api_sourcing_experience": true
+    },
+    {
+      "asset_id": "mumbai-biologics-placeholder",
+      "site_name": "Mumbai Biologics Development Center",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "country": "India",
+      "capabilities": [
+        "cell_culture_pilot",
+        "protein_a_pilot",
+        "analytical_development",
+        "formulation_development"
+      ],
+      "approved_forms": [
+        "pilot_batch"
+      ],
+      "containment_class": "biologic_GMP",
+      "batch_capacity_kg": 5,
+      "certifications": [],
+      "small_molecule_experience": false,
+      "biologics_experience": true,
+      "talent_profile": [
+        "bioprocess",
+        "analytical",
+        "regulatory"
+      ],
+      "equipment_highlights": [
+        "Single-use bioreactor (50 L)",
+        "Protein A chromatography skid (pilot)",
+        "Viral clearance suite (planned)",
+        "ELISA / bioassay lab"
+      ],
+      "notes": "Early-stage biologics capability only. No commercial scale. Any mAb program scored against this site will show a large capability gap unless partnered or outsourced.",
+      "equipment_trains": [
+        {
+          "name": "Single-use bioreactor",
+          "capability": "cell_culture",
+          "capacity": "50 L",
+          "readiness_level": "pilot",
+          "gmp_status": "development"
+        },
+        {
+          "name": "Protein A chromatography skid",
+          "capability": "protein_a",
+          "capacity": "pilot",
+          "readiness_level": "pilot",
+          "gmp_status": "development"
+        },
+        {
+          "name": "ELISA / cell-based bioassay lab",
+          "capability": "bioassay",
+          "capacity": "pilot",
+          "readiness_level": "pilot",
+          "gmp_status": "development"
+        }
+      ],
+      "talent_depth": {
+        "formulation": 30,
+        "analytical": 70,
+        "regulatory_affairs": 55,
+        "bioprocess": 75,
+        "quality": 60,
+        "sterile_manufacturing": 40,
+        "cytotoxic_handling": 20
+      },
+      "certifications_active": [],
+      "small_molecule_experience_years": 0,
+      "biologics_experience_years": 3,
+      "api_sourcing_experience": false
+    }
+  ]
+}

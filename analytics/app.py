@@ -8,10 +8,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 import re
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "shared"))
-from nsq_redis import load_dataframe as load_redis_dataframe  # noqa: E402
 from nsq_redis import load_geojson as load_redis_geojson  # noqa: E402
+from company_ontology import (  # noqa: E402
+    load_ontology,
+    load_product_ontology,
+)
+from data_loader import (  # noqa: E402
+    load_and_preprocess_data,
+    fuzzy_search_products,
+)
+from landing import render_landing_page  # noqa: E402
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION & SETUP
@@ -41,200 +50,178 @@ st.markdown("""
 # -----------------------------------------------------------------------------
 # 2. DATA LOADING & ENRICHMENT
 # -----------------------------------------------------------------------------
-@st.cache_data(ttl=300)
-def load_and_preprocess_data():
-    # Load dataset from Redis (populated by redis-loader/load_nsq_redis.py)
-    df = load_redis_dataframe()
+# Data loading / enrichment helpers live in analytics/shared/data_loader.py
 
-    # 1. Derive Failure reason from NSQ Result if missing
-    if 'Failure reason' not in df.columns:
-        df['Failure reason'] = df['NSQ Result'].fillna('')
+def _render_product_investigation(df: pd.DataFrame) -> None:
+    """Render the "search a product, see which manufacturers had issues,
+    drill into a manufacturer's history" UI."""
+    st.markdown(
+        "Search any product name to see **which manufacturers have faced "
+        "NSQ issues with it**, then drill into a manufacturer to see their "
+        "**full NSQ alert history** — every batch, every defect category, "
+        "every reporting lab."
+    )
 
-    # 2. Derive Form type from product name if missing
-    if 'Form type' not in df.columns:
-        product_text = df['Name of Product'].fillna('').astype(str)
-        def infer_form(text):
-            t = text.lower()
-            if 'tablet' in t: return 'Tablet'
-            if 'capsule' in t: return 'Capsule'
-            if 'syrup' in t or 'suspension' in t: return 'Syrup/Suspension'
-            if 'injection' in t or 'injectable' in t: return 'Injection'
-            if 'ointment' in t or 'cream' in t or 'gel' in t: return 'Ointment/Cream'
-            if 'drops' in t: return 'Drops'
-            if 'powder' in t or 'granules' in t: return 'Powder/Granules'
-            return 'Other'
-        df['Form type'] = product_text.apply(infer_form)
+    query = st.text_input(
+        "🔎 Search product name (fuzzy match)",
+        value=st.session_state.get("inv_query", ""),
+        placeholder="e.g. Telmisartan 40mg, Paracetamol, Calcium + Vitamin D3",
+        key="inv_query_input",
+    )
+    threshold = st.slider(
+        "Fuzzy-match threshold (token-set ratio 0-100)",
+        min_value=40, max_value=95, value=70, step=5,
+        key="inv_threshold",
+        help="Lower = more permissive matching. 70 catches most spelling "
+             "variants without false positives.",
+    )
 
-    # 3. Derive Drug type (therapeutic category) heuristically if missing
-    if 'Drug type' not in df.columns:
-        def infer_drug_type(text):
-            t = str(text).lower()
-            antibiotics = ['amoxycillin', 'amoxicillin', 'ciprofloxacin', 'ofloxacin', 'azithromycin', 'cefixime', 'cephalexin', 'metronidazole', 'doxycycline']
-            analgesics = ['paracetamol', 'diclofenac', 'ibuprofen', 'aspirin', 'tramadol', 'aceclofenac']
-            vitamins = ['vitamin', 'multivitamin', 'iron', 'folic', 'calcium', 'zinc']
-            cardiac = ['amlodipine', 'telmisartan', 'losartan', 'atenolol', 'metoprolol', 'ramipril', 'atorvastatin']
-            antidiabetic = ['metformin', 'glimepiride', 'glipizide', 'insulin', 'vildagliptin']
-            antacid = ['omeprazole', 'pantoprazole', 'rabeprazole', 'ranitidine', 'esomeprazole']
-            respiratory = ['salbutamol', 'ambroxol', 'guaiphenesin', 'terbutaline', 'dextromethorphan', 'phenylephrine', 'chlorpheniramine', 'montelukast', 'levocetirizine']
-            if any(k in t for k in antibiotics): return 'Antibiotic'
-            if any(k in t for k in analgesics): return 'Analgesic/Antipyretic'
-            if any(k in t for k in vitamins): return 'Vitamin/Nutritional'
-            if any(k in t for k in cardiac): return 'Cardiovascular'
-            if any(k in t for k in antidiabetic): return 'Antidiabetic'
-            if any(k in t for k in antacid): return 'Antacid/Antiulcer'
-            if any(k in t for k in respiratory): return 'Respiratory'
-            return 'Other / Unclassified'
-        df['Drug type'] = df['Name of Product'].apply(infer_drug_type)
+    if not query.strip():
+        st.info("Type a product name above to begin.")
+        return
 
-    # 4. Recall Class is absent in this CSV — provide a placeholder
-    if 'Recall Class' not in df.columns:
-        df['Recall Class'] = 'Unclassified'
+    with st.spinner("Fuzzy-matching product names…"):
+        hits = fuzzy_search_products(df_raw, query, threshold=threshold)
 
-    # 1. Identify Dissolution Failures
-    # Checks failure reasons or general text rows for "dissolution"
-    text_search_space = df[['Failure reason', 'NSQ Result', 'Name of Product']].fillna('').astype(str)
-    if text_search_space.empty:
-        # pandas' .apply(axis=1) on a zero-row frame can't infer a Series
-        # return shape and sometimes yields a DataFrame instead, which
-        # breaks the column assignment below. Short-circuit explicitly.
-        df['Is_Dissolution'] = pd.Series(dtype=bool)
-    else:
-        df['Is_Dissolution'] = text_search_space.apply(
-            lambda row: row.str.contains('dissolution|Dissolution', case=False).any(), axis=1
+    if not hits:
+        st.warning(
+            f"No product names matched `{query!r}` at threshold {threshold}. "
+            "Try a shorter spelling or lower the threshold."
         )
+        return
 
-    # 2. Parse Date Features
-    df['Parsed_Date'] = pd.to_datetime(df['Reporting Month & Year'], format='%b-%Y', errors='coerce')
-    # Fallback sorting metric
-    df['Year_Month_Str'] = df['Reporting Month & Year'].fillna('Unknown')
+    # Use the BEST-scoring hit to anchor the search — show the user the
+    # chosen product at the top, then a small table of "other close matches"
+    # so they can pivot if the fuzzy picked the wrong product.
+    chosen_idx, chosen_score, chosen_name = hits[0]
+    st.success(
+        f"**Top match:** `{chosen_name}` "
+        f"(score {chosen_score}/100, fuzzy threshold {threshold})."
+    )
+    if len(hits) > 1:
+        with st.expander(f"Other close matches ({len(hits)-1} more at threshold ≥ {threshold})", expanded=False):
+            alt_df = pd.DataFrame(
+                [(name, score) for _, score, name in hits[1:25]],
+                columns=["Product Name", "Score"],
+            )
+            st.dataframe(alt_df, use_container_width=True, hide_index=True)
 
-    # 3. Extract Indian State from 'Manufactured By'
-    def extract_state(text):
-        if pd.isna(text):
-            return 'Unknown'
-        text = str(text)
-        # Main manufacturing hubs found in CDSCO lists
-        states = [
-            'Gujarat', 'Himachal Pradesh', 'Uttarakhand', 'Sikkim', 'Madhya Pradesh',
-            'Maharashtra', 'Punjab', 'Haryana', 'Andhra Pradesh', 'Telangana',
-            'Tamil Nadu', 'Karnataka', 'Kerala', 'Goa', 'Rajasthan', 'Uttar Pradesh',
-            'Bihar', 'West Bengal', 'Odisha', 'Assam', 'Jammu and Kashmir', 'Jammu & Kashmir',
-            'Chandigarh', 'Puducherry'
-        ]
-        for s in states:
-            if re.search(r'\b' + re.escape(s) + r'\b', text, re.IGNORECASE):
-                return s
-        # City -> state fallback map for major pharma manufacturing hubs
-        city_state_map = {
-            # Uttar Pradesh
-            'noida': 'Uttar Pradesh', 'greater noida': 'Uttar Pradesh', 'lucknow': 'Uttar Pradesh',
-            'kanpur': 'Uttar Pradesh', 'ghaziabad': 'Uttar Pradesh', 'meerut': 'Uttar Pradesh',
-            'agra': 'Uttar Pradesh', 'varanasi': 'Uttar Pradesh', 'prayagraj': 'Uttar Pradesh',
-            'allahabad': 'Uttar Pradesh', 'saharanpur': 'Uttar Pradesh', 'manglour': 'Uttar Pradesh',
-            'gautam budh nagar': 'Uttar Pradesh', 'gautam buddha nagar': 'Uttar Pradesh',
-            # Uttarakhand
-            'haridwar': 'Uttarakhand', 'roorkee': 'Uttarakhand', 'dehradun': 'Uttarakhand',
-            'bhagwanpur': 'Uttarakhand', 'rudrapur': 'Uttarakhand', 'kashipur': 'Uttarakhand',
-            'sidcul': 'Uttarakhand',
-            # Himachal Pradesh
-            'baddi': 'Himachal Pradesh', 'solan': 'Himachal Pradesh', 'nahan': 'Himachal Pradesh',
-            'sirmaur': 'Himachal Pradesh', 'kala amb': 'Himachal Pradesh', 'kalujhanda': 'Himachal Pradesh',
-            'barotiwala': 'Himachal Pradesh', 'nalagarh': 'Himachal Pradesh', 'parwanoo': 'Himachal Pradesh',
-            'kangra': 'Himachal Pradesh', 'una': 'Himachal Pradesh', 'mandi': 'Himachal Pradesh',
-            'subathu': 'Himachal Pradesh', 'ghatti': 'Himachal Pradesh', 'raja ka bagh': 'Himachal Pradesh',
-            'jharmajri': 'Himachal Pradesh', 'epip': 'Himachal Pradesh',
-            # Madhya Pradesh
-            'indore': 'Madhya Pradesh', 'bhopal': 'Madhya Pradesh', 'dewas': 'Madhya Pradesh',
-            'mandideep': 'Madhya Pradesh', 'pigdamber': 'Madhya Pradesh', 'pithampur': 'Madhya Pradesh',
-            'mandleshwar': 'Madhya Pradesh',
-            # Maharashtra
-            'mumbai': 'Maharashtra', 'pune': 'Maharashtra', 'nashik': 'Maharashtra',
-            'aurangabad': 'Maharashtra', 'nagpur': 'Maharashtra', 'tarapur': 'Maharashtra',
-            'boisar': 'Maharashtra', 'palghar': 'Maharashtra', 'raigad': 'Maharashtra',
-            'thane': 'Maharashtra', 'mahalunge': 'Maharashtra', 'chakan': 'Maharashtra',
-            'raigad': 'Maharashtra',
-            # Gujarat
-            'ahmedabad': 'Gujarat', 'vadodara': 'Gujarat', 'baroda': 'Gujarat',
-            'surat': 'Gujarat', 'rajkot': 'Gujarat', 'bhavnagar': 'Gujarat',
-            'mehsana': 'Gujarat', 'kadi': 'Gujarat', 'sanand': 'Gujarat',
-            'budas': 'Gujarat', 'budasan': 'Gujarat', 'panchmahal': 'Gujarat',
-            # Punjab
-            'mohali': 'Punjab', 'chandigarh': 'Punjab', 'ludhiana': 'Punjab',
-            'amritsar': 'Punjab', 'jalandhar': 'Punjab', 'patiala': 'Punjab',
-            'zirakpur': 'Punjab', 'sahnewal': 'Punjab', 'dera bassi': 'Punjab',
-            'karnal': 'Haryana',  # karnal is actually in Haryana
-            # Haryana
-            'gurugram': 'Haryana', 'gurgaon': 'Haryana', 'faridabad': 'Haryana',
-            'panipat': 'Haryana', 'karnal': 'Haryana', 'ambala': 'Haryana',
-            'manesar': 'Haryana', 'sonipat': 'Haryana', 'bhiwadi': 'Haryana',
-            # Karnataka
-            'bengaluru': 'Karnataka', 'bangalore': 'Karnataka', 'mysore': 'Karnataka',
-            'mysuru': 'Karnataka', 'mangalore': 'Karnataka', 'hubli': 'Karnataka',
-            'belgaum': 'Karnataka', 'tumkur': 'Karnataka',
-            # Tamil Nadu
-            'chennai': 'Tamil Nadu', 'coimbatore': 'Tamil Nadu', 'madurai': 'Tamil Nadu',
-            'salem': 'Tamil Nadu', 'trichy': 'Tamil Nadu', 'tiruchirappalli': 'Tamil Nadu',
-            'hosur': 'Tamil Nadu', 'chengalpattu': 'Tamil Nadu', 'sriperumbudur': 'Tamil Nadu',
-            'vanagaram': 'Tamil Nadu', 'kanniamman nagar': 'Tamil Nadu',
-            'puducherry': 'Puducherry', 'pondicherry': 'Puducherry',
-            # Telangana
-            'hyderabad': 'Telangana', 'secunderabad': 'Telangana', 'warangal': 'Telangana',
-            # Andhra Pradesh
-            'visakhapatnam': 'Andhra Pradesh', 'vijayawada': 'Andhra Pradesh',
-            'guntur': 'Andhra Pradesh', 'nellore': 'Andhra Pradesh',
-            # Kerala
-            'kochi': 'Kerala', 'cochin': 'Kerala', 'trivandrum': 'Kerala',
-            'thiruvananthapuram': 'Kerala', 'kozhikode': 'Kerala', 'calicut': 'Kerala',
-            # Rajasthan
-            'jaipur': 'Rajasthan', 'jodhpur': 'Rajasthan', 'udaipur': 'Rajasthan',
-            'kota': 'Rajasthan', 'bikaner': 'Rajasthan', 'alwar': 'Rajasthan',
-            'bhiwadi': 'Rajasthan',
-            # West Bengal
-            'kolkata': 'West Bengal', 'howrah': 'West Bengal', 'siliguri': 'West Bengal',
-            # Odisha
-            'bhubaneswar': 'Odisha', 'cuttack': 'Odisha',
-            # Bihar
-            'patna': 'Bihar', 'gaya': 'Bihar',
-            # Assam
-            'guwahati': 'Assam', 'dispur': 'Assam',
-            # Sikkim
-            'gangtok': 'Sikkim',
-            # Goa
-            'goa': 'Goa', 'panaji': 'Goa', 'margao': 'Goa',
-            # Jammu & Kashmir
-            'jammu': 'Jammu and Kashmir', 'srinagar': 'Jammu and Kashmir', 'kathua': 'Jammu and Kashmir',
-        }
-        for city, st in city_state_map.items():
-            if re.search(r'\b' + re.escape(city) + r'\b', text, re.IGNORECASE):
-                return st
-        return 'Other / Outside India'
+    # Filter the full dataset to every row whose product matches either
+    # the chosen raw spelling OR any of the top-N alternatives (so
+    # spelling variants roll up together).
+    matched_names = {name for _, _, name in hits[:25]}
+    matched_rows = df[df['Name of Product'].isin(matched_names)].copy()
 
-    df['Mfg_State'] = df['Manufactured By'].apply(extract_state)
+    if matched_rows.empty:
+        st.warning("No rows in the dataset for this product.")
+        return
 
-    # 4. Harmonize product names for grouping (e.g. "40mg" vs "40 mg", " IP " vs " ip ")
-    def normalize_product(name):
-        if pd.isna(name):
-            return ''
-        s = str(name)
-        # collapse whitespace
-        s = re.sub(r'\s+', ' ', s).strip()
-        # insert space between digit and unit letter: 40mg -> 40 mg, 500mg -> 500 mg, 5W -> 5 W
-        s = re.sub(r'(\d)([A-Za-z])', r'\1 \2', s)
-        # collapse whitespace again after the insert
-        s = re.sub(r'\s+', ' ', s).strip()
-        # title-case common abbreviation tokens
-        tokens = []
-        for tok in s.split(' '):
-            upper = tok.upper()
-            # preserve common pharma abbreviations in uppercase
-            if upper in {'IP', 'BP', 'USP', 'NF', 'NFI', 'HCL', 'HBR', 'EC', 'SR', 'IP.', 'BP.', 'W/V', 'W/W', 'V/V', 'MG', 'ML', 'GM', 'MCG', 'IU'}:
-                tokens.append(upper.rstrip('.'))
-            else:
-                tokens.append(tok.capitalize())
-        return ' '.join(tokens)
+    st.markdown(f"### Manufacturers with NSQ issues for `{chosen_name}`")
+    st.caption(
+        f"Spelling-variant aggregator: {matched_rows['Name of Product'].nunique()} "
+        f"raw spellings · {len(matched_rows)} total alerts."
+    )
 
-    df['Product_Name_Norm'] = df['Name of Product'].apply(normalize_product)
-    return df
+    # Manufacturers — collapse to the canonical ontology key when present,
+    # fall back to the first segment of 'Manufactured By' (which is the
+    # raw company name).
+    mfg_df = matched_rows.copy()
+    mfg_df['__mfg'] = mfg_df['Mfg_Company_Canonical'].fillna('').where(
+        mfg_df['Mfg_Company_Canonical'].fillna('') != '',
+        mfg_df['Manufactured By'].fillna('').astype(str).str.split(',').str[0].str.strip()
+    )
+    # Drop empty/Unknown placeholders so the table is informative.
+    mfg_df = mfg_df[mfg_df['__mfg'].fillna('') != '']
+    mfg_summary = (
+        mfg_df.groupby('__mfg')
+              .agg(
+                  alerts=('Name of Product', 'size'),
+                  products=('Name of Product', 'nunique'),
+                  first_seen=('Reporting Month & Year', 'min'),
+                  last_seen=('Reporting Month & Year', 'max'),
+                  cities=('Mfg_City', lambda s: sorted(set(x for x in s if x))),
+              )
+              .reset_index()
+              .rename(columns={'__mfg': 'Manufacturer'})
+              .sort_values(['alerts', 'Manufacturer'], ascending=[False, True])
+    )
+    st.dataframe(mfg_summary, use_container_width=True, hide_index=True)
+
+    # ---- Drill into one manufacturer ----
+    st.markdown("### Drill into a manufacturer")
+    mfg_choice = st.selectbox(
+        "Pick a manufacturer to see every NSQ alert they've had with this product:",
+        options=["(show all manufacturers)"] + mfg_summary['Manufacturer'].tolist(),
+        key="inv_mfg_choice",
+    )
+
+    if mfg_choice == "(show all manufacturers)":
+        drill = matched_rows.copy()
+        st.caption(f"Showing all {len(drill)} alerts for the product, across every manufacturer.")
+    else:
+        drill = matched_rows[mfg_df['__mfg'] == mfg_choice].copy()
+        st.caption(f"Showing {len(drill)} alerts for `{mfg_choice}` with this product.")
+
+    # Pick the most useful columns for the alert ledger
+    alert_cols = [
+        'Name of Product',
+        'Batch No',
+        'Mfg', 'Exp',
+        'Manufactured By',
+        'Mfg_State',
+        'NSQ Result',
+        'Failure_Category_Primary',
+        'Reporting Source',
+        'Reporting by Lab/State',
+        'Reporting Month & Year',
+    ]
+    alert_cols = [c for c in alert_cols if c in drill.columns]
+    alert_view = drill[alert_cols].sort_values(
+        ['Reporting Month & Year', 'Name of Product'], na_position='last'
+    )
+    st.dataframe(alert_view, use_container_width=True, hide_index=True)
+
+    # Download the drill-down as CSV
+    st.download_button(
+        label="📥 Export this manufacturer's NSQ history for the product to CSV",
+        data=alert_view.to_csv(index=False).encode('utf-8'),
+        file_name=f"nsq_history_{chosen_name[:30].replace(' ', '_').replace('/', '_')}.csv",
+        mime="text/csv",
+        key="inv_drill_csv",
+    )
+
+    # ---- NSQ alert history timeline (chronological bar chart) ----
+    st.markdown("### NSQ alert history timeline")
+    timeline = drill.copy()
+    timeline['Reporting Month & Year'] = timeline['Reporting Month & Year'].fillna('Unknown')
+    timeline['__date'] = pd.to_datetime(
+        timeline['Reporting Month & Year'], format='%b-%Y', errors='coerce'
+    )
+    timeline = timeline.dropna(subset=['__date'])
+
+    if timeline.empty:
+        st.info("No parseable `Reporting Month & Year` for this product/manufacturer.")
+        return
+
+    # Aggregate by month AND by primary category for a stacked view.
+    monthly = (
+        timeline.groupby([pd.Grouper(key='__date', freq='MS'), 'Failure_Category_Primary'])
+               .size()
+               .reset_index(name='count')
+               .sort_values('__date')
+    )
+
+    fig = px.bar(
+        monthly, x='__date', y='count', color='Failure_Category_Primary',
+        title=f"NSQ alert history — {chosen_name}" + (
+            f" ({mfg_choice})" if mfg_choice != "(show all manufacturers)" else ""
+        ),
+        labels={'__date': 'Reporting Month', 'count': 'Alert Count',
+                'Failure_Category_Primary': 'Failure Category'},
+    )
+    fig.update_layout(barmode='stack', legend_title='Failure Category')
+    st.plotly_chart(fig, use_container_width=True)
+
 
 @st.cache_data
 def load_india_geojson():
@@ -279,14 +266,35 @@ def to_geojson_name(state):
         return GEOJSON_NAME_MAP[state]
     return state if state else None
 
+# -----------------------------------------------------------------------------
+# 3. HOME / DASHBOARD VIEW SWITCHER
+# -----------------------------------------------------------------------------
+if "nsq_view" not in st.session_state:
+    st.session_state["nsq_view"] = "home"
+
+if st.session_state["nsq_view"] == "home":
+    with st.sidebar:
+        st.title("🗺️ NSQ Analytics")
+        st.caption("Animated home page")
+        if st.button("🔬 Open Dashboard", use_container_width=True):
+            st.session_state["nsq_view"] = "dashboard"
+            st.rerun()
+    render_landing_page()
+    st.stop()
+
+# When in dashboard mode, offer a way back to the animated home page.
+if st.sidebar.button("🏠 Back to home"):
+    st.session_state["nsq_view"] = "home"
+    st.rerun()
+
 try:
     df_raw = load_and_preprocess_data()
 except Exception as e:
-    st.error(f"Error loading CSV file: {e}")
+    st.error(f"Error loading data: {e}")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR CONTROLS & FILTERING
+# 4. SIDEBAR CONTROLS & FILTERING
 # -----------------------------------------------------------------------------
 st.sidebar.title("🎯 Control & Filters")
 st.sidebar.markdown("Filter downstream metrics to isolate dissolution anomalies.")
@@ -309,7 +317,8 @@ search_query = st.sidebar.text_input("🔍 Search Product / Manufacturer Name", 
 if search_query:
     df_filtered = df_filtered[
         df_filtered['Product_Name_Norm'].str.contains(search_query, case=False, na=False) |
-        df_filtered['Manufactured By'].str.contains(search_query, case=False, na=False)
+        df_filtered['Manufactured By'].str.contains(search_query, case=False, na=False) |
+        df_filtered['Product_Name_Canonical'].str.contains(search_query, case=False, na=False)
     ]
 
 # Multi-select dropdown Filters
@@ -328,6 +337,87 @@ selected_form_types = st.sidebar.multiselect(
 )
 if selected_form_types:
     df_filtered = df_filtered[df_filtered['Form type'].isin(selected_form_types)]
+
+# Company ontology inspector — shows what the resolver built so the
+# user can audit how "Cipla Ltd" and "Cipla Limited" are being merged.
+with st.sidebar.expander("🏷  Company Ontology", expanded=False):
+    try:
+        ontology = load_ontology()
+        n = len(ontology)
+        st.markdown(
+            f"**{n} canonical entit{'y' if n == 1 else 'ies'}" +
+            (f"** &mdash; fuzzy threshold "
+             f"`{os.environ.get('NSQ_FUZZY_THRESHOLD', '0.85')}`" if n else "**")
+        )
+        if n:
+            preview = (
+                pd.DataFrame(
+                    [
+                        {
+                            "Canonical": v.get("canonical_name", ""),
+                            "City": v.get("city", ""),
+                            "State": v.get("state", ""),
+                            "Website": v.get("website", ""),
+                            "Aliases": len(v.get("aliases", []) or []),
+                            "Sources": v.get("sources", 0),
+                        }
+                        for v in ontology.values()
+                    ]
+                )
+                .sort_values("Sources", ascending=False)
+                .head(25)
+            )
+            st.dataframe(preview, use_container_width=True, hide_index=True)
+            st.download_button(
+                "📥 Export full ontology (JSON)",
+                data=json.dumps(ontology, ensure_ascii=False, indent=2),
+                file_name="nsq_company_ontology.json",
+                mime="application/json",
+            )
+    except RuntimeError as exc:
+        st.caption(f"Ontology unavailable: {exc}")
+    except Exception as exc:  # pragma: no cover
+        st.caption(f"Ontology load failed: {exc}")
+
+# Product ontology inspector — parallels the Company Ontology one.
+# Shows how near-duplicate product names (e.g. `Telmisartan Tablets
+# IP 40 mg` and `Telmisartan Tablets IP 40mg`) are being merged.
+with st.sidebar.expander("💊  Product Ontology", expanded=False):
+    try:
+        product_ontology = load_product_ontology()
+        n = len(product_ontology)
+        st.markdown(
+            f"**{n} canonical entit{'y' if n == 1 else 'ies'}" +
+            (f"** &mdash; fuzzy threshold "
+             f"`{os.environ.get('NSQ_FUZZY_THRESHOLD', '0.85')}`" if n else "**")
+        )
+        if n:
+            preview = (
+                pd.DataFrame(
+                    [
+                        {
+                            "Canonical name": v.get("canonical_name", ""),
+                            "Canonical key":  v.get("canonical_key", ""),
+                            "Aliases":        len(v.get("aliases", []) or []),
+                            "Sources":        v.get("sources", 0),
+                        }
+                        for v in product_ontology.values()
+                    ]
+                )
+                .sort_values("Sources", ascending=False)
+                .head(25)
+            )
+            st.dataframe(preview, use_container_width=True, hide_index=True)
+            st.download_button(
+                "📥 Export full ontology (JSON)",
+                data=json.dumps(product_ontology, ensure_ascii=False, indent=2),
+                file_name="nsq_product_ontology.json",
+                mime="application/json",
+            )
+    except RuntimeError as exc:
+        st.caption(f"Product ontology unavailable: {exc}")
+    except Exception as exc:  # pragma: no cover
+        st.caption(f"Product ontology load failed: {exc}")
 
 # -----------------------------------------------------------------------------
 # 4. MAIN DASHBOARD CONTENT
@@ -356,11 +446,12 @@ st.markdown("<br>", unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 # 5. VISUALIZATION TABS
 # -----------------------------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📈 Trend & Distribution Analyses", 
-    "🗺️ Geographic & Heatmap Matrix", 
-    "🔀 Relational Sankey Flows", 
-    "📋 Searchable Audit Ledger"
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📈 Trend & Distribution Analyses",
+    "🗺️ Geographic & Heatmap Matrix",
+    "🔀 Relational Sankey Flows",
+    "📋 Searchable Audit Ledger",
+    "🔎 Product → Manufacturer Investigation",
 ])
 
 # -----------------------------------------------------------------------------
@@ -393,8 +484,11 @@ with tab1:
 
     with c_right:
         st.subheader("Top Defective Product Matrices")
-        # Horizontal Bar Chart
-        top_products = df_filtered['Product_Name_Norm'].value_counts().head(10).reset_index()
+        # Horizontal Bar Chart — prefer the canonical column (merged
+        # near-duplicate product spellings); fall back to the cosmetic
+        # normalized name if the column is missing (offline path).
+        col = 'Product_Name_Canonical' if 'Product_Name_Canonical' in df_filtered.columns else 'Product_Name_Norm'
+        top_products = df_filtered[col].value_counts().head(10).reset_index()
         top_products.columns = ['Product Name', 'Total Incidents']
         
         fig_bar = px.bar(
@@ -424,12 +518,15 @@ with tab1:
         st.plotly_chart(fig_form, use_container_width=True)
 
     with col_f2:
-        # Risk Class Distribution
-        recall_counts = df_filtered['Recall Class'].value_counts().reset_index()
-        recall_counts.columns = ['Risk Classification', 'Alert Volume']
+        # Failure Category Distribution — replaces the previous "Recall
+        # Class" pie (which was always 100% "Unclassified" because the
+        # CSV doesn't carry recall-class data). Now uses the harmonized
+        # Failure_Category_Primary derived from each row's NSQ Result.
+        cat_counts = df_filtered['Failure_Category_Primary'].value_counts().reset_index()
+        cat_counts.columns = ['Failure Category', 'Alert Volume']
         fig_pie = px.pie(
-            recall_counts, values='Alert Volume', names='Risk Classification',
-            title="Risk Risk Mitigation Profile Breakdown (Recall Classification)",
+            cat_counts, values='Alert Volume', names='Failure Category',
+            title="Failure Category Breakdown (Harmonized from NSQ Result)",
             color_discrete_sequence=px.colors.qualitative.Pastel
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
@@ -532,18 +629,21 @@ with tab3:
     st.header("Sankey Vulnerability Chain Flow Topology")
     st.markdown("Traces how operational breakdowns map from **Origin State/Hubs** $\\rightarrow$ **Drug Categories** $\\rightarrow$ **Failure Categorizations**.")
     
-    # Aggregate data loops to format connections dynamically
-    sankey_data = df_filtered.dropna(subset=['Mfg_State', 'Drug type', 'Is_Dissolution']).copy()
-    sankey_data['Dissolution_Status'] = sankey_data['Is_Dissolution'].map({True: 'Dissolution Failure', False: 'Other Critical Failures'})
-    
+    # Aggregate data loops to format connections dynamically.
+    # The right-most level now uses the harmonized primary failure
+    # category (one node per Failure_Category_Primary, e.g. "Dissolution",
+    # "Assay / Content", "Sterility / Microbial", ...) instead of the
+    # boolean Dissolution/Other split — gives much more actionable
+    # flow insight.
+    sankey_data = df_filtered.dropna(subset=['Mfg_State', 'Drug type', 'Failure_Category_Primary']).copy()
     # Cap string sizes for aesthetic balance
     sankey_data['Drug_Type_Short'] = sankey_data['Drug type'].apply(lambda x: str(x)[:25] + '...' if len(str(x)) > 25 else str(x))
-    
+
     if len(sankey_data) > 0:
         # Create Nodes Indexing mapping list
         level0 = sankey_data['Mfg_State'].unique().tolist()
         level1 = sankey_data['Drug_Type_Short'].unique().tolist()
-        level2 = sankey_data['Dissolution_Status'].unique().tolist()
+        level2 = sankey_data['Failure_Category_Primary'].unique().tolist()
         
         all_nodes = level0 + level1 + level2
         node_map = {node: idx for idx, node in enumerate(all_nodes)}
@@ -560,10 +660,10 @@ with tab3:
             values.append(row['count'])
             
         # Stream 2: Drug Type to Failure Status
-        pair2 = sankey_data.groupby(['Drug_Type_Short', 'Dissolution_Status']).size().reset_index(name='count')
+        pair2 = sankey_data.groupby(['Drug_Type_Short', 'Failure_Category_Primary']).size().reset_index(name='count')
         for _, row in pair2.iterrows():
             sources.append(node_map[row['Drug_Type_Short']])
-            targets.append(node_map[row['Dissolution_Status']])
+            targets.append(node_map[row['Failure_Category_Primary']])
             values.append(row['count'])
             
         fig_sankey = go.Figure(data=[go.Sankey(
@@ -592,10 +692,69 @@ with tab4:
     st.markdown("Interact directly with the structured granular audit rows matching active filter selections.")
     
     # Columns selector configuration
+    # Build the full options list from the actual df_raw columns plus every
+    # derived column the loader/preprocessor may have produced. We intersect
+    # the default list against this set so a schema rename (e.g. 'Source' ->
+    # 'source') can't crash the page.
+    _derived_cols = [
+        # derived name columns
+        'Product_Name_Norm', 'Product_Name_Canonical', 'Product_Ontology_Key',
+        # derived classification columns
+        'Form type', 'Form', 'Indication', 'Drug type', 'Recall Class',
+        'Failure_Category', 'Failure_Category_Primary', 'Is_Dissolution',
+        # derived temporal columns
+        'Parsed_Date', 'Year_Month_Str',
+        # derived location + company ontology columns
+        'Mfg_Company', 'Mfg_Company_Canonical', 'Mfg_Ontology_Key',
+        'Mfg_City', 'Mfg_State', 'Mfg_Website',
+        # derived regulatory research columns
+        'Scientific context research', 'Regulatory guidelines research',
+    ]
+    _all_options = list(dict.fromkeys(list(df_raw.columns) + _derived_cols))
+    _desired_default = [
+        # raw source columns
+        'index',
+        'Name of Product',
+        'Batch No',
+        'Manufactured By',
+        'NSQ Result',
+        'Reporting Source',
+        'Reporting by Lab/State',
+        'Reporting Month & Year',
+        'source',
+        # derived name columns (raw -> normalized -> canonical -> ontology key)
+        'Product_Name_Norm',
+        'Product_Name_Canonical',
+        'Product_Ontology_Key',
+        # derived classification columns
+        'Form type',
+        'Form',
+        'Indication',
+        'Drug type',
+        'Recall Class',
+        'Failure_Category',
+        'Failure_Category_Primary',
+        'Is_Dissolution',
+        # derived temporal columns
+        'Parsed_Date',
+        'Year_Month_Str',
+        # derived location + company ontology columns
+        'Mfg_Company',
+        'Mfg_Company_Canonical',
+        'Mfg_Ontology_Key',
+        'Mfg_City',
+        'Mfg_State',
+        'Mfg_Website',
+        # derived regulatory research columns
+        'Scientific context research',
+        'Regulatory guidelines research',
+    ]
+    _safe_default = [c for c in _desired_default if c in _all_options]
+
     visible_cols = st.multiselect(
         "Modify Ledger Data Field Column Views:",
-        options=df_raw.columns.tolist() + ['Product_Name_Norm'],
-        default=['Name of Product', 'Product_Name_Norm', 'Drug type', 'Form type', 'Failure reason', 'NSQ Result', 'Manufactured By', 'Mfg_State', 'Reporting Month & Year']
+        options=_all_options,
+        default=_safe_default,
     )
     
     # Sorting controls row
@@ -617,3 +776,17 @@ with tab4:
         file_name="CDSCO_Screened_Dissolution_Subset.csv",
         mime="text/csv"
     )
+
+# -----------------------------------------------------------------------------
+# TAB 5: PRODUCT → MANUFACTURER INVESTIGATION
+# -----------------------------------------------------------------------------
+# Search a product name (fuzzy match) → list manufacturers that have
+# faced NSQ issues with it → drill into one manufacturer to see every
+# NSQ alert they've had with that product, plus a chronological
+# timeline of failures.
+#
+# Uses df_raw (full dataset) deliberately — the user is investigating
+# the product's history, not the currently filtered view.
+with tab5:
+    st.header("Product → Manufacturer Investigation")
+    _render_product_investigation(df_raw)

@@ -9,17 +9,12 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
-COPY landing.py .
-COPY static/ static/
+COPY api_main.py .
 COPY shared/ shared/
 
-EXPOSE 8501
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-ENTRYPOINT ["streamlit", "run", "app.py", \
-    "--server.address=0.0.0.0", \
-    "--server.port=8501", \
-    "--server.headless=true"]
+ENTRYPOINT ["uvicorn", "api_main:app", "--host", "0.0.0.0", "--port", "8000"]
