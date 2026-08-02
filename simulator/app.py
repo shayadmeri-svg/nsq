@@ -4,8 +4,8 @@ In-Silico NSQ Agent — Root Cause Analysis & GxP Compliance Workbench
 
 A Python (Streamlit) port of the original single-file React/TSX prototype.
 Same data (CDSCO NSQ Drug Alerts catalog), same seven journey blocks (D1-D7),
-same Swiss editorial visual language: pure grays, deep slates, precise
-borders, no glowing gradients.
+now using a colorblind-safe scientific palette (Okabe-Ito): precise
+borders, warm neutrals, and accessible categorical colors.
 
 Run with:
     streamlit run nsq_agent_platform.py
@@ -27,13 +27,14 @@ import requests
 import streamlit as st
 
 from intelligence.ui_components import (
-    MONOCHROME_CSS,
+    SCIENTIFIC_CSS,
     anime_entrance,
     bioicon_inline,
     feature_card,
     mock_data_badge,
     stepper,
 )
+from intelligence.palette import css_variables
 
 
 # ---------------------------------------------------------------------------
@@ -56,13 +57,13 @@ st.set_page_config(
 CUSTOM_CSS = """
 <style>
   /* Tighten the default Streamlit chrome so it feels like a workbench. */
-  .stApp { background-color: #f8fafc; }
+  .stApp { background-color: #fafafa; }
 
-  /* Sans-serif body, mono for code, exact slate ramp. */
+  /* Sans-serif body, mono for code, scientific neutral ramp. */
   html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
                  Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #0f172a;
+    color: #1a1a1a;
   }
 
   /* Header bar */
@@ -72,8 +73,8 @@ CUSTOM_CSS = """
     align-items: center;
     padding: 12px 20px;
     background: #ffffff;
-    border-bottom: 1px solid #e2e8f0;
-    box-shadow: 0 1px 0 rgba(15,23,42,0.02);
+    border-bottom: 1px solid #d9d9d9;
+    box-shadow: 0 1px 0 rgba(26,26,26,0.02);
     flex-wrap: nowrap;
     gap: 16px;
     overflow: hidden;
@@ -98,7 +99,7 @@ CUSTOM_CSS = """
     font-size: 16px;
     font-weight: 800;
     margin: 0;
-    color: #0f172a;
+    color: #1a1a1a;
     letter-spacing: -0.01em;
     white-space: nowrap;
     overflow: hidden;
@@ -106,7 +107,7 @@ CUSTOM_CSS = """
   }
   .nsq-header-titles p {
     font-size: 10px;
-    color: #64748b;
+    color: #737373;
     margin: 2px 0 0 0;
     white-space: nowrap;
     overflow: hidden;
@@ -150,134 +151,135 @@ CUSTOM_CSS = """
 
   /* Section cards (white, hairline border, tight shadow) */
   .nsq-card {
-    background: #ffffff; border: 1px solid #e2e8f0;
-    border-radius: 6px; padding: 20px; box-shadow: 0 1px 2px rgba(15,23,42,0.03);
+    background: #ffffff; border: 1px solid #d9d9d9;
+    border-radius: 6px; padding: 20px; box-shadow: 0 1px 2px rgba(26,26,26,0.03);
   }
   .nsq-card + .nsq-card { margin-top: 24px; }
 
   /* Section eyebrow (D1, D2, …) */
   .nsq-eyebrow {
     font-size: 10px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 0.08em; color: #64748b;
+    letter-spacing: 0.08em; color: #737373;
   }
   .nsq-eyebrow-row { display: flex; justify-content: space-between; align-items: center;
-    padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
+    padding-bottom: 8px; border-bottom: 1px solid #d9d9d9; margin-bottom: 12px; }
 
   /* Big product title */
-  .nsq-title { font-size: 22px; font-weight: 900; color: #0f172a; margin: 4px 0 0 0; letter-spacing: -0.02em; }
+  .nsq-title { font-size: 22px; font-weight: 900; color: #1a1a1a; margin: 4px 0 0 0; letter-spacing: -0.02em; }
 
   /* VigiBase risk tiles */
-  .risk-tile { background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; padding: 10px; }
-  .risk-tile .hazard { font-size: 12px; font-weight: 700; color: #991b1b; display: block; }
-  .risk-tile .desc   { font-size: 11px; color: #b91c1c; margin-top: 4px; line-height: 1.45; }
+  .risk-tile { background: #ffebe6; border: 1px solid #f5b9a8; border-radius: 4px; padding: 10px; }
+  .risk-tile .hazard { font-size: 12px; font-weight: 700; color: #8a2b0a; display: block; }
+  .risk-tile .desc   { font-size: 11px; color: #8a2b0a; margin-top: 4px; line-height: 1.45; }
 
   /* Excipient list rows */
   .ex-row { display: flex; justify-content: space-between; align-items: center;
-    padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;
+    padding: 10px; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px;
     font-size: 12px; }
   .ex-row + .ex-row { margin-top: 8px; }
-  .ex-row .role { margin-left: 8px; padding: 2px 6px; background: #e2e8f0;
-    color: #475569; border-radius: 3px; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+  .ex-row .role { margin-left: 8px; padding: 2px 6px; background: #d9d9d9;
+    color: #4a4a4a; border-radius: 3px; font-size: 9px; font-weight: 800; text-transform: uppercase; }
   .ex-row .ratio { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-weight: 700; color: #475569; }
-  .ex-row .desc { font-size: 10px; color: #94a3b8; margin-top: 4px; }
+    font-weight: 700; color: #4a4a4a; }
+  .ex-row .desc { font-size: 10px; color: #b0b0b0; margin-top: 4px; }
 
   /* Pharmacopeia tiles */
-  .pharma-tile { border: 1px solid #f1f5f9; padding: 12px; border-radius: 4px;
-    background: #f8fafc80; }
+  .pharma-tile { border: 1px solid #f2f2f2; padding: 12px; border-radius: 4px;
+    background: #fafafa80; }
   .pharma-tile h5 { font-size: 12px; font-weight: 800; text-transform: uppercase;
-    color: #334155; margin: 0 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; }
-  .pharma-tile p  { font-size: 11px; color: #475569; margin: 0 0 6px 0; line-height: 1.5; }
+    color: #262626; margin: 0 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #d9d9d9; }
+  .pharma-tile p  { font-size: 11px; color: #4a4a4a; margin: 0 0 6px 0; line-height: 1.5; }
 
   /* Catalog sidebar item */
-  .cat-item { padding: 14px; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
-  .cat-item:hover { background: #f8fafc; }
-  .cat-item.active { background: #f1f5f9; border-left: 4px solid #0f172a; }
-  .cat-item h4 { font-size: 13px; font-weight: 700; margin: 0; color: #0f172a; }
-  .cat-item p  { font-size: 11px; color: #64748b; margin: 2px 0 0 0; }
-  .alerts-pill { font-size: 10px; background: #fee2e2; color: #991b1b;
+  .cat-item { padding: 14px; cursor: pointer; border-bottom: 1px solid #f2f2f2; }
+  .cat-item:hover { background: #fafafa; }
+  .cat-item.active { background: #f2f2f2; border-left: 4px solid #0072B2; }
+  .cat-item h4 { font-size: 13px; font-weight: 700; margin: 0; color: #1a1a1a; }
+  .cat-item p  { font-size: 11px; color: #737373; margin: 2px 0 0 0; }
+  .alerts-pill { font-size: 10px; background: #ffebe6; color: #8a2b0a;
     font-weight: 800; padding: 2px 6px; border-radius: 3px; }
 
   /* Process parameter row */
   .pp-label  { display: flex; justify-content: space-between; font-size: 11px; }
-  .pp-label .name { font-weight: 600; color: #475569; }
+  .pp-label .name { font-weight: 600; color: #4a4a4a; }
   .pp-label .val  { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-weight: 700; color: #0f172a; }
-  .pp-bounds { display: flex; justify-content: space-between; font-size: 9px; color: #94a3b8; }
+    font-weight: 700; color: #1a1a1a; }
+  .pp-bounds { display: flex; justify-content: space-between; font-size: 9px; color: #b0b0b0; }
 
   /* Grade badge */
   .grade-badge { width: 56px; height: 56px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     border: 2px solid; font-size: 22px; font-weight: 900; }
-  .grade-A { background: #f0fdf4; border-color: #22c55e; color: #15803d; }
-  .grade-B { background: #f0fdf4; border-color: #22c55e; color: #15803d; }
-  .grade-C { background: #fefce8; border-color: #eab308; color: #a16207; }
-  .grade-D { background: #fef2f2; border-color: #ef4444; color: #b91c1c; }
-  .grade-F { background: #fef2f2; border-color: #ef4444; color: #b91c1c; }
+  .grade-A { background: #e6f5f1; border-color: #009E73; color: #009E73; }
+  .grade-B { background: #e6f5f1; border-color: #009E73; color: #009E73; }
+  .grade-C { background: #fff9e6; border-color: #E69F00; color: #8c6b00; }
+  .grade-D { background: #ffebe6; border-color: #D55E00; color: #8a2b0a; }
+  .grade-F { background: #ffebe6; border-color: #D55E00; color: #8a2b0a; }
 
   /* Feedback list */
   .fb-item { font-size: 12px; padding: 8px; border-radius: 4px;
     display: flex; align-items: flex-start; gap: 6px; }
-  .fb-err  { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-  .fb-ok   { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+  .fb-err  { background: #ffebe6; color: #8a2b0a; border: 1px solid #f5b9a8; }
+  .fb-ok   { background: #e6f5f1; color: #009E73; border: 1px solid #a3d9c5; }
 
   /* Diagnostic log block — preserve line breaks, mono */
   .diag-log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11px; color: #475569; line-height: 1.55;
-    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;
+    font-size: 11px; color: #4a4a4a; line-height: 1.55;
+    background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px;
     padding: 12px; white-space: pre-wrap; }
 
   /* Catalog footer (CDSCO file reference) */
-  .cat-footer { font-size: 11px; color: #94a3b8; line-height: 1.5; }
+  .cat-footer { font-size: 11px; color: #b0b0b0; line-height: 1.5; }
   .cat-footer code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10px; color: #475569; background: #ffffff; border: 1px solid #e2e8f0;
+    font-size: 10px; color: #4a4a4a; background: #ffffff; border: 1px solid #d9d9d9;
     padding: 4px; border-radius: 3px; display: block; word-break: break-all; }
 
   /* Empty-state placeholder */
-  .empty-state { background: #ffffff; border: 1px dashed #e2e8f0; border-radius: 6px;
-    padding: 40px; text-align: center; color: #94a3b8; font-size: 12px; }
+  .empty-state { background: #ffffff; border: 1px dashed #d9d9d9; border-radius: 6px;
+    padding: 40px; text-align: center; color: #b0b0b0; font-size: 12px; }
 
   /* Settings bar */
-  .settings-bar { background: #ffffff; border-bottom: 1px solid #e2e8f0;
+  .settings-bar { background: #ffffff; border-bottom: 1px solid #d9d9d9;
     padding: 16px 24px; }
 
   /* Small utility */
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .muted { color: #94a3b8; }
+  .muted { color: #b0b0b0; }
 
   /* Slider polish: keep rail subtle, knob sharp */
   .stSlider [data-baseweb="slider"] [role="slider"] {
-    background-color: #0f172a !important; border: 2px solid #0f172a !important;
+    background-color: #0072B2 !important; border: 2px solid #0072B2 !important;
   }
   .stSlider [data-baseweb="slider"] > div > div > div {
-    background-color: #0f172a !important;
+    background-color: #0072B2 !important;
   }
   .stSlider [data-baseweb="slider"] [data-testid="stTickBar"] { display: none; }
 
-  /* Primary button: flat slate, no glow */
+  /* Primary button: scientific blue, no glow */
   .stButton > button {
-    background: #0f172a !important; color: #ffffff !important;
-    border: 1px solid #0f172a !important; border-radius: 4px !important;
+    background: #0072B2 !important; color: #ffffff !important;
+    border: 1px solid #0072B2 !important; border-radius: 4px !important;
     font-weight: 700 !important; font-size: 12px !important;
   }
-  .stButton > button:hover { background: #000000 !important; }
-  .stButton > button:disabled { background: #cbd5e1 !important; border-color: #cbd5e1 !important; }
+  .stButton > button:hover { background: #005a8e !important; }
+  .stButton > button:disabled { background: #d9d9d9 !important; border-color: #d9d9d9 !important; }
 
   /* Subtle dividers between columns in main area */
   section.main > div { gap: 0; }
 
   /* Tighter input borders */
   .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div {
-    border: 1px solid #cbd5e1 !important; border-radius: 4px !important;
+    border: 1px solid #d9d9d9 !important; border-radius: 4px !important;
     background: #ffffff !important; font-size: 12px !important;
   }
 </style>
 """
 
+st.markdown(css_variables(), unsafe_allow_html=True)
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# Inject monochrome engine theme on top of legacy CSS.
-st.markdown(MONOCHROME_CSS, unsafe_allow_html=True)
+# Inject scientific engine theme on top of legacy CSS.
+st.markdown(SCIENTIFIC_CSS, unsafe_allow_html=True)
 anime_entrance(".cdmo-feature-card")
 
 
@@ -1291,7 +1293,7 @@ def render_header() -> None:
     data_status = "LIVE CDSCO" if USING_LIVE_DATA else "STATIC CATALOG"
     title_group = f"""
     <div class="nsq-header-title-group">
-      {bioicon_inline('molecule', 28, '#0f172a')}
+      {bioicon_inline('molecule', 28, '#1a1a1a')}
       <div class="nsq-header-titles">
         <h1>CDMO Off-Patent Intelligence Engine</h1>
         <p>Patent · Regulatory · Demand · Plant Readiness · Portfolio</p>
@@ -1300,10 +1302,10 @@ def render_header() -> None:
     """
     status_group = f"""
     <div class="nsq-header-status">
-      <span class="pill" style="color:{'#15803d' if api_active else '#64748b'}; background:{'#f0fdf4' if api_active else '#f8fafc'}; border:1px solid {'#bbf7d0' if api_active else '#e2e8f0'};">
+      <span class="pill" style="color:{'#009E73' if api_active else '#737373'}; background:{'#e6f5f1' if api_active else '#fafafa'}; border:1px solid {'#a3d9c5' if api_active else '#d9d9d9'};">
         {'● Gemini API active' if api_active else '○ Local AI mode'}
       </span>
-      <span class="pill" style="color:{'#15803d' if USING_LIVE_DATA else '#a16207'}; background:{'#f0fdf4' if USING_LIVE_DATA else '#fffbeb'}; border:1px solid {'#bbf7d0' if USING_LIVE_DATA else '#fde68a'};">
+      <span class="pill" style="color:{'#009E73' if USING_LIVE_DATA else '#8c6b00'}; background:{'#e6f5f1' if USING_LIVE_DATA else '#fffbeb'}; border:1px solid {'#a3d9c5' if USING_LIVE_DATA else '#fde68a'};">
         ● {data_status} · {len(LIVE_ALERT_STATS)} drugs
       </span>
     </div>
@@ -1348,9 +1350,9 @@ def render_header() -> None:
 def render_catalog() -> None:
     st.markdown(
         """
-        <div style="padding: 12px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px;">
+        <div style="padding: 12px 0; border-bottom: 1px solid #d9d9d9; margin-bottom: 12px;">
           <div class="cdmo-section-title">Product Catalog &amp; Active Alerts</div>
-          <p style="font-size:11px; color:#94a3b8; margin:4px 0 0 0;">Sourced from CDSCO regulatory histories.</p>
+          <p style="font-size:11px; color:#b0b0b0; margin:4px 0 0 0;">Sourced from CDSCO regulatory histories.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1373,8 +1375,8 @@ def render_catalog() -> None:
 
     if not matches:
         st.markdown(
-            "<div style='padding:32px; text-align:center; color:#94a3b8; font-size:11px;"
-            "border:1px dashed #e2e8f0; border-radius:6px;'>No solid tablets match query.</div>",
+            "<div style='padding:32px; text-align:center; color:#b0b0b0; font-size:11px;"
+            "border:1px dashed #d9d9d9; border-radius:6px;'>No solid tablets match query.</div>",
             unsafe_allow_html=True,
         )
         return
@@ -1383,8 +1385,8 @@ def render_catalog() -> None:
     cols = st.columns(min(len(matches), 4))
     for i, (drug_id, drug) in enumerate(matches[:16]):
         active = drug_id == st.session_state.selected_drug_id
-        border = "#0f172a" if active else "#e2e8f0"
-        bg = "#ffffff" if active else "#f8fafc"
+        border = "#1a1a1a" if active else "#d9d9d9"
+        bg = "#ffffff" if active else "#fafafa"
         with cols[i % len(cols)]:
             if st.button(
                 f"{drug.name}\n{drug.dose} • {drug.dosage_form}",
@@ -1399,13 +1401,13 @@ def render_catalog() -> None:
                 f"""
                 <div style="background:{bg}; border:1px solid {border}; border-radius:4px; padding:10px; margin-top:-8px;">
                   <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:10px; font-weight:700; color:#0f172a;">{drug.name}</span>
+                    <span style="font-size:10px; font-weight:700; color:#1a1a1a;">{drug.name}</span>
                     <span class="alerts-pill">{drug.total_alerts} Alerts</span>
                   </div>
-                  <div style="font-size:10px; color:#64748b; margin-top:4px;">{drug.dose} • {drug.dosage_form}</div>
-                  <div style="margin-top:6px; background:#ffffff; border:1px solid #e2e8f0; padding:6px 8px; border-radius:3px; font-size:10px;">
-                    <span style="font-weight:600; color:#991b1b;">♥ VigiBase Risk Profile</span>
-                    <p style="color:#475569; margin:4px 0 0 0; font-size:9px; line-height:1.4;">{drug.vigibase_risks[0]['hazard']}: {drug.vigibase_risks[0]['desc']}</p>
+                  <div style="font-size:10px; color:#737373; margin-top:4px;">{drug.dose} • {drug.dosage_form}</div>
+                  <div style="margin-top:6px; background:#ffffff; border:1px solid #d9d9d9; padding:6px 8px; border-radius:3px; font-size:10px;">
+                    <span style="font-weight:600; color:#8a2b0a;">♥ VigiBase Risk Profile</span>
+                    <p style="color:#4a4a4a; margin:4px 0 0 0; font-size:9px; line-height:1.4;">{drug.vigibase_risks[0]['hazard']}: {drug.vigibase_risks[0]['desc']}</p>
                   </div>
                 </div>
                 """,
@@ -1414,8 +1416,8 @@ def render_catalog() -> None:
 
     st.markdown(
         """
-        <div class="cat-footer" style="padding:12px 0; margin-top:12px; border-top:1px solid #e2e8f0;">
-          <span style="font-weight:700; color:#475569; font-size:11px;">Linked Database:</span>
+        <div class="cat-footer" style="padding:12px 0; margin-top:12px; border-top:1px solid #d9d9d9;">
+          <span style="font-weight:700; color:#4a4a4a; font-size:11px;">Linked Database:</span>
           <code style="font-size:10px;">CDSCO Not of Standard Quality (NSQ) Drug Alerts List - Consolidated(1)_2.csv</code>
         </div>
         """,
@@ -1440,17 +1442,17 @@ def render_active_drug(drug: Drug) -> None:
         f"""
         <div class="nsq-card">
           <div style="display:flex; justify-content:space-between; align-items:flex-start;
-                      border-bottom:1px solid #e2e8f0; padding-bottom:16px; margin-bottom:16px;">
+                      border-bottom:1px solid #d9d9d9; padding-bottom:16px; margin-bottom:16px;">
             <div>
               <div class="nsq-eyebrow">Selected Formulation Core</div>
               <h2 class="nsq-title">{drug.name}</h2>
-              <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">
+              <p style="font-size:12px; color:#737373; margin:4px 0 0 0;">
                 GMP Baseline: {patent_html}
               </p>
             </div>
             <div style="text-align:right;">
               <div class="nsq-eyebrow">CDSCO Ref Status</div>
-              <div class="mono" style="font-size:11px; color:#475569; margin-top:4px;">
+              <div class="mono" style="font-size:11px; color:#4a4a4a; margin-top:4px;">
                 Indexed in database
               </div>
             </div>
@@ -1481,7 +1483,7 @@ def render_excipient_editor() -> None:
         <div class="nsq-card">
           <div class="nsq-eyebrow-row">
             <span class="nsq-eyebrow">Formula Core & Excipients (D2)</span>
-            <span class="mono" style="font-size:11px; color:#94a3b8;">
+            <span class="mono" style="font-size:11px; color:#b0b0b0;">
               Current items: <span id="ex-count">0</span>
             </span>
           </div>
@@ -1495,19 +1497,19 @@ def render_excipient_editor() -> None:
         cols[0].markdown(
             f"""
             <div>
-              <strong style="color:#0f172a;">{ex.name}</strong>
-              <span style="margin-left:8px; padding:2px 6px; background:#e2e8f0; color:#475569;
+              <strong style="color:#1a1a1a;">{ex.name}</strong>
+              <span style="margin-left:8px; padding:2px 6px; background:#d9d9d9; color:#4a4a4a;
                            border-radius:3px; font-size:9px; font-weight:800; text-transform:uppercase;">
                 {ex.role}
               </span>
-              <p style="font-size:10px; color:#94a3b8; margin:4px 0 0 0;">{ex.description}</p>
+              <p style="font-size:10px; color:#b0b0b0; margin:4px 0 0 0;">{ex.description}</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
         cols[1].markdown(
             f'<div style="text-align:right; font-family:ui-monospace,monospace; '
-            f'font-weight:700; color:#475569; padding-top:8px;">{ex.ratio:.1f}%</div>',
+            f'font-weight:700; color:#4a4a4a; padding-top:8px;">{ex.ratio:.1f}%</div>',
             unsafe_allow_html=True,
         )
         if cols[2].button("🗑", key=f"del_{idx}"):
@@ -1573,7 +1575,7 @@ def render_process_deck(drug: Drug) -> None:
         """
         <div class="nsq-card">
           <div class="nsq-eyebrow">Scale-Up Parameter Deck</div>
-          <p style="font-size:11px; color:#94a3b8; margin:4px 0 0 0;">
+          <p style="font-size:11px; color:#b0b0b0; margin:4px 0 0 0;">
             Simulate process values to trigger predictive failure diagnostics.
           </p>
         """,
@@ -1705,9 +1707,9 @@ def render_results() -> None:
         st.markdown(
             """
             <div class="empty-state">
-              <div style="font-size:24px; color:#cbd5e1;">🧪</div>
-              <p style="font-weight:600; margin:8px 0 4px 0; color:#64748b;">No active analysis.</p>
-              <p style="font-size:10px; color:#94a3b8;">
+              <div style="font-size:24px; color:#d9d9d9;">🧪</div>
+              <p style="font-weight:600; margin:8px 0 4px 0; color:#737373;">No active analysis.</p>
+              <p style="font-size:10px; color:#b0b0b0;">
                 Initialize the process parameters on the left and execute the
                 process review engine.
               </p>
@@ -1737,10 +1739,10 @@ def render_results() -> None:
         f"""
         <div class="nsq-card">
           <div style="display:flex; justify-content:space-between; align-items:center;
-                      border-bottom:1px solid #e2e8f0; padding-bottom:12px;">
+                      border-bottom:1px solid #d9d9d9; padding-bottom:12px;">
             <div>
               <div class="nsq-eyebrow">Process Assessment Grade</div>
-              <p style="font-size:10px; color:#94a3b8; margin:4px 0 0 0;">
+              <p style="font-size:10px; color:#b0b0b0; margin:4px 0 0 0;">
                 Based on reference compliance matching.
               </p>
             </div>
@@ -1752,7 +1754,7 @@ def render_results() -> None:
             {feedback_html}
           </div>
 
-          <div style="margin-top:16px; padding-top:12px; border-top:1px solid #e2e8f0;">
+          <div style="margin-top:16px; padding-top:12px; border-top:1px solid #d9d9d9;">
             <div class="nsq-eyebrow" style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
               <span>📄</span> Agent Diagnostic Log
             </div>

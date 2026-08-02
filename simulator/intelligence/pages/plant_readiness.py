@@ -23,6 +23,7 @@ from intelligence.api_client import (
     list_plants,
     score,
 )
+from intelligence.palette import THEME
 from intelligence.ui_components import (
     anime_entrance,
     metric_tile,
@@ -55,7 +56,7 @@ def _render_complexity(complexity: dict | None) -> None:
     if cqas:
         st.markdown(
             "".join(
-                f"<span style='padding:2px 6px; border-radius:3px; background:#e2e8f0; color:#475569; font-size:10px; margin-right:6px;'>{c}</span>"
+                f"<span style='padding:2px 6px; border-radius:3px; background:{THEME['surface_subtle']}; color:{THEME['text_secondary']}; font-size:10px; margin-right:6px;'>{c}</span>"
                 for c in cqas
             ),
             unsafe_allow_html=True,

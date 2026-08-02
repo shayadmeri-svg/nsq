@@ -6,7 +6,7 @@
   <title>NSQ Analytics Home</title>
   <!-- Fallback message rendered if JS fails or is disabled -->
   <noscript>
-    <div style="padding:2rem; text-align:center; color:#ef4444;">
+    <div style="padding:2rem; text-align:center; color:#D55E00;">
       <h2>JavaScript is required to view the NSQ Analytics home page.</h2>
       <p>Please enable JavaScript in your browser and reload.</p>
     </div>
@@ -15,15 +15,15 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
     :root {
-      --bg-dark: #0f172a;
-      --bg-section: #f8fafc;
-      --text-light: #f1f5f9;
-      --text-dark: #1e293b;
-      --accent: #ef4444;
-      --accent-light: #fca5a5;
+      --bg-dark: #1a1a1a;
+      --bg-section: #fafafa;
+      --text-light: #f5f5f5;
+      --text-dark: #1a1a1a;
+      --accent: #0072B2;
+      --accent-light: #56B4E9;
       --pill-bg: #ffffff;
-      --map-stroke: #94a3b8;
-      --disputed-stroke: #64748b;
+      --map-stroke: #b0b0b0;
+      --disputed-stroke: #737373;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -44,7 +44,7 @@
       justify-content: center;
       align-items: center;
       text-align: center;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      background: linear-gradient(135deg, #1a1a1a 0%, #262626 100%);
       color: var(--text-light);
       padding: 2rem;
     }
@@ -56,7 +56,7 @@
     }
     .hero .subtitle {
       font-size: clamp(1rem, 2vw, 1.4rem);
-      color: #94a3b8;
+      color: #b0b0b0;
       max-width: 700px;
       margin: 0 auto 2rem;
       min-height: 3rem;
@@ -71,7 +71,7 @@
       padding: 0.6rem 1.2rem;
       backdrop-filter: blur(8px);
     }
-    .product-pill label { color: #cbd5e1; font-size: 0.9rem; }
+    .product-pill label { color: #d9d9d9; font-size: 0.9rem; }
     .product-pill select {
       background: transparent;
       border: none;
@@ -82,13 +82,13 @@
       cursor: pointer;
       max-width: 280px;
     }
-    .product-pill select option { color: #0f172a; }
+    .product-pill select option { color: #1a1a1a; }
     .scroll-cue {
       position: absolute;
       bottom: 2rem;
       left: 50%;
       transform: translateX(-50%);
-      color: #94a3b8;
+      color: #b0b0b0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -114,7 +114,7 @@
       color: var(--text-dark);
     }
     .section-header p {
-      color: #64748b;
+      color: #737373;
       max-width: 700px;
       margin: 0 auto;
     }
@@ -143,7 +143,7 @@
       display: block;
       font-size: 0.8rem;
       font-weight: 600;
-      color: #64748b;
+      color: #737373;
       margin-bottom: 0.35rem;
       text-transform: uppercase;
       letter-spacing: 0.03em;
@@ -152,7 +152,7 @@
     .filter-group input {
       width: 100%;
       padding: 0.5rem 0.7rem;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #d9d9d9;
       border-radius: 8px;
       font-size: 0.9rem;
       background: #fff;
@@ -169,7 +169,7 @@
     }
     .btn:hover { transform: translateY(-1px); }
     .btn-primary { background: var(--accent); color: #fff; }
-    .btn-secondary { background: #e2e8f0; color: #334155; margin-top: 0.5rem; }
+    .btn-secondary { background: #d9d9d9; color: #4a4a4a; margin-top: 0.5rem; }
     .map-wrap {
       background: #fff;
       border-radius: 16px;
@@ -189,19 +189,19 @@
       align-items: center;
       gap: 0.5rem;
       font-size: 0.8rem;
-      color: #64748b;
+      color: #737373;
     }
     .legend-gradient {
       width: 120px;
       height: 12px;
       border-radius: 6px;
-      background: linear-gradient(to right, #fee2e2, #b91c1c);
+      background: linear-gradient(to right, #ffebe6, #D55E00);
     }
     #map-svg { width: 100%; height: auto; }
     .map-tooltip {
       position: absolute;
       pointer-events: none;
-      background: rgba(15, 23, 42, 0.95);
+      background: rgba(26, 26, 26, 0.95);
       color: #fff;
       padding: 0.75rem 1rem;
       border-radius: 10px;
@@ -254,28 +254,28 @@
     .corr-table th, .corr-table td {
       padding: 0.75rem 1rem;
       text-align: left;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid #d9d9d9;
     }
     .corr-table th {
-      background: #f1f5f9;
+      background: #f2f2f2;
       font-weight: 600;
-      color: #475569;
+      color: #4a4a4a;
       position: sticky;
       top: 0;
       z-index: 10;
     }
     .corr-table td { cursor: pointer; transition: background 0.15s; }
-    .corr-table td:hover { background: #f8fafc; }
+    .corr-table td:hover { background: #fafafa; }
     .cell-heat {
       font-weight: 700;
-      color: #1e293b;
+      color: #262626;
     }
-    .cell-empty { color: #cbd5e1; }
+    .cell-empty { color: #d9d9d9; }
     .corr-product-badge {
       text-align: center;
       margin-bottom: 1rem;
       font-size: 1.1rem;
-      color: #64748b;
+      color: #737373;
     }
     .corr-product-badge strong { color: var(--accent); }
 
@@ -294,7 +294,7 @@
     }
     .risk-card h3 { margin: 0 0 1rem; font-size: 1.3rem; }
     .risk-card ul { margin: 0; padding-left: 1.2rem; }
-    .risk-card li { margin-bottom: 0.6rem; color: #475569; }
+    .risk-card li { margin-bottom: 0.6rem; color: #4a4a4a; }
     .solutions-blur {
       filter: blur(8px);
       transition: filter 0.6s ease;
@@ -324,7 +324,7 @@
       bottom: 1.5rem;
       right: 1.5rem;
       z-index: 1000;
-      background: #0f172a;
+      background: #1a1a1a;
       color: #fff;
       border-radius: 999px;
       padding: 0.9rem 1.6rem;
@@ -336,7 +336,7 @@
       gap: 0.5rem;
       border: 1px solid rgba(255,255,255,0.1);
     }
-    .contact-pill:hover { background: #1e293b; }
+    .contact-pill:hover { background: #262626; }
 
     /* Modal */
     .modal-overlay {
@@ -360,7 +360,7 @@
       width: 100%;
       margin-bottom: 0.75rem;
       padding: 0.7rem;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #d9d9d9;
       border-radius: 10px;
       font-size: 0.95rem;
     }
@@ -372,18 +372,18 @@
     .gateway {
       text-align: center;
       padding: 4rem 1.5rem;
-      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      background: linear-gradient(135deg, #262626 0%, #1a1a1a 100%);
       color: #fff;
     }
     .gateway h2 { margin: 0 0 1rem; font-size: 2rem; }
-    .gateway p { color: #94a3b8; margin-bottom: 1.5rem; }
+    .gateway p { color: #b0b0b0; margin-bottom: 1.5rem; }
     .gateway .btn {
       display: inline-block;
       width: auto;
       padding: 0.9rem 2rem;
       font-size: 1rem;
       background: #fff;
-      color: #0f172a;
+      color: #1a1a1a;
     }
 
     /* Animation reveal helpers */
@@ -601,16 +601,18 @@
       return `${yy}-${mm}`;
     }
 
+    const scientificColor = d3.scaleLinear()
+      .domain([0, 0.25, 0.5, 0.75, 1])
+      .range(["#f2f2f2", "#56B4E9", "#0072B2", "#CC79A7", "#D55E00"]);
+
     function colorScale(count, max) {
-      if (!max || count === 0) return "#f1f5f9";
-      const t = count / max;
-      return d3.interpolateReds(0.15 + t * 0.85);
+      if (!max || count === 0) return "#f2f2f2";
+      return scientificColor(count / max);
     }
 
     function heatColor(count, max) {
       if (!max || count === 0) return "transparent";
-      const t = count / max;
-      return d3.interpolateOrRd(0.2 + t * 0.8);
+      return scientificColor(count / max);
     }
 
     // -----------------------------------------------------------------------
@@ -733,15 +735,15 @@
             const c = countsByRegion[d.properties.name] || 0;
             return colorScale(c, maxCount);
           }
-          if (d.properties.type === "disputed") return "#d1d5db";
-          return "#e2e8f0";
+          if (d.properties.type === "disputed") return "#d9d9d9";
+          return "#d9d9d9";
         })
-        .attr("stroke", d => d.properties.type === "disputed" ? "#64748b" : (d.properties.type === "neighbour" ? "#cbd5e1" : "#fff"))
+        .attr("stroke", d => d.properties.type === "disputed" ? "#737373" : (d.properties.type === "neighbour" ? "#d9d9d9" : "#fff"))
         .attr("stroke-width", d => d.properties.type === "disputed" ? 1.5 : 1)
         .attr("stroke-dasharray", d => d.properties.type === "disputed" ? "4,3" : "none")
         .on("mouseenter", function(event, d) {
           if (d.properties.type !== "india_state") return;
-          d3.select(this).attr("stroke", "#0f172a").attr("stroke-width", 2);
+          d3.select(this).attr("stroke", "#1a1a1a").attr("stroke-width", 2);
           const name = d.properties.name;
           const count = countsByRegion[name] || 0;
           const meta = data.regions.find(r => r.name === name) || {};
@@ -757,7 +759,7 @@
           tooltip.style.top = (event.clientY - rect.top + 12) + "px";
         })
         .on("mouseleave", function(event, d) {
-          d3.select(this).attr("stroke", d.properties.type === "disputed" ? "#64748b" : (d.properties.type === "neighbour" ? "#cbd5e1" : "#fff")).attr("stroke-width", d.properties.type === "disputed" ? 1.5 : 1);
+          d3.select(this).attr("stroke", d.properties.type === "disputed" ? "#737373" : (d.properties.type === "neighbour" ? "#d9d9d9" : "#fff")).attr("stroke-width", d.properties.type === "disputed" ? 1.5 : 1);
           tooltip.style.opacity = 0;
         });
 
@@ -770,7 +772,7 @@
         .attr("y", d => path.centroid(d)[1])
         .attr("text-anchor", "middle")
         .attr("font-size", "11px")
-        .attr("fill", "#64748b")
+        .attr("fill", "#737373")
         .attr("pointer-events", "none")
         .text(d => d.properties.name);
 
@@ -978,7 +980,7 @@
       const pill = document.getElementById("contact-pill");
       const original = pill.innerHTML;
       pill.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Message logged`;
-      pill.style.background = "#16a34a";
+      pill.style.background = "#009E73";
       setTimeout(() => {
         pill.innerHTML = original;
         pill.style.background = "";

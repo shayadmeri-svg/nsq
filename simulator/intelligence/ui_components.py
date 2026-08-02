@@ -18,6 +18,23 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit.components.v1 import html
 
+from intelligence.palette import (
+    BLUE,
+    BLUISH_GREEN,
+    CHART_COLORWAY,
+    CONTINUOUS_SCALE,
+    DARK_GREY,
+    GREY,
+    MID_GREY,
+    ORANGE,
+    REDDISH_PURPLE,
+    THEME,
+    VERMILION,
+    WHITE,
+    css_variables,
+    tier_color,
+)
+
 
 # ---------------------------------------------------------------------------
 # Monochrome SVG icon library
@@ -155,8 +172,8 @@ _BIOICONS: dict[str, str] = {
 }
 
 
-def bioicon(name: str, size: int = 24, color: str = "#0f172a") -> str:
-    """Return a monochrome SVG icon as a raw HTML string."""
+def bioicon(name: str, size: int = 24, color: str = THEME["primary"]) -> str:
+    """Return a scientific-themed SVG icon as a raw HTML string."""
     svg = _BIOICONS.get(name, _BIOICONS["molecule"])
     return f"""
     <div class="bioicon" style="display:inline-flex; width:{size}px; height:{size}px; color:{color}; vertical-align:middle;">
@@ -165,7 +182,7 @@ def bioicon(name: str, size: int = 24, color: str = "#0f172a") -> str:
     """
 
 
-def bioicon_inline(name: str, size: int = 20, color: str = "#0f172a", margin_right: int = 4) -> str:
+def bioicon_inline(name: str, size: int = 20, color: str = THEME["primary"], margin_right: int = 4) -> str:
     """Return a smaller inline icon suitable for labels and badges."""
     svg = _BIOICONS.get(name, _BIOICONS["molecule"])
     return f"""
@@ -178,12 +195,12 @@ def bioicon_inline(name: str, size: int = 20, color: str = "#0f172a", margin_rig
 # ---------------------------------------------------------------------------
 # Global theme + layout helpers
 # ---------------------------------------------------------------------------
-MONOCHROME_CSS = """
+SCIENTIFIC_CSS = """
 <style>
-  .stApp { background-color: #f8fafc; }
+  .stApp { background-color: var(--nsq-bg); }
   html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #0f172a;
+    color: var(--nsq-text);
   }
   /* Hide Streamlit default sidebar on engine pages */
   [data-testid="stSidebar"] { display: none; }
@@ -194,17 +211,17 @@ MONOCHROME_CSS = """
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #64748b;
+    color: var(--nsq-text-muted);
   }
   .cdmo-page-title {
     font-size: 22px;
     font-weight: 900;
-    color: #0f172a;
+    color: var(--nsq-text);
     margin: 4px 0 0 0;
   }
   .cdmo-page-subtitle {
     font-size: 12px;
-    color: #64748b;
+    color: var(--nsq-text-secondary);
     margin: 4px 0 0 0;
   }
   /* Feature cards */
@@ -231,8 +248,8 @@ MONOCHROME_CSS = """
     display: none !important;
   }
   .cdmo-feature-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--nsq-surface);
+    border: 1px solid var(--nsq-border);
     border-radius: 6px;
     padding: 16px;
     cursor: pointer;
@@ -241,47 +258,47 @@ MONOCHROME_CSS = """
     pointer-events: none;
   }
   .cdmo-feature-card:hover {
-    border-color: #94a3b8;
-    box-shadow: 0 2px 8px rgba(15,23,42,0.05);
+    border-color: var(--nsq-border-strong);
+    box-shadow: 0 2px 8px rgba(26,26,26,0.05);
   }
   .cdmo-feature-card.active {
-    border-color: #0f172a;
-    box-shadow: 0 2px 8px rgba(15,23,42,0.08);
+    border-color: var(--nsq-primary);
+    box-shadow: 0 2px 8px rgba(0,114,178,0.10);
   }
   .cdmo-feature-icon {
     width: 28px;
     height: 28px;
-    color: #0f172a;
+    color: var(--nsq-primary);
     margin-bottom: 8px;
   }
   .cdmo-feature-title {
     font-size: 13px;
     font-weight: 800;
-    color: #0f172a;
+    color: var(--nsq-text);
     margin: 0 0 4px 0;
   }
   .cdmo-feature-desc {
     font-size: 11px;
-    color: #64748b;
+    color: var(--nsq-text-secondary);
     line-height: 1.4;
     margin: 0;
   }
   /* Metric tile */
   .cdmo-metric {
     text-align: center;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--nsq-border);
     border-radius: 4px;
     padding: 12px;
-    background: #ffffff;
+    background: var(--nsq-surface);
   }
   .cdmo-metric-value {
     font-size: 28px;
     font-weight: 900;
-    color: #0f172a;
+    color: var(--nsq-primary);
   }
   .cdmo-metric-label {
     font-size: 10px;
-    color: #64748b;
+    color: var(--nsq-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-top: 4px;
@@ -297,8 +314,8 @@ MONOCHROME_CSS = """
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--nsq-surface);
+    border: 1px solid var(--nsq-border);
     border-radius: 6px;
     padding: 10px 12px;
     margin-bottom: 16px;
@@ -307,22 +324,22 @@ MONOCHROME_CSS = """
     scrollbar-width: thin;
   }
   .cdmo-stepper::-webkit-scrollbar { height: 4px; }
-  .cdmo-stepper::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+  .cdmo-stepper::-webkit-scrollbar-thumb { background: var(--nsq-border-strong); border-radius: 2px; }
   .cdmo-step {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     font-size: 11px;
     font-weight: 700;
-    color: #94a3b8;
+    color: var(--nsq-text-muted);
     white-space: nowrap;
     flex: 0 0 auto;
   }
   .cdmo-step.active {
-    color: #0f172a;
+    color: var(--nsq-primary);
   }
   .cdmo-step.completed {
-    color: #15803d;
+    color: var(--nsq-success);
   }
   .cdmo-step-number {
     width: 20px;
@@ -342,15 +359,15 @@ MONOCHROME_CSS = """
     align-items: center;
     justify-content: center;
     flex: 0 0 14px;
-    color: #15803d;
+    color: var(--nsq-success);
   }
-  .cdmo-step-check { color: #15803d; }
+  .cdmo-step-check { color: var(--nsq-success); }
   .cdmo-step-divider {
     flex: 0 0 auto;
     width: 16px;
     min-width: 16px;
     height: 1px;
-    background: #e2e8f0;
+    background: var(--nsq-border);
     margin: 0;
   }
   .cdmo-step-label { display: inline; white-space: nowrap; }
@@ -366,9 +383,9 @@ MONOCHROME_CSS = """
     align-items: center;
     gap: 4px;
     padding: 3px 8px;
-    background: #fef3c7;
-    color: #92400e;
-    border: 1px solid #fde68a;
+    background: #fff9e6;
+    color: #8c6b00;
+    border: 1px solid #f0e442;
     border-radius: 999px;
     font-size: 10px;
     font-weight: 800;
@@ -378,7 +395,7 @@ MONOCHROME_CSS = """
   /* Chart annotation */
   .cdmo-chart-caption {
     font-size: 10px;
-    color: #64748b;
+    color: var(--nsq-text-muted);
     margin-top: 4px;
   }
 </style>
@@ -386,8 +403,9 @@ MONOCHROME_CSS = """
 
 
 def apply_global_theme() -> None:
-    """Inject monochrome CSS and collapse the default sidebar."""
-    st.markdown(MONOCHROME_CSS, unsafe_allow_html=True)
+    """Inject the scientific color theme and collapse the default sidebar."""
+    st.markdown(css_variables(), unsafe_allow_html=True)
+    st.markdown(SCIENTIFIC_CSS, unsafe_allow_html=True)
     st.set_page_config(
         page_title="CDMO Off-Patent Intelligence Engine",
         page_icon="🧬",
@@ -400,8 +418,8 @@ def page_header(pillar: str, title: str, subtitle: str, icon: str = "molecule") 
     """Render a consistent page header with eyebrow, title, and subtitle."""
     st.markdown(
         f"""
-        <div style="padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; margin-bottom: 16px;">
-          <div class="cdmo-section-title">{bioicon_inline(icon, 14, '#64748b')}{pillar}</div>
+        <div style="padding-bottom: 12px; border-bottom: 1px solid {THEME['border']}; margin-bottom: 16px;">
+          <div class="cdmo-section-title">{bioicon_inline(icon, 14, THEME['text_muted'])}{pillar}</div>
           <h2 class="cdmo-page-title">{title}</h2>
           <p class="cdmo-page-subtitle">{subtitle}</p>
         </div>
@@ -430,7 +448,7 @@ def feature_card(
     st.markdown(
         f"""
         <div class="{cls}" id="card-{key}">
-          <div class="cdmo-feature-icon">{bioicon(icon, 28, '#0f172a')}</div>
+          <div class="cdmo-feature-icon">{bioicon(icon, 28, THEME['primary'])}</div>
           <div class="cdmo-feature-title">{title}</div>
           <div class="cdmo-feature-desc">{description}</div>
         </div>
@@ -461,7 +479,7 @@ def stepper(steps: list[str], current_index: int) -> None:
             label_html = f'<span class="cdmo-step-label">{label}</span>'
         elif i == current_index:
             cls = "cdmo-step active"
-            num = f'<div class="cdmo-step-number" style="background:#0f172a;color:#fff;border-color:#0f172a;">{i+1}</div>'
+            num = f'<div class="cdmo-step-number" style="background:{THEME["primary"]};color:#fff;border-color:{THEME["primary"]};">{i+1}</div>'
             label_html = f'<span class="cdmo-step-label">{label}</span>'
         else:
             cls = "cdmo-step"
@@ -483,7 +501,7 @@ def mock_data_badge(use_mock: bool = True) -> None:
     st.markdown(
         f"""
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-          <span class="cdmo-mock-badge">{bioicon_inline('warning', 12, '#92400e')}Representative seed data — not live API</span>
+          <span class="cdmo-mock-badge">{bioicon_inline('warning', 12, '#8c6b00')}Representative seed data — not live API</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -555,11 +573,12 @@ def anime_pulse(selector: str = ".cdmo-metric-value") -> None:
 # ---------------------------------------------------------------------------
 # Plotly chart helpers with scientific annotations
 # ---------------------------------------------------------------------------
-def _slate_layout() -> dict[str, Any]:
+def _scientific_layout() -> dict[str, Any]:
     return {
         "paper_bgcolor": "rgba(0,0,0,0)",
         "plot_bgcolor": "rgba(0,0,0,0)",
-        "font": {"family": "Inter, -apple-system, BlinkMacSystemFont, sans-serif", "color": "#0f172a", "size": 11},
+        "colorway": CHART_COLORWAY,
+        "font": {"family": "Inter, -apple-system, BlinkMacSystemFont, sans-serif", "color": THEME["text"], "size": 11},
         "margin": {"l": 48, "r": 16, "t": 48, "b": 64},
         "legend": {"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
     }
@@ -573,7 +592,7 @@ def scientific_bar_chart(
     y_label: str,
     source: str,
     stat_note: str = "",
-    color: str = "#0f172a",
+    color: str = BLUE,
     hover_template: str = "%{x}<br>%{y:.1f}<extra></extra>",
 ) -> go.Figure:
     """Create a publication-style horizontal or vertical bar chart."""
@@ -586,10 +605,10 @@ def scientific_bar_chart(
         )
     )
     fig.update_layout(
-        title={"text": title, "font": {"size": 14, "color": "#0f172a"}, "x": 0, "xanchor": "left"},
+        title={"text": title, "font": {"size": 14, "color": THEME["text"]}, "x": 0, "xanchor": "left"},
         xaxis_title=x.replace("_", " ").title(),
         yaxis_title=y_label,
-        **_slate_layout(),
+        **_scientific_layout(),
     )
     fig.add_annotation(
         text=f"Source: {source}. {stat_note}".strip(),
@@ -598,7 +617,7 @@ def scientific_bar_chart(
         x=0,
         y=-0.18,
         showarrow=False,
-        font={"size": 9, "color": "#64748b"},
+        font={"size": 9, "color": THEME["text_muted"]},
         align="left",
     )
     return fig
@@ -629,7 +648,7 @@ def scientific_scatter(
     else:
         marker_size = size_col
     if color_col is None:
-        marker_color: Any = "#0f172a"
+        marker_color: Any = BLUE
     else:
         marker_color = df[color_col]
     fig = go.Figure(
@@ -640,10 +659,10 @@ def scientific_scatter(
             marker={
                 "size": marker_size,
                 "color": marker_color,
-                "colorscale": "Greys",
+                "colorscale": CONTINUOUS_SCALE,
                 "showscale": bool(color_col),
                 "colorbar": {"title": color_col.replace("_", " ").title() if color_col else ""},
-                "line": {"width": 1, "color": "#ffffff"},
+                "line": {"width": 1, "color": WHITE},
             },
             text=df[hover_name] if hover_name else None,
             hovertemplate=(
@@ -654,10 +673,10 @@ def scientific_scatter(
         )
     )
     fig.update_layout(
-        title={"text": title, "font": {"size": 14, "color": "#0f172a"}, "x": 0, "xanchor": "left"},
+        title={"text": title, "font": {"size": 14, "color": THEME["text"]}, "x": 0, "xanchor": "left"},
         xaxis_title=x_label,
         yaxis_title=y_label,
-        **_slate_layout(),
+        **_scientific_layout(),
     )
     fig.add_annotation(
         text=f"Source: {source}. {stat_note}".strip(),
@@ -666,7 +685,7 @@ def scientific_scatter(
         x=0,
         y=-0.18,
         showarrow=False,
-        font={"size": 9, "color": "#64748b"},
+        font={"size": 9, "color": THEME["text_muted"]},
         align="left",
     )
     return fig
@@ -692,17 +711,17 @@ def scientific_box_or_strip(
                 boxpoints="all",
                 jitter=0.3,
                 pointpos=-1.8,
-                marker_color="#0f172a",
-                line_color="#64748b",
-                fillcolor="rgba(15,23,42,0.04)",
+                marker_color=BLUE,
+                line_color=MID_GREY,
+                fillcolor="rgba(0,114,178,0.06)",
                 hovertemplate=f"{x}: %{{x}}<br>{y_label}: %{{y:.1f}}<extra></extra>",
             )
         )
     fig.update_layout(
-        title={"text": title, "font": {"size": 14, "color": "#0f172a"}, "x": 0, "xanchor": "left"},
+        title={"text": title, "font": {"size": 14, "color": THEME["text"]}, "x": 0, "xanchor": "left"},
         xaxis_title=x.replace("_", " ").title(),
         yaxis_title=y_label,
-        **_slate_layout(),
+        **_scientific_layout(),
     )
     fig.add_annotation(
         text=f"Source: {source}. {stat_note}".strip(),
@@ -711,7 +730,7 @@ def scientific_box_or_strip(
         x=0,
         y=-0.18,
         showarrow=False,
-        font={"size": 9, "color": "#64748b"},
+        font={"size": 9, "color": THEME["text_muted"]},
         align="left",
     )
     return fig
@@ -734,27 +753,14 @@ def tier_badge(tier: str, tiers: dict[str, str] | str | None = None) -> str:
       - a dict mapping label -> CSS color or semantic name
         (success/warning/danger/info)
       - a single semantic/color string applied to this badge
-    Defaults to the commercial-fit color palette.
+    Defaults to the Okabe-Ito scientific palette.
     """
-    palette = {
-        "success": "#15803d",
-        "core": "#0ea5e9",
-        "adjacent": "#eab308",
-        "stretch": "#ef4444",
-        "strategic": "#15803d",
-        "warning": "#eab308",
-        "danger": "#ef4444",
-        "info": "#64748b",
-        "low": "#15803d",
-        "medium": "#eab308",
-        "high": "#ef4444",
-    }
-    color = palette.get(tier, "#64748b")
+    color = tier_color(tier)
     if isinstance(tiers, dict):
         mapped = tiers.get(tier, tier)
-        color = palette.get(mapped, mapped)
+        color = tier_color(mapped)
     elif isinstance(tiers, str):
-        color = palette.get(tiers, tiers)
+        color = tier_color(tiers)
     return f"""
     <span style="padding:2px 6px; border-radius:3px; background:{color}; color:#fff; font-size:10px; font-weight:800; text-transform:uppercase;">
       {tier}
@@ -764,15 +770,15 @@ def tier_badge(tier: str, tiers: dict[str, str] | str | None = None) -> str:
 
 def inline_warning(text: str) -> str:
     return f"""
-    <div style="padding:8px 10px; background:#fef2f2; border-left:3px solid #ef4444; margin-bottom:8px; font-size:12px; color:#991b1b;">
-      {bioicon_inline('warning', 14, '#991b1b')}{text}
+    <div style="padding:8px 10px; background:#ffebe6; border-left:3px solid {VERMILION}; margin-bottom:8px; font-size:12px; color:#8a2b0a;">
+      {bioicon_inline('warning', 14, VERMILION)}{text}
     </div>
     """
 
 
 def inline_info(text: str) -> str:
     return f"""
-    <div style="padding:8px 10px; background:#f8fafc; border-left:3px solid #64748b; margin-bottom:8px; font-size:12px; color:#475569;">
-      {bioicon_inline('info', 14, '#475569')}{text}
+    <div style="padding:8px 10px; background:{THEME['surface_subtle']}; border-left:3px solid {MID_GREY}; margin-bottom:8px; font-size:12px; color:{DARK_GREY};">
+      {bioicon_inline('info', 14, MID_GREY)}{text}
     </div>
     """

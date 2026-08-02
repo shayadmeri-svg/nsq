@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from intelligence.api_client import get_molecule, list_molecules, list_plants, score
+from intelligence.palette import BLUE, THEME
 from intelligence.ui_components import (
     anime_entrance,
     metric_tile,
@@ -127,8 +128,8 @@ def render() -> None:
             r=score_values + [score_values[0]],
             theta=score_labels + [score_labels[0]],
             fill="toself",
-            line_color="#0f172a",
-            fillcolor="rgba(15,23,42,0.12)",
+            line_color=BLUE,
+            fillcolor="rgba(0,114,178,0.12)",
             name=f"{selected_brand} × {selected_plant_label}",
         )
     )
@@ -138,7 +139,7 @@ def render() -> None:
         margin=dict(l=32, r=32, t=48, b=32),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, sans-serif", size=12, color="#0f172a"),
+        font=dict(family="Inter, sans-serif", size=12, color=THEME["text"]),
         title=dict(
             text="Pillar score profile (n=4 weighted dimensions)",
             font=dict(size=14),
@@ -151,7 +152,7 @@ def render() -> None:
                 yref="paper",
                 text="Source: engine scoring model | Representative seed data",
                 showarrow=False,
-                font=dict(size=10, color="#64748b"),
+                font=dict(size=10, color=THEME["text_muted"]),
             )
         ],
     )

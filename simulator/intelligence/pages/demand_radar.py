@@ -19,6 +19,7 @@ from intelligence.api_client import (
     list_plants,
     score,
 )
+from intelligence.palette import BLUE, THEME, cluster_color, risk_color
 from intelligence.ui_components import mock_data_badge, page_header, scientific_scatter, render_chart
 
 
@@ -27,19 +28,11 @@ def _badge(label: str, color: str) -> str:
 
 
 def _fto_color(risk: str) -> str:
-    return {"low": "#22c55e", "medium": "#eab308", "high": "#ef4444"}.get(risk, "#94a3b8")
+    return risk_color(risk)
 
 
 def _cluster_color(cluster: str) -> str:
-    return {
-        "oncology": "#8b5cf6",
-        "specialty injectable": "#06b6d4",
-        "immunology": "#f97316",
-        "lifestyle / chronic": "#0ea5e9",
-        "lifestyle/chronic": "#0ea5e9",
-        "lifestyle": "#0ea5e9",
-        "commodity": "#64748b",
-    }.get((cluster or "").lower(), "#64748b")
+    return cluster_color(cluster)
 
 
 def _merge_pillar_summary(molecules, demand_list, regulatory_list):
@@ -206,9 +199,9 @@ def render() -> None:
         st.dataframe(score_df, use_container_width=True, hide_index=True)
         st.markdown(
             f"""
-            <div style="border:1px solid #e2e8f0; border-radius:6px; padding:16px; background:#ffffff; text-align:center;">
-              <div style="font-size:12px; color:#64748b;">Total CDMO Score</div>
-              <div style="font-size:40px; font-weight:900; color:#0f172a;">{r['total_score']:.0f}</div>
+            <div style="border:1px solid {THEME['border']}; border-radius:6px; padding:16px; background:{THEME['surface']}; text-align:center;">
+              <div style="font-size:12px; color:{THEME['text_muted']};">Total CDMO Score</div>
+              <div style="font-size:40px; font-weight:900; color:{THEME['primary']};">{r['total_score']:.0f}</div>
             </div>
             """,
             unsafe_allow_html=True,

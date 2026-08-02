@@ -33,17 +33,27 @@ st.set_page_config(
 )
 
 # Custom Styling for Titles and Metric Cards
+# Scientific, colorblind-safe palette used for charts and UI accents.
+_SCIENTIFIC_COLORWAY = [
+    "#0072B2", "#E69F00", "#009E73", "#D55E00",
+    "#56B4E9", "#CC79A7", "#F0E442", "#999999",
+]
+_SCIENTIFIC_CONTINUOUS = [
+    [0.0, "#f2f2f2"], [0.25, "#56B4E9"],
+    [0.5, "#0072B2"], [0.75, "#CC79A7"], [1.0, "#D55E00"],
+]
+
 st.markdown("""
     <style>
     .metric-card {
-        background-color: #f8f9fa;
+        background-color: #fafafa;
         padding: 15px;
         border-radius: 10px;
-        border-left: 5px solid #ff4b4b;
+        border-left: 5px solid #0072B2;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    .metric-title { font-size: 14px; color: #6c757d; margin-bottom: 5px; }
-    .metric-value { font-size: 24px; font-weight: bold; color: #1c2d42; }
+    .metric-title { font-size: 14px; color: #737373; margin-bottom: 5px; }
+    .metric-value { font-size: 24px; font-weight: bold; color: #1a1a1a; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -495,7 +505,7 @@ with tab1:
             top_products, x='Total Incidents', y='Product Name', orientation='h',
             labels={'Total Incidents': 'Alert Counts Recorded', 'Product Name': 'Commercial Formulation Name'},
             title="Top 10 Flagged Products within Selected View Filters",
-            color='Total Incidents', color_continuous_scale='Reds'
+            color='Total Incidents', color_continuous_scale=_SCIENTIFIC_CONTINUOUS
         )
         fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, coloraxis_showscale=False)
         st.plotly_chart(fig_bar, use_container_width=True)
@@ -513,7 +523,7 @@ with tab1:
             form_counts, x='Form Factor', y='Alert Volume',
             labels={'Form Factor': 'Formulation Form Type', 'Alert Volume': 'Alert Count'},
             title="Alert Volume Categorized by Dosage Form Factors",
-            color='Alert Volume', color_continuous_scale='Blues'
+            color='Alert Volume', color_continuous_scale=_SCIENTIFIC_CONTINUOUS
         )
         st.plotly_chart(fig_form, use_container_width=True)
 
@@ -527,7 +537,7 @@ with tab1:
         fig_pie = px.pie(
             cat_counts, values='Alert Volume', names='Failure Category',
             title="Failure Category Breakdown (Harmonized from NSQ Result)",
-            color_discrete_sequence=px.colors.qualitative.Pastel
+            color_discrete_sequence=_SCIENTIFIC_COLORWAY
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig_pie, use_container_width=True)

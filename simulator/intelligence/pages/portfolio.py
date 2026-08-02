@@ -16,6 +16,7 @@ import streamlit as st
 
 from intelligence.api_client import export_portfolio, list_demand, list_molecules, list_plants, load_portfolio, save_portfolio, score_portfolio
 from intelligence.intelligence_models import PortfolioScenario
+from intelligence.palette import BLUE, THEME, cluster_color
 from intelligence.ui_components import (
     bioicon_inline,
     feature_card,
@@ -30,15 +31,7 @@ from intelligence.ui_components import (
 
 
 def _cluster_color(cluster: str) -> str:
-    return {
-        "oncology": "#8b5cf6",
-        "specialty injectable": "#06b6d4",
-        "immunology": "#f97316",
-        "lifestyle / chronic": "#0ea5e9",
-        "lifestyle/chronic": "#0ea5e9",
-        "lifestyle": "#0ea5e9",
-        "commodity": "#64748b",
-    }.get((cluster or "").lower(), "#64748b")
+    return cluster_color(cluster)
 
 
 def _build_scenario_from_ui(portfolio_id: str, name: str, description: str, use_mock: bool) -> PortfolioScenario:
@@ -144,7 +137,7 @@ def _render_decision_cards(entries: list[dict]) -> None:
                     f"""
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
                       {tier_badge(e.get('commercial_fit_tier', 'stretch'))}
-                      <span style="font-size:12px; color:#64748b;">Modality: {e.get('modality', '—')} | Form: {e.get('drug_form', '—')} | Sterility: {'Yes' if e.get('sterility_required') else 'No'}</span>
+                      <span style="font-size:12px; color:{THEME['text_secondary']};">Modality: {e.get('modality', '—')} | Form: {e.get('drug_form', '—')} | Sterility: {'Yes' if e.get('sterility_required') else 'No'}</span>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -194,7 +187,7 @@ def _render_charts(entries: list[dict], weights: dict) -> None:
             stat_note="Score = weighted mean of patent ({:.0f}%), regulatory ({:.0f}%), demand ({:.0f}%), plant ({:.0f}%).".format(
                 weights["patent"] * 100, weights["regulatory"] * 100, weights["demand"] * 100, weights["plant"] * 100
             ),
-            color="#0f172a",
+            color=BLUE,
             hover_template="%{y}<br>Total score: %{x:.1f}<extra></extra>",
         )
         fig.update_layout(yaxis=dict(autorange="reversed"))
@@ -241,13 +234,13 @@ def _render_launch_calendar(entries: list[dict]) -> None:
             )
         )
     fig.update_layout(
-        title={"text": "Estimated roadmap duration by candidate", "font": {"size": 14, "color": "#0f172a"}, "x": 0, "xanchor": "left"},
+        title={"text": "Estimated roadmap duration by candidate", "font": {"size": 14, "color": THEME["text"]}, "x": 0, "xanchor": "left"},
         xaxis_title="Months",
         yaxis_title="",
         barmode="stack",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Inter, sans-serif", "color": "#0f172a", "size": 11},
+        font={"family": "Inter, sans-serif", "color": THEME["text"], "size": 11},
         margin={"l": 160, "r": 16, "t": 48, "b": 64},
         yaxis=dict(autorange="reversed"),
     )
@@ -258,7 +251,7 @@ def _render_launch_calendar(entries: list[dict]) -> None:
         x=0,
         y=-0.18,
         showarrow=False,
-        font={"size": 9, "color": "#64748b"},
+        font={"size": 9, "color": THEME["text_muted"]},
         align="left",
     )
     render_chart(fig)

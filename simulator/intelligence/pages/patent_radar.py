@@ -12,11 +12,12 @@ import plotly.express as px
 import streamlit as st
 
 from intelligence.api_client import list_molecules, score
+from intelligence.palette import THEME, risk_color
 from intelligence.ui_components import mock_data_badge, page_header, render_chart, scientific_scatter
 
 
 def _risk_color(risk: str) -> str:
-    return {"low": "#22c55e", "medium": "#eab308", "high": "#ef4444"}.get(risk, "#94a3b8")
+    return risk_color(risk)
 
 
 def _loe_days(loe: str | None) -> int | None:
@@ -120,12 +121,12 @@ def render() -> None:
             selected = key in st.session_state.shortlist
             st.markdown(
                 f"""
-                <div style="border:1px solid #e2e8f0; border-radius:6px; padding:12px; background:#ffffff;">
-                  <div style="font-weight:700; color:#0f172a;">{row['brand_name']}</div>
-                  <div style="font-size:11px; color:#64748b;">{row['api_name']} · {row['therapeutic_area']}</div>
+                <div style="border:1px solid {THEME['border']}; border-radius:6px; padding:12px; background:{THEME['surface']};">
+                  <div style="font-weight:700; color:{THEME['text']};">{row['brand_name']}</div>
+                  <div style="font-size:11px; color:{THEME['text_secondary']};">{row['api_name']} · {row['therapeutic_area']}</div>
                   <div style="margin-top:6px;">{_badge(row['fto_risk'])}</div>
-                  <div style="font-size:11px; color:#94a3b8; margin-top:4px;">LOE: {row['loe_label']}</div>
-                  <div style="font-size:11px; color:#64748b; margin-top:4px;">{row['geo_badge']}</div>
+                  <div style="font-size:11px; color:{THEME['text_muted']}; margin-top:4px;">LOE: {row['loe_label']}</div>
+                  <div style="font-size:11px; color:{THEME['text_secondary']}; margin-top:4px;">{row['geo_badge']}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
