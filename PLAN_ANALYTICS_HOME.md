@@ -1,6 +1,6 @@
 # Analytics Home Page — anime.js User Journey Plan
 
-> **Goal:** Replace the analytics app's current entry with a scroll-driven, anime.js-animated landing experience that surfaces NSQ risk as a political heat map of India, then transitions into the existing dashboard.
+> **Goal:** Replace the analytics app's current entry with a scroll-driven, anime.js-animated landing experience that surfaces NSQ risk as a political heat map of India, then transitions into the existing dashboard. bhak
 
 ---
 
