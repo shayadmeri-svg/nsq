@@ -26,11 +26,16 @@ from intelligence.api_client import (
 from intelligence.palette import THEME
 from intelligence.ui_components import (
     anime_entrance,
+    humanize_enum,
     metric_tile,
     mock_data_badge,
     page_header,
     render_chart,
-    scientific_bar_chart,
+    render_gmp_pillars,
+    scientific_bullet_chart,
+    scientific_gauge,
+    scientific_nested_ring,
+    scientific_phase_gantt,
     tier_badge,
 )
 
@@ -42,9 +47,9 @@ def _render_complexity(complexity: dict | None) -> None:
 
     cols = st.columns(4)
     metrics = [
-        ("Modality", complexity.get("modality", "—")),
-        ("Drug form", complexity.get("drug_form", "—")),
-        ("Route", complexity.get("route_of_administration", "—")),
+        ("Modality", humanize_enum(complexity.get("modality"))),
+        ("Drug form", humanize_enum(complexity.get("drug_form"))),
+        ("Route", humanize_enum(complexity.get("route_of_administration"))),
         ("Sterility", "Required" if complexity.get("sterility_required") else "Not required"),
     ]
     for col, (label, value) in zip(cols, metrics):
@@ -65,17 +70,42 @@ def _render_complexity(complexity: dict | None) -> None:
         st.caption("No CQAs inferred.")
 
     st.markdown("#### Complexity scores")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        metric_tile("Process", f"{complexity.get('process_complexity_score', 0):.1f}")
-    with c2:
-        metric_tile("Analytical", f"{complexity.get('analytical_complexity_score', 0):.1f}")
-    with c3:
-        metric_tile("Biologic", f"{complexity.get('biologic_complexity_score', 0):.1f}")
+    complexity_scores = {
+        "Process": complexity.get("process_complexity_score", 0),
+        "Analytical": complexity.get("analytical_complexity_score", 0),
+        "Biologic": complexity.get("biologic_complexity_score", 0),
+    }
+    complexity_fig = scientific_bullet_chart(
+        complexity_scores,
+        target=7.0,
+        max_value=10.0,
+        title="Manufacturing complexity vs. high-complexity benchmark",
+        source="engine complexity model (0–10 scale)",
+    )
+    render_chart(complexity_fig)
+    st.caption(f"GMP methodological pillars triggered: **{len(complexity.get('gmp_pillars', []))}**")
 
     notes = complexity.get("notes", "")
     if notes:
         st.caption(notes)
+
+
+def _render_gmp_pillars_card(complexity: dict | None, plant_row: dict | None) -> None:
+    pillars = complexity.get("gmp_pillars") or [] if complexity else []
+    if not pillars:
+        return
+
+    plant_caps: set[str] = set()
+    if plant_row:
+        plant_caps.update((c or "").lower() for c in plant_row.get("capabilities", []))
+        for train in plant_row.get("equipment_trains") or []:
+            cap = (train.get("capability") or "").lower()
+            if cap:
+                plant_caps.add(cap)
+
+    html = render_gmp_pillars(pillars, plant_capabilities=plant_caps, show_title=True)
+    if html:
+        st.markdown(html, unsafe_allow_html=True)
 
 
 def _render_customer_fit(fit: dict | None) -> None:
@@ -83,23 +113,30 @@ def _render_customer_fit(fit: dict | None) -> None:
         return
 
     tier = fit.get("commercial_fit_tier", "stretch")
+    overall = fit.get("customer_profile_fit_score", 0)
     st.markdown(
         f"""
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div><strong>Commercial fit tier:</strong> {tier_badge(tier)}</div>
-          <div><strong>Overall fit score:</strong> {fit.get('customer_profile_fit_score', 0):.0f}</div>
+          <div><strong>Overall fit score:</strong> {overall:.0f}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        metric_tile("Infrastructure", f"{fit.get('infrastructure_fit_score', 0):.0f}")
-    with c2:
-        metric_tile("Talent", f"{fit.get('talent_fit_score', 0):.0f}")
-    with c3:
-        metric_tile("Certifications", f"{fit.get('certification_fit_score', 0):.0f}")
+    fit_values = {
+        "Infrastructure": fit.get("infrastructure_fit_score", 0),
+        "Talent": fit.get("talent_fit_score", 0),
+        "Certifications": fit.get("certification_fit_score", 0),
+        "GMP Readiness": fit.get("gmp_readiness_score", 0),
+    }
+    ring_fig = scientific_nested_ring(
+        fit_values,
+        max_value=100,
+        title="Customer profile fit dimensions",
+        source="engine customer-profile scoring",
+    )
+    render_chart(ring_fig)
 
     gaps = fit.get("gaps") or []
     if gaps:
@@ -113,13 +150,21 @@ def _render_roadmap(roadmap: list[dict] | None, government_notes: str = "", nsq_
         st.info("No roadmap generated.")
         return
 
-    st.markdown("#### Manufacturing roadmap")
+    st.markdown("### Manufacturing roadmap")
     total_months = sum(p.get("estimated_duration_months", 0) for p in roadmap)
     st.caption(
         f"Estimated total duration: **{total_months} months** "
         f"({total_months // 12} years, {total_months % 12} months)"
     )
 
+    gantt_fig = scientific_phase_gantt(
+        roadmap,
+        title="Roadmap phase timeline",
+        source="manufacturing roadmap generated from patent/regulatory signals",
+    )
+    render_chart(gantt_fig)
+
+    st.markdown("#### Phase details")
     for idx, phase in enumerate(roadmap, 1):
         with st.expander(
             f"{idx}. {phase.get('title', 'Phase')} ({phase.get('estimated_duration_months', 0)} mo)",
@@ -165,14 +210,44 @@ def render() -> None:
         st.warning("No plant assets found. Run `just load-plant-assets`.")
         return
 
+    # Pre-select a molecule sent from the Product Catalog.
+    pending_molecule_key = st.session_state.pop("pending_molecule_key", None)
+    options = {m["brand_name"]: m["molecule_key"] for m in molecules}
+    option_labels = list(options.keys())
+    mol_default_index = 0
+    if pending_molecule_key:
+        mol_default_index = next(
+            (i for i, label in enumerate(option_labels) if options[label] == pending_molecule_key),
+            0,
+        )
+
+    # Pre-select a plant that was just created in the Plant Builder.
+    pending_plant_id = st.session_state.pop("pending_plant_id", None)
+    plant_options = {f"{p['site_name']} ({p['asset_id']})": p["asset_id"] for p in plants}
+    plant_labels = list(plant_options.keys())
+    plant_default_index = 0
+    if pending_plant_id:
+        plant_default_index = next(
+            (i for i, label in enumerate(plant_labels) if plant_options[label] == pending_plant_id),
+            0,
+        )
+
     with st.expander("Filter & select candidate", expanded=True):
-        options = {m["brand_name"]: m["molecule_key"] for m in molecules}
-        selected_brand = st.selectbox("Molecule", list(options.keys()))
+        selected_brand = st.selectbox(
+            "Molecule",
+            option_labels,
+            index=mol_default_index,
+        )
         selected_key = options[selected_brand]
 
-        plant_options = {f"{p['site_name']} ({p['asset_id']})": p["asset_id"] for p in plants}
-        selected_plant_label = st.selectbox("Plant line / asset", list(plant_options.keys()))
+        selected_plant_label = st.selectbox(
+            "Plant line / asset",
+            plant_labels,
+            index=plant_default_index,
+        )
         selected_plant_id = plant_options[selected_plant_label]
+
+    plant_row = next((p for p in plants if p["asset_id"] == selected_plant_id), None)
 
     complexity = get_molecule_complexity(selected_key)
     roadmap_data = get_molecule_roadmap(selected_key, selected_plant_id)
@@ -191,6 +266,9 @@ def render() -> None:
         st.markdown("### Customer profile fit")
         _render_customer_fit(fit_summary.get("customer_profile_fit") if fit_summary else None)
 
+    st.markdown("### GMP methodological context")
+    _render_gmp_pillars_card(complexity, plant_row)
+
     st.markdown("---")
     _render_roadmap(
         roadmap_data.get("roadmap") if roadmap_data else None,
@@ -206,27 +284,36 @@ def render() -> None:
         st.error(f"Could not score: {exc}")
         return
 
-    score_df = pd.DataFrame(
-        [
-            {"Pillar": "Patent readiness", "Score": result["patent_readiness_score"]},
-            {"Pillar": "Regulatory clarity", "Score": result["regulatory_clarity_score"]},
-            {"Pillar": "Demand attractiveness", "Score": result["demand_attractiveness_score"]},
-            {"Pillar": "Plant fit", "Score": result["plant_fit_score"]},
-        ]
-    )
-    fig = scientific_bar_chart(
-        score_df,
-        x="Pillar",
-        y="Score",
-        title="Four-pillar score profile",
-        y_label="Score (0–100)",
+    pillar_scores = {
+        "Patent readiness": result["patent_readiness_score"],
+        "Regulatory clarity": result["regulatory_clarity_score"],
+        "Demand attractiveness": result["demand_attractiveness_score"],
+        "Plant fit": result["plant_fit_score"],
+    }
+    bullet_fig = scientific_bullet_chart(
+        pillar_scores,
+        target=80,
+        max_value=100,
+        title="Four-pillar score completion vs. target",
         source="engine scoring model",
-        stat_note="n=4 pillars; weighted composite shown separately",
     )
-    render_chart(fig)
+    render_chart(bullet_fig)
 
     total = result.get("total_score", 0)
-    metric_tile("Total CDMO Score", f"{total:.0f}")
+    total_col1, total_col2 = st.columns([1, 3])
+    with total_col1:
+        gauge_fig = scientific_gauge(
+            total,
+            title="Total CDMO Score",
+            source="weighted four-pillar composite",
+        )
+        render_chart(gauge_fig)
+    with total_col2:
+        st.markdown("#### Score rationale")
+        for pillar, text in result.get("explanation", {}).items():
+            if pillar == "tier":
+                continue
+            st.caption(f"**{pillar.title()}:** {text}")
 
     warnings = result.get("warnings") or []
     if warnings:

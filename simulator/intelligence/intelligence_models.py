@@ -266,6 +266,24 @@ class RegulatoryPassport(BaseModel):
         )
 
 
+class GmpPillar(BaseModel):
+    """One of the five Core GMP Methodological Pillars applied to a molecule.
+
+    Each pillar captures why it applies, the key controls it requires, and
+    the plant capabilities / certifications needed to satisfy it.
+    """
+
+    pillar_id: str  # aseptic | hpapi | cleaning | lifecycle | packaging
+    title: str
+    applies: bool = False
+    rationale: str = ""
+    key_controls: list[str] = Field(default_factory=list)
+    applicable_forms: list[str] = Field(default_factory=list)
+    required_capabilities: list[str] = Field(default_factory=list)
+    required_certifications: list[str] = Field(default_factory=list)
+    risk_signals: list[str] = Field(default_factory=list)
+
+
 class ManufacturingComplexity(BaseModel):
     """Biochemistry-derived manufacturing complexity profile for a molecule.
 
@@ -283,6 +301,7 @@ class ManufacturingComplexity(BaseModel):
     process_complexity_score: float = 0.0  # 1–10
     analytical_complexity_score: float = 0.0  # 1–10
     biologic_complexity_score: float = 0.0  # 1–10
+    gmp_pillars: list[GmpPillar] = Field(default_factory=list)
     notes: str = ""
 
     def to_redis(self) -> dict[str, str]:
@@ -297,6 +316,7 @@ class ManufacturingComplexity(BaseModel):
             "process_complexity_score": str(self.process_complexity_score),
             "analytical_complexity_score": str(self.analytical_complexity_score),
             "biologic_complexity_score": str(self.biologic_complexity_score),
+            "gmp_pillars": _json_encode(self.gmp_pillars),
             "notes": self.notes,
         }
 
@@ -313,6 +333,7 @@ class ManufacturingComplexity(BaseModel):
             process_complexity_score=float(data.get("process_complexity_score", "0") or "0"),
             analytical_complexity_score=float(data.get("analytical_complexity_score", "0") or "0"),
             biologic_complexity_score=float(data.get("biologic_complexity_score", "0") or "0"),
+            gmp_pillars=_parse_gmp_pillars(data.get("gmp_pillars", "")),
             notes=data.get("notes", ""),
         )
 
@@ -341,6 +362,7 @@ class ManufacturingRoadmap(BaseModel):
     infrastructure_fit_score: float = 0.0
     talent_fit_score: float = 0.0
     certification_fit_score: float = 0.0
+    gmp_readiness_score: float = 0.0
     phases: list[RoadmapPhase] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     government_support_notes: str = ""
@@ -485,6 +507,7 @@ class PortfolioEntry(BaseModel):
     infrastructure_fit_score: float = 0.0
     talent_fit_score: float = 0.0
     certification_fit_score: float = 0.0
+    gmp_readiness_score: float = 0.0
     fto_risk: str = ""
     earliest_loe: Optional[date] = None
     loe_years: Optional[float] = None
@@ -597,5 +620,17 @@ def _parse_equipment_trains(raw: str) -> list[dict[str, Any]]:
     try:
         parsed = json.loads(raw)
         return [item for item in parsed if isinstance(item, dict)]
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def _parse_gmp_pillars(raw: str) -> list[GmpPillar]:
+    import json
+
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        return [GmpPillar(**item) for item in parsed if isinstance(item, dict)]
     except (json.JSONDecodeError, TypeError):
         return []

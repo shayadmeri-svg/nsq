@@ -26,12 +26,15 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from intelligence.api_client import list_molecules, list_plants, score
 from intelligence.ui_components import (
     SCIENTIFIC_CSS,
     anime_entrance,
     bioicon_inline,
     feature_card,
     mock_data_badge,
+    render_chart,
+    scientific_bar_chart,
     stepper,
 )
 from intelligence.palette import css_variables
@@ -1347,12 +1350,47 @@ def render_header() -> None:
 # ---------------------------------------------------------------------------
 # In-page product catalog (replaces the legacy sidebar catalog)
 # ---------------------------------------------------------------------------
+def _navigate_to_molecule_page(target_tab_index: int, molecule_key: str) -> None:
+    """Set pending molecule selection and switch to the requested intelligence page."""
+    st.session_state["active_tab_index"] = target_tab_index
+    st.session_state["pending_molecule_key"] = molecule_key
+    st.rerun()
+
+
+@st.cache_data(ttl=300)
+def _oncology_average_scores(plant_asset_ids: tuple[str, ...]) -> dict[str, float]:
+    """Return average total CDMO score per oncology molecule across all plants."""
+    oncology_keys = [
+        "pembrolizumab",
+        "daratumumab",
+        "nivolumab",
+        "osimertinib",
+        "durvalumab",
+        "abemaciclib",
+        "ribociclib",
+        "palbociclib",
+    ]
+    averages: dict[str, float] = {}
+    for key in oncology_keys:
+        totals: list[float] = []
+        for plant_id in plant_asset_ids:
+            try:
+                result = score(key, plant_id).model_dump(mode="json")
+                totals.append(result.get("total_score", 0.0))
+            except Exception:
+                continue
+        averages[key] = round(sum(totals) / len(totals), 1) if totals else 0.0
+    return averages
+
+
 def render_catalog() -> None:
     st.markdown(
         """
         <div style="padding: 12px 0; border-bottom: 1px solid #d9d9d9; margin-bottom: 12px;">
           <div class="cdmo-section-title">Product Catalog &amp; Active Alerts</div>
-          <p style="font-size:11px; color:#b0b0b0; margin:4px 0 0 0;">Sourced from CDSCO regulatory histories.</p>
+          <p style="font-size:11px; color:#b0b0b0; margin:4px 0 0 0;">
+            Workbench formulations (CDSCO NSQ history) and CDMO intelligence molecules.
+          </p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1361,64 +1399,190 @@ def render_catalog() -> None:
     query = st.text_input(
         "Filter formulations",
         value=st.session_state.search_query,
-        placeholder=f"Filter {len(PRODUCT_CATALOG)} solid formulations…",
+        placeholder=f"Filter {len(PRODUCT_CATALOG)} workbench + intelligence molecules…",
     )
     if query != st.session_state.search_query:
         st.session_state.search_query = query
         st.rerun()
 
     q = query.lower().strip()
-    matches = [
+
+    # ------------------------------------------------------------------
+    # Workbench catalog (existing small-molecule NSQ catalog)
+    # ------------------------------------------------------------------
+    workbench_matches = [
         (k, d) for k, d in PRODUCT_CATALOG.items()
         if q in d.name.lower() or q in d.dosage_form.lower()
     ]
 
-    if not matches:
+    if workbench_matches:
+        st.markdown(
+            """
+            <div style="font-size:11px; font-weight:700; color:#4a4a4a; margin:8px 0 6px 0;">
+              NSQ Workbench Formulations
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        cols = st.columns(min(len(workbench_matches), 4))
+        for i, (drug_id, drug) in enumerate(workbench_matches[:16]):
+            active = drug_id == st.session_state.selected_drug_id
+            border = "#1a1a1a" if active else "#d9d9d9"
+            bg = "#ffffff" if active else "#fafafa"
+            with cols[i % len(cols)]:
+                if st.button(
+                    f"{drug.name}\n{drug.dose} • {drug.dosage_form}",
+                    key=f"drug_{drug_id}",
+                    width="stretch",
+                ):
+                    if drug_id != st.session_state.selected_drug_id:
+                        st.session_state.selected_drug_id = drug_id
+                        _reset_for_drug(drug_id)
+                        st.rerun()
+                st.markdown(
+                    f"""
+                    <div style="background:{bg}; border:1px solid {border}; border-radius:4px; padding:10px; margin-top:-8px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:10px; font-weight:700; color:#1a1a1a;">{drug.name}</span>
+                        <span class="alerts-pill">{drug.total_alerts} Alerts</span>
+                      </div>
+                      <div style="font-size:10px; color:#737373; margin-top:4px;">{drug.dose} • {drug.dosage_form}</div>
+                      <div style="margin-top:6px; background:#ffffff; border:1px solid #d9d9d9; padding:6px 8px; border-radius:3px; font-size:10px;">
+                        <span style="font-weight:600; color:#8a2b0a;">♥ VigiBase Risk Profile</span>
+                        <p style="color:#4a4a4a; margin:4px 0 0 0; font-size:9px; line-height:1.4;">{drug.vigibase_risks[0]['hazard']}: {drug.vigibase_risks[0]['desc']}</p>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    # ------------------------------------------------------------------
+    # CDMO intelligence molecule catalog (includes 8 oncology molecules)
+    # ------------------------------------------------------------------
+    engine_molecules = list_molecules()
+    oncology_keys = {
+        "pembrolizumab",
+        "daratumumab",
+        "nivolumab",
+        "osimertinib",
+        "durvalumab",
+        "abemaciclib",
+        "ribociclib",
+        "palbociclib",
+    }
+
+    def _molecule_matches(m: dict) -> bool:
+        if not q:
+            return m.get("molecule_key") in oncology_keys
+        brand = (m.get("brand_name") or "").lower()
+        api = (m.get("api_name") or "").lower()
+        area = (m.get("therapeutic_area") or "").lower()
+        return q in brand or q in api or q in area or m.get("molecule_key", "").lower() == q
+
+    molecule_matches = [m for m in engine_molecules if _molecule_matches(m)]
+
+    if molecule_matches:
+        st.markdown(
+            """
+            <div style="font-size:11px; font-weight:700; color:#4a4a4a; margin:16px 0 6px 0;">
+              CDMO Intelligence Molecules — Oncology Portfolio
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Portfolio-at-a-glance bar chart: average total CDMO score across plants
+        plants = list_plants()
+        plant_ids = tuple(p["asset_id"] for p in plants)
+        avg_scores = _oncology_average_scores(plant_ids)
+        score_rows = []
+        for mol in molecule_matches:
+            key = mol.get("molecule_key", "")
+            score_rows.append({
+                "brand_name": mol.get("brand_name", key),
+                "avg_total_score": avg_scores.get(key, 0.0),
+            })
+        score_df = pd.DataFrame(score_rows).sort_values("avg_total_score", ascending=False)
+        if not score_df.empty and score_df["avg_total_score"].max() > 0:
+            fig = scientific_bar_chart(
+                score_df,
+                x="avg_total_score",
+                y="brand_name",
+                title="Average total CDMO score across plant lines",
+                y_label="Molecule",
+                source="engine four-pillar scoring; average across available plant assets",
+                stat_note="No plant preselected; score shows population-level attractiveness.",
+            )
+            fig.update_layout(yaxis={"autorange": "reversed"})
+            render_chart(fig)
+
+        cols = st.columns(min(len(molecule_matches), 4))
+        for i, mol in enumerate(molecule_matches[:16]):
+            key = mol.get("molecule_key", "")
+            brand = mol.get("brand_name", "Unknown")
+            api = mol.get("api_name", "")
+            area = mol.get("therapeutic_area", "")
+            fto = mol.get("fto_risk", "unknown")
+            export_count = mol.get("export_eligible_count", 0)
+            total_geo = mol.get("total_geo_count", 0)
+            with cols[i % len(cols)]:
+                st.markdown(
+                    f"""
+                    <div style="background:#fafafa; border:1px solid #d9d9d9; border-radius:4px; padding:10px; margin-bottom:8px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:10px; font-weight:700; color:#1a1a1a;">{brand}</span>
+                        <span class="alerts-pill" style="background:#e6f5f1; color:#0072B2;">{fto.upper()} FTO</span>
+                      </div>
+                      <div style="font-size:10px; color:#737373; margin-top:4px;">{api} • {area}</div>
+                      <div style="font-size:10px; color:#737373; margin-top:2px;">
+                        Export eligible: {export_count}/{total_geo} markets
+                      </div>
+                      <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px;">
+                    """,
+                    unsafe_allow_html=True,
+                )
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    if st.button(
+                        "Regulatory",
+                        key=f"mol_reg_{key}",
+                        help="Manufacturing & regulatory context",
+                        width="stretch",
+                    ):
+                        _navigate_to_molecule_page(5, key)
+                with c2:
+                    if st.button(
+                        "Readiness",
+                        key=f"mol_ready_{key}",
+                        help="Plant readiness with molecule preselected",
+                        width="stretch",
+                    ):
+                        _navigate_to_molecule_page(4, key)
+                with c3:
+                    if st.button(
+                        "Match",
+                        key=f"mol_match_{key}",
+                        help="Plant match with molecule preselected",
+                        width="stretch",
+                    ):
+                        _navigate_to_molecule_page(3, key)
+                st.markdown("</div></div>", unsafe_allow_html=True)
+
+    if not workbench_matches and not molecule_matches:
         st.markdown(
             "<div style='padding:32px; text-align:center; color:#b0b0b0; font-size:11px;"
-            "border:1px dashed #d9d9d9; border-radius:6px;'>No solid tablets match query.</div>",
+            "border:1px dashed #d9d9d9; border-radius:6px;'>No products match query.</div>",
             unsafe_allow_html=True,
         )
         return
 
-    # Render catalog as a horizontal scrollable row of cards.
-    cols = st.columns(min(len(matches), 4))
-    for i, (drug_id, drug) in enumerate(matches[:16]):
-        active = drug_id == st.session_state.selected_drug_id
-        border = "#1a1a1a" if active else "#d9d9d9"
-        bg = "#ffffff" if active else "#fafafa"
-        with cols[i % len(cols)]:
-            if st.button(
-                f"{drug.name}\n{drug.dose} • {drug.dosage_form}",
-                key=f"drug_{drug_id}",
-                use_container_width=True,
-            ):
-                if drug_id != st.session_state.selected_drug_id:
-                    st.session_state.selected_drug_id = drug_id
-                    _reset_for_drug(drug_id)
-                    st.rerun()
-            st.markdown(
-                f"""
-                <div style="background:{bg}; border:1px solid {border}; border-radius:4px; padding:10px; margin-top:-8px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:10px; font-weight:700; color:#1a1a1a;">{drug.name}</span>
-                    <span class="alerts-pill">{drug.total_alerts} Alerts</span>
-                  </div>
-                  <div style="font-size:10px; color:#737373; margin-top:4px;">{drug.dose} • {drug.dosage_form}</div>
-                  <div style="margin-top:6px; background:#ffffff; border:1px solid #d9d9d9; padding:6px 8px; border-radius:3px; font-size:10px;">
-                    <span style="font-weight:600; color:#8a2b0a;">♥ VigiBase Risk Profile</span>
-                    <p style="color:#4a4a4a; margin:4px 0 0 0; font-size:9px; line-height:1.4;">{drug.vigibase_risks[0]['hazard']}: {drug.vigibase_risks[0]['desc']}</p>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
     st.markdown(
         """
         <div class="cat-footer" style="padding:12px 0; margin-top:12px; border-top:1px solid #d9d9d9;">
-          <span style="font-weight:700; color:#4a4a4a; font-size:11px;">Linked Database:</span>
-          <code style="font-size:10px;">CDSCO Not of Standard Quality (NSQ) Drug Alerts List - Consolidated(1)_2.csv</code>
+          <span style="font-weight:700; color:#4a4a4a; font-size:11px;">Linked Databases:</span>
+          <code style="font-size:10px;">CDSCO Not of Standard Quality (NSQ) Drug Alerts List</code>
+          <span style="font-size:10px; color:#737373;"> and </span>
+          <code style="font-size:10px;">cdmo:patent:* / cdmo:regulatory:* / cdmo:demand:*</code>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1603,7 +1767,7 @@ def render_process_deck(drug: Drug) -> None:
         if new_val != current:
             st.session_state.process_params[key] = new_val
 
-    run_clicked = st.button("⚙  Analyze Process (D5)", use_container_width=True)
+    run_clicked = st.button("⚙  Analyze Process (D5)", width="stretch")
     st.markdown("</div>", unsafe_allow_html=True)
 
     if run_clicked:
@@ -1770,13 +1934,14 @@ def render_results() -> None:
 # Feature-card navigation + stepper
 # ---------------------------------------------------------------------------
 _FEATURE_CARDS = [
-    ("catalog", "NSQ Catalog", "CDSCO alert history, formulation core, excipient editor, process diagnostics.", "pill", 0),
+    ("catalog", "Product Catalog", "CDSCO alert history, formulation core, excipient editor, process diagnostics plus oncology intelligence molecules.", "pill", 0),
     ("demand", "Demand Radar", "Compare molecules by patent, regulatory, and demand signals.", "chart", 1),
     ("patent", "Patent Radar", "LOE timelines, export-eligible geographies, and FTO heatmaps.", "dna", 2),
     ("plant", "Plant Match", "Score molecule requirements against plant capability.", "factory", 3),
     ("readiness", "Plant Readiness", "Manufacturing complexity, customer fit, and roadmaps.", "microscope", 4),
     ("regulatory", "Regulatory Passport", "Pharmacopeia monographs, RLD/TE, and exclusivity.", "document", 5),
     ("portfolio", "Portfolio Builder", "Rank candidates, tune weights, export launch calendar.", "beaker", 6),
+    ("builder", "Plant Builder", "Create a digital plant profile and compare it to molecules.", "factory", 7),
 ]
 
 
@@ -1794,7 +1959,7 @@ def render_feature_cards(active_tab_index: int) -> None:
 
 def render_stepper(active_tab_index: int) -> None:
     """Render a stepper that matches the selected feature-card tab."""
-    step_labels = ["Catalog", "Demand", "Patent", "Match Plant", "Readiness", "Regulatory", "Portfolio"]
+    step_labels = ["Catalog", "Demand", "Patent", "Match Plant", "Readiness", "Regulatory", "Portfolio", "Builder"]
     stepper(step_labels, current_index=active_tab_index)
 
 
@@ -1805,7 +1970,7 @@ def main() -> None:
     render_header()
 
     active_tab = st.session_state.get("active_tab_index", 6)
-    if active_tab >= 7:
+    if active_tab >= 8:
         active_tab = 6
 
     render_stepper(active_tab)
@@ -1840,6 +2005,9 @@ def main() -> None:
     elif active_tab == 6:
         from intelligence.pages import portfolio
         portfolio.render()
+    elif active_tab == 7:
+        from intelligence.pages import plant_profile_builder
+        plant_profile_builder.render()
 
 
 main()

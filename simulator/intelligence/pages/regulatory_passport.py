@@ -11,22 +11,28 @@ import streamlit as st
 
 from intelligence.api_client import (
     get_molecule,
+    get_molecule_complexity,
     get_molecule_geo,
     get_molecule_regulatory,
     list_molecules,
     score,
 )
-from intelligence.palette import THEME, VERMILION
+import plotly.graph_objects as go
+
+from intelligence.palette import BLUISH_GREEN, ORANGE, THEME, VERMILION
 from intelligence.ui_components import (
     anime_entrance,
-    metric_tile,
     mock_data_badge,
     page_header,
+    render_chart,
+    render_gmp_pillars,
+    scientific_gauge,
+    scientific_status_dot_chart,
     tier_badge,
 )
 
 
-def _render_passport(passport: dict) -> None:
+def _render_passport(passport: dict, complexity: dict | None = None) -> None:
     rld = passport.get("rld", "")
     applicant = passport.get("rld_applicant", "")
     te_code = passport.get("te_code", "")
@@ -67,6 +73,27 @@ def _render_passport(passport: dict) -> None:
     )
 
     st.markdown("#### Pharmacopeia Monographs")
+    monograph_map = {
+        "IP 2026": bool(passport.get("ip_2026_monograph")),
+        "Ph. Eur.": bool(passport.get("ph_eur_monograph")),
+        "USP": bool(passport.get("usp_monograph")),
+    }
+    monograph_detail = {
+        k: (passport.get(key, "") or "")
+        for k, key in (
+            ("IP 2026", "ip_2026_monograph"),
+            ("Ph. Eur.", "ph_eur_monograph"),
+            ("USP", "usp_monograph"),
+        )
+    }
+    status_fig = scientific_status_dot_chart(
+        monograph_map,
+        title="Monograph availability",
+        source="regulatory passport",
+        detail=monograph_detail,
+    )
+    render_chart(status_fig)
+
     cols = st.columns(3)
     for idx, (title, key) in enumerate(
         [
@@ -89,6 +116,18 @@ def _render_passport(passport: dict) -> None:
                 )
             else:
                 st.caption(f"{title}: No monograph curated")
+
+    if complexity:
+        st.markdown("#### GMP manufacturing context")
+        gmp_html = render_gmp_pillars(
+            complexity.get("gmp_pillars") or [],
+            plant_capabilities=None,
+            show_title=False,
+        )
+        if gmp_html:
+            st.markdown(gmp_html, unsafe_allow_html=True)
+        else:
+            st.caption("No GMP pillar context inferred for this molecule.")
 
     specs = passport.get("analytical_specs") or []
     if specs:
@@ -148,9 +187,34 @@ def _render_geo(geo_data: dict | None) -> None:
             f"Eligible for generic export to: **{', '.join(codes)}**",
         )
         df = pd.DataFrame(eligible)
+        status_order = {"off_patent": 1, "loe_pending": 2, "export_eligible": 3, "patented": 4}
+        df["status_rank"] = df["market_status"].map(lambda s: status_order.get(s, 99))
+        df = df.sort_values("status_rank")
+        fig = go.Figure(
+            go.Bar(
+                x=df["country_code"],
+                y=[1] * len(df),
+                marker_color=[BLUISH_GREEN if st == "export_eligible" else ORANGE for st in df["market_status"]],
+                hovertemplate="%{x}: %{customdata[0]}<br>Status: %{customdata[1]}<extra></extra>",
+                customdata=df[["country_name", "market_status"]].values,
+                showlegend=False,
+            )
+        )
+        fig.update_layout(
+            title={"text": "Export-eligible markets", "font": {"size": 12, "color": THEME["text"]}, "x": 0, "xanchor": "left"},
+            xaxis_title="Country code",
+            yaxis={"visible": False, "range": [0, 1.2]},
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font={"family": "Inter, sans-serif", "color": THEME["text"], "size": 10},
+            margin={"l": 24, "r": 16, "t": 40, "b": 48},
+            height=160,
+        )
+        render_chart(fig)
+
         df = df[["country_code", "country_name", "market_status", "loe_date", "patent_barrier", "notes"]]
         df.columns = ["Code", "Country", "Status", "LOE Date", "Barrier", "Notes"]
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
     else:
         st.warning("No export-eligible geographies. Active patents or device/formulation barriers block export.")
 
@@ -158,7 +222,7 @@ def _render_geo(geo_data: dict | None) -> None:
         df = pd.DataFrame(all_geo)
         df = df[["country_code", "country_name", "market_status", "loe_date", "export_eligible", "patent_barrier", "notes"]]
         df.columns = ["Code", "Country", "Status", "LOE Date", "Export Eligible", "Barrier", "Notes"]
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
 
 
 def render() -> None:
@@ -182,6 +246,7 @@ def render() -> None:
     molecule = get_molecule(selected_key) or {}
     passport = get_molecule_regulatory(selected_key)
     geo = get_molecule_geo(selected_key)
+    complexity = get_molecule_complexity(selected_key)
 
     if passport is None:
         st.warning(f"No regulatory passport found for `{selected_key}`. Run `just load-regulatory` to seed it.")
@@ -198,15 +263,25 @@ def render() -> None:
     if score_result:
         reg_score = score_result.get("regulatory_clarity_score", 0)
         total_score = score_result.get("total_score", 0)
-        c1, c2 = st.columns(2)
-        with c1:
-            metric_tile("Regulatory Clarity", f"{reg_score:.0f}")
-        with c2:
-            metric_tile("Total CDMO Score", f"{total_score:.0f}")
+        score_cols = st.columns(2)
+        with score_cols[0]:
+            gauge_fig = scientific_gauge(
+                reg_score,
+                title="Regulatory Clarity",
+                source="engine regulatory scoring",
+            )
+            render_chart(gauge_fig)
+        with score_cols[1]:
+            total_gauge = scientific_gauge(
+                total_score,
+                title="Total CDMO Score",
+                source="weighted four-pillar composite",
+            )
+            render_chart(total_gauge)
 
     col1, col2 = st.columns([3, 2], gap="medium")
     with col1:
-        _render_passport(passport)
+        _render_passport(passport, complexity)
     with col2:
         _render_geo(geo)
 

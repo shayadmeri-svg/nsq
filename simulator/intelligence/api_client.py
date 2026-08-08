@@ -86,6 +86,10 @@ def get_molecule_complexity(molecule_key: str) -> dict | None:
     return _safe_get(f"/molecules/{molecule_key}/complexity")
 
 
+def get_molecule_gmp_pillars(molecule_key: str) -> dict | None:
+    return _safe_get(f"/molecules/{molecule_key}/gmp-pillars")
+
+
 def get_molecule_roadmap(molecule_key: str, plant_asset_id: str) -> dict | None:
     return _safe_get(f"/molecules/{molecule_key}/roadmap?plant_asset_id={plant_asset_id}")
 
@@ -97,6 +101,22 @@ def get_plant_fit_summary(asset_id: str, molecule_key: str) -> dict | None:
 def list_plants() -> list[dict[str, Any]]:
     data = _safe_get("/plants")
     return data.get("plants", []) if data else []
+
+
+def get_plant(asset_id: str) -> dict[str, Any] | None:
+    """Return the full PlantAsset record including capabilities and equipment trains."""
+    return _safe_get(f"/plants/{asset_id}")
+
+
+def get_capability_taxonomy() -> list[dict[str, Any]]:
+    """Return the 7-section capability catalog from the engine."""
+    data = _safe_get("/plants/capability-taxonomy")
+    return data.get("sections", []) if data else []
+
+
+def create_plant(name: str, capabilities: list[str]) -> dict[str, Any] | None:
+    """Persist a new custom plant profile to the engine / Redis."""
+    return _safe_post("/plants", {"name": name, "capabilities": capabilities})
 
 
 def score(

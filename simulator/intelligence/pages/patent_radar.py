@@ -13,7 +13,13 @@ import streamlit as st
 
 from intelligence.api_client import list_molecules, score
 from intelligence.palette import THEME, risk_color
-from intelligence.ui_components import mock_data_badge, page_header, render_chart, scientific_scatter
+from intelligence.ui_components import (
+    mock_data_badge,
+    page_header,
+    render_chart,
+    scientific_bubble_chart,
+    scientific_bullet_chart,
+)
 
 
 def _risk_color(risk: str) -> str:
@@ -76,21 +82,40 @@ def render() -> None:
 
     filtered = df[df["fto_risk"].isin(fto_filter)].copy()
 
-    # Scientific scatter: LOE horizon vs. export market count
-    scatter_df = filtered.dropna(subset=["loe_years"]).copy()
-    if not scatter_df.empty:
-        fig = scientific_scatter(
-            scatter_df,
+    # Patent attractiveness bubble chart: LOE window on x, FTO risk on y,
+    # bubble size = peak sales, color = therapeutic cluster.  A shaded band
+    # highlights the 2–5 year LOE sweet spot for early CDMO positioning.
+    bubble_df = filtered.dropna(subset=["loe_years"]).copy()
+    fto_ordinal = {"low": 1, "medium": 2, "high": 3}
+    bubble_df["fto_ordinal"] = bubble_df["fto_risk"].map(fto_ordinal)
+    if "market_size_usd_bn" in bubble_df.columns:
+        bubble_df["market_size"] = bubble_df["market_size_usd_bn"].fillna(0)
+    else:
+        # Patent seed does not carry peak sales; use export-eligible market count
+        # as a proxy so the bubble chart still encodes commercial reach.
+        bubble_df["market_size"] = (
+            bubble_df.get("export_eligible_count", pd.Series([0] * len(bubble_df))).fillna(0)
+        )
+    # Ensure every visible point has a non-zero size.
+    if bubble_df["market_size"].max() == 0:
+        bubble_df["market_size"] = 1
+    if not bubble_df.empty:
+        fig = scientific_bubble_chart(
+            bubble_df,
             x="loe_years",
-            y="export_eligible_count",
-            title="LOE horizon vs. export-eligible market count",
+            y="fto_ordinal",
+            size_col="market_size",
+            color_col="therapeutic_area",
             x_label="Years to earliest LOE",
-            y_label="Export-eligible countries",
-            source="Engine patent intelligence; n={} molecules".format(len(scatter_df)),
-            stat_note="Point color = FTO risk; missing LOE dates excluded.",
-            color_col="loe_days",
-            size_col=[10] * len(scatter_df),
+            y_label="FTO risk",
+            title="Patent attractiveness: LOE window, FTO risk, and peak sales",
+            source="Engine patent intelligence; n={} molecules".format(len(bubble_df)),
             hover_name="brand_name",
+            reference_bands=[(2.0, 5.0)],
+        )
+        # Show risk labels on the y-axis instead of ordinals.
+        fig.update_layout(
+            yaxis={"tickmode": "array", "tickvals": [1, 2, 3], "ticktext": ["Low", "Medium", "High"]}
         )
         render_chart(fig)
     else:
@@ -164,4 +189,22 @@ def render() -> None:
                     score_df = pd.DataFrame(results)
                     score_df = score_df[["molecule_key", "patent_readiness_score", "plant_fit_score", "total_score", "fto_risk"]]
                     score_df.columns = ["Molecule", "Patent", "Plant Fit", "Total", "FTO Risk"]
-                    st.dataframe(score_df.sort_values("Total", ascending=False), use_container_width=True, hide_index=True)
+                    st.dataframe(score_df.sort_values("Total", ascending=False), width="stretch", hide_index=True)
+
+                    # Visual profile for the top-scored candidate
+                    top = results[0]
+                    pillar_scores = {
+                        "Patent": top["patent_readiness_score"],
+                        "Regulatory": top["regulatory_clarity_score"],
+                        "Demand": top["demand_attractiveness_score"],
+                        "Plant Fit": top["plant_fit_score"],
+                    }
+                    st.markdown("### Top candidate score profile")
+                    bullet_fig = scientific_bullet_chart(
+                        pillar_scores,
+                        target=80,
+                        max_value=100,
+                        title=f"{top['molecule_key']} vs. {selected_plant}",
+                        source="engine four-pillar scoring",
+                    )
+                    render_chart(bullet_fig)

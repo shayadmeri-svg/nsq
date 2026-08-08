@@ -120,6 +120,114 @@ No schema migration needed — the Redis loader only requires
 own field names — see `redis-loader/load_nsq_redis.py` for the full
 expected shape).
 
+## CDMO Off-Patent Intelligence Engine
+
+The simulator now includes a four-pillar decision engine (`engine/` service on
+port 8000) and six intelligence pages in the simulator UI:
+
+| Pillar | Page | Data keyspace |
+|--------|------|---------------|
+| A. Patent Intelligence | Patent Radar | `cdmo:patent:*` |
+| B. Regulatory Rules | Regulatory Passport | `cdmo:regulatory:*` |
+| C. Demand Trends | Demand Radar | `cdmo:demand:*` |
+| D. Plant Expertise & Shop-Floor AI | Plant Match, Plant Readiness | `cdmo:plant:*` |
+| Plant Profile Builder | Plant Builder | `cdmo:plant:*` |
+| Portfolio Decision Engine | Portfolio | `cdmo:portfolio:*` |
+
+### GMP methodological pillars
+
+Plant Readiness, Plant Match, and Regulatory Passport now surface five
+contextual GMP pillars derived from each molecule's modality, form, and
+potency class:
+
+1. Aseptic Processing & Sterility Assurance
+2. HPAPI Containment & Operator Safety
+3. Cleaning Validation & Cross-Contamination Control
+4. Lifecycle Process & Method Validation
+5. Packaging, CCIT, and Supply Chain Integrity
+
+The engine derives these automatically from the existing patent/regulatory
+seeds. API endpoints:
+
+```bash
+# Derive and list GMP pillars for any molecule
+curl http://localhost:8000/molecules/{molecule_key}/gmp-pillars
+
+# Full manufacturing complexity, including gmp_pillars
+curl http://localhost:8000/molecules/{molecule_key}/complexity
+
+# Plant fit summary with GMP readiness score
+curl http://localhost:8000/plants/{asset_id}/fit/{molecule_key}
+
+# 7-section capability taxonomy used by the Plant Builder
+curl http://localhost:8000/plants/capability-taxonomy
+
+# Create a custom digital plant profile from selected capability tokens
+curl -X POST http://localhost:8000/plants \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Hyderabad HPAPI + OSD Hub", "capabilities": ["potent_containment", "wet_granulation", "film_coating", "blister_packing"]}'
+```
+
+### Data-visualization vocabulary
+
+The intelligence pages share a single scientific chart vocabulary in
+`simulator/intelligence/ui_components.py`, rendered with the Okabe-Ito
+colorblind-safe palette. The goal is to turn every 0–100 score, gap, and
+timeline into a decision-oriented graphic instead of a plain table or metric.
+
+| Helper | What it shows | Used in |
+|--------|---------------|---------|
+| `scientific_bullet_chart` | 0–100 (or 0–10) score against a target threshold, with color-coded performance bands. | Plant Match, Plant Readiness, Patent Radar, Demand Radar |
+| `scientific_nested_ring` | Concentric completion rings; arc length is proportional to the score. Natural for 4-pillar profiles, customer-fit dimensions, and monograph coverage. | Plant Match, Plant Readiness, Demand Radar, Portfolio decision cards, Regulatory Passport |
+| `scientific_gauge` | Half-ring gauge for a single headline score. | Demand Radar total, Regulatory Passport clarity, Product Catalog oncology overview |
+| `scientific_quadrant_scatter` | 2-D scatter with median reference lines and cluster color; labels each quadrant. | Portfolio demand vs. plant fit |
+| `scientific_stacked_bar` | Additive components of a synthetic score shown as stacked segments. | Demand Radar demand composition |
+| `scientific_bubble_chart` | Encodes LOE horizon × FTO risk × market size, colored by therapeutic area. | Patent Radar attractiveness |
+| `scientific_gap_matrix` | Heat-coded matrix comparing molecule-required capabilities to plant-available capabilities. | Plant Match |
+| `scientific_phase_gantt` | Horizontal phase timeline with cumulative start offsets and milestone annotations. | Plant Readiness roadmap, Portfolio launch calendar |
+
+All charts expose a consistent `source` caption and avoid decorative color or
+emoji in functional UI.
+
+### Plant Profile Builder
+
+The simulator includes a **Plant Builder** page where users create digital plant
+profiles by selecting capabilities from the canonical 7-section GMP capability
+catalog (`/plants/capability-taxonomy`). Once saved, the profile is persisted as
+a `PlantAsset` under `cdmo:plant:*` and becomes selectable immediately in
+**Plant Match** and **Plant Readiness** for molecule-to-plant comparison.
+
+### Loading intelligence seeds
+
+```bash
+# One command loads patents, plants, regulatory passports, and demand signals
+just load-intelligence
+
+# Or load each layer individually
+just load-patents
+just load-plant-assets
+just load-regulatory
+just load-demand
+```
+
+### Oncology molecule table
+
+The repository ships an 8-molecule oncology table in
+`data/oncology_molecule_table.json` (pembrolizumab, daratumumab, nivolumab,
+osimertinib, durvalumab, abemaciclib, ribociclib, palbociclib). Run
+`redis-loader/enrich_oncology_seeds.py` to merge this table into
+`data/patent_seed.json`, `data/regulatory_seed.json`, and `data/demand_seed.json`.
+
+The minimum fields needed for GMP pillar derivation are `molecule_key`,
+`brand_name`, `api_name`, `therapeutic_area`, and `dosage_form` in the
+regulatory seed. The engine infers modality, sterility, potency class, and the
+relevant GMP pillars automatically.
+
+For molecule-specific GMP overrides (e.g., exact OEL, containment class,
+viral-clearance steps), add a `gmp_overrides` object to the regulatory or
+patent seed record; the derivation logic will respect it in a follow-up
+iteration.
+
 ## Next step
 
 This local stack is the input to the Terraform module (AWS) — same two

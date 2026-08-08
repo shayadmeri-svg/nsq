@@ -7,7 +7,9 @@ Redis (cdmo:* keyspace) and exposes scoring endpoints.
 from __future__ import annotations
 
 import os
+import re
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -16,7 +18,8 @@ from pydantic import BaseModel
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "shared"))
 
-from intelligence_models import CandidateScore, PortfolioScenario, PortfolioSnapshot
+from capability_catalog import SECTIONS, infer_plant_defaults, validate_capabilities
+from intelligence_models import CandidateScore, PlantAsset, PortfolioScenario, PortfolioSnapshot
 from intelligence_scorer import DEFAULT_WEIGHTS, build_portfolio, evaluate_manufacturing_readiness, score_candidate
 from intelligence_store import (
     get_redis_client,
@@ -31,6 +34,7 @@ from intelligence_store import (
     load_portfolio,
     load_regulatory,
     save_complexity,
+    save_plant_asset,
     save_portfolio,
 )
 
@@ -53,6 +57,11 @@ class PortfolioScoreRequest(BaseModel):
     fto_risks_allowed: list[str] = []
     include_stretch: bool = False
     use_mock_data: bool = True
+
+
+class PlantCreateRequest(BaseModel):
+    name: str
+    capabilities: list[str] = []
 
 
 @asynccontextmanager
@@ -136,6 +145,65 @@ def list_plants():
             for a in plants.values()
         ],
     }
+
+
+def _slugify(name: str) -> str:
+    """Turn a plant name into a URL-safe slug."""
+    base = name.lower().strip()
+    base = re.sub(r"[^a-z0-9]+", "-", base)
+    base = base.strip("-")
+    return base or "plant"
+
+
+@app.get("/plants/capability-taxonomy")
+def get_capability_taxonomy():
+    """Return the 7-section capability catalog used by the plant builder."""
+    return {
+        "sections": [
+            {
+                "section_id": s.section_id,
+                "title": s.title,
+                "icon": s.icon,
+                "description": s.description,
+                "capabilities": [
+                    {"token": c.token, "label": c.label} for c in s.capabilities
+                ],
+            }
+            for s in SECTIONS
+        ],
+    }
+
+
+@app.post("/plants")
+def create_plant(req: PlantCreateRequest):
+    """Create and persist a custom digital plant profile."""
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Plant name is required")
+
+    valid_caps, invalid_caps = validate_capabilities(req.capabilities)
+    if invalid_caps:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown capabilities: {', '.join(invalid_caps)}",
+        )
+    if not valid_caps:
+        raise HTTPException(status_code=400, detail="At least one capability is required")
+
+    asset_id = f"custom-{_slugify(name)}-{uuid.uuid4().hex[:8]}"
+    defaults = infer_plant_defaults(valid_caps)
+
+    plant = PlantAsset(
+        asset_id=asset_id,
+        site_name=name,
+        **defaults,
+    )
+    try:
+        save_plant_asset(plant)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Could not save plant: {exc}")
+
+    return plant.model_dump(mode="json")
 
 
 @app.get("/plants/{asset_id}")
@@ -261,6 +329,23 @@ def get_molecule_complexity(molecule_key: str):
     return complexity.model_dump(mode="json")
 
 
+@app.get("/molecules/{molecule_key}/gmp-pillars")
+def get_molecule_gmp_pillars(molecule_key: str):
+    patent = load_patent(molecule_key)
+    if patent is None:
+        raise HTTPException(status_code=404, detail=f"Molecule {molecule_key!r} not found")
+    regulatory = load_regulatory(molecule_key)
+    from intelligence_scorer import derive_gmp_pillars, derive_manufacturing_complexity
+
+    complexity = derive_manufacturing_complexity(molecule_key, patent, regulatory)
+    pillars = derive_gmp_pillars(complexity, patent, regulatory)
+    return {
+        "molecule_key": molecule_key,
+        "applicable_pillar_count": sum(1 for p in pillars if p.applies),
+        "gmp_pillars": [p.model_dump(mode="json") for p in pillars],
+    }
+
+
 @app.get("/molecules/{molecule_key}/roadmap")
 def get_molecule_roadmap(molecule_key: str, plant_asset_id: str):
     patent = load_patent(molecule_key)
@@ -281,14 +366,25 @@ def get_plant_fit_summary(asset_id: str, molecule_key: str):
     if patent is None:
         raise HTTPException(status_code=404, detail=f"Molecule {molecule_key!r} not found")
     regulatory = load_regulatory(molecule_key)
-    from intelligence_scorer import derive_manufacturing_complexity
+    from intelligence_scorer import derive_gmp_pillars, derive_manufacturing_complexity, score_customer_profile_fit
 
     complexity = derive_manufacturing_complexity(molecule_key, patent, regulatory)
+    fit = score_customer_profile_fit(complexity, plant)
+    infra, talent, cert, gmp_ready, overall, tier, gaps = fit
     return {
         "plant_asset_id": asset_id,
         "molecule_key": molecule_key,
         "manufacturing_complexity": complexity.model_dump(mode="json"),
-        "customer_profile_fit": evaluate_manufacturing_readiness(molecule_key, asset_id, patent=patent)["customer_profile_fit"],
+        "customer_profile_fit": {
+            "commercial_fit_tier": tier,
+            "customer_profile_fit_score": overall,
+            "infrastructure_fit_score": infra,
+            "talent_fit_score": talent,
+            "certification_fit_score": cert,
+            "gmp_readiness_score": gmp_ready,
+            "gaps": gaps,
+        },
+        "gmp_pillars": [p.model_dump(mode="json") for p in complexity.gmp_pillars],
     }
 
 
@@ -381,6 +477,7 @@ def export_portfolio(portfolio_id: str, format: str = "json"):
                 "infrastructure_fit_score",
                 "talent_fit_score",
                 "certification_fit_score",
+                "gmp_readiness_score",
                 "total_score",
                 "fto_risk",
                 "earliest_loe",

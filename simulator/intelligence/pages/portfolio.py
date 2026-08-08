@@ -16,16 +16,20 @@ import streamlit as st
 
 from intelligence.api_client import export_portfolio, list_demand, list_molecules, list_plants, load_portfolio, save_portfolio, score_portfolio
 from intelligence.intelligence_models import PortfolioScenario
-from intelligence.palette import BLUE, THEME, cluster_color
+from intelligence.palette import BLUE, BLUISH_GREEN, MID_GREY, ORANGE, THEME, VERMILION, cluster_color
 from intelligence.ui_components import (
+    attribute_strip,
     bioicon_inline,
     feature_card,
+    humanize_enum,
     metric_tile,
     mock_data_badge,
     page_header,
     render_chart,
     scientific_bar_chart,
-    scientific_scatter,
+    scientific_bullet_chart,
+    scientific_count_bar_chart,
+    scientific_quadrant_scatter,
     tier_badge,
 )
 
@@ -113,40 +117,154 @@ def _rank_table(entries: list[dict]) -> pd.DataFrame:
 
 
 def _render_summary(summary: dict) -> None:
-    cols = st.columns(6)
-    metrics = [
-        ("Candidates", summary.get("included_count", 0)),
-        ("Mean score", summary.get("mean_total_score", 0)),
-        ("Strategic", summary.get("strategic_count", 0)),
-        ("Core", summary.get("core_count", 0)),
-        ("Adjacent", summary.get("adjacent_count", 0)),
-        ("Stretch", summary.get("stretch_count", 0)),
-    ]
-    for col, (label, value) in zip(cols, metrics):
-        with col:
-            metric_tile(label, value)
+    c1, c2, c3 = st.columns([2, 2, 1])
+    with c1:
+        metrics = [
+            ("Candidates", summary.get("included_count", 0)),
+            ("Mean score", summary.get("mean_total_score", 0)),
+            ("Strategic", summary.get("strategic_count", 0)),
+            ("Core", summary.get("core_count", 0)),
+            ("Adjacent", summary.get("adjacent_count", 0)),
+            ("Stretch", summary.get("stretch_count", 0)),
+        ]
+        cols = st.columns(3)
+        for i, (label, value) in enumerate(metrics):
+            with cols[i % 3]:
+                metric_tile(label, value)
+    with c2:
+        tier_counts = {
+            "Strategic": summary.get("strategic_count", 0),
+            "Core": summary.get("core_count", 0),
+            "Adjacent": summary.get("adjacent_count", 0),
+            "Stretch": summary.get("stretch_count", 0),
+        }
+        if any(tier_counts.values()):
+            # Tiers are ordinal (Strategic > Core > Adjacent > Stretch); preserve
+            # that order rather than reshuffling by magnitude.
+            tier_fig = scientific_count_bar_chart(
+                tier_counts,
+                title="Tier distribution",
+                source="portfolio snapshot summary",
+                unit="candidates",
+                sort="none",
+            )
+            render_chart(tier_fig)
+    with c3:
+        modality_counts = {
+            "Small molecule": summary.get("small_molecule_count", 0),
+            "Biologics": summary.get("biologics_count", 0),
+        }
+        if any(modality_counts.values()):
+            mod_fig = scientific_count_bar_chart(
+                modality_counts,
+                title="Modality mix",
+                source="portfolio snapshot summary",
+                unit="candidates",
+                sort="descending",
+            )
+            render_chart(mod_fig)
+
+
+def _reset_card_page() -> None:
+    """Reset the decision-card pagination when the facet filter changes."""
+    st.session_state["pf_card_page"] = 0
 
 
 def _render_decision_cards(entries: list[dict]) -> None:
     st.markdown("### Ranked candidates")
-    for idx, e in enumerate(entries[:20], 1):  # cap interactive cards at 20
-        with st.expander(f"#{idx} {e.get('brand_name') or e.get('molecule_key')} @ {e.get('plant_site_name')} — Total {e.get('total_score', 0):.0f}", expanded=idx <= 3):
+    if not entries:
+        st.info("No candidates to display.")
+        return
+
+    # -- Display filter (therapeutic area; does not affect scoring) --------
+    clusters = sorted({e.get("cluster") or "Other" for e in entries})
+    sel_clusters = st.multiselect(
+        "Therapeutic area",
+        clusters,
+        default=clusters,
+        key="pf_card_clusters",
+        on_change=_reset_card_page,
+    )
+
+    filtered = [e for e in entries if (e.get("cluster") or "Other") in sel_clusters]
+    if not filtered:
+        st.info("No candidates match the selected therapeutic areas.")
+        return
+
+    # True score-rank from the full score-desc ordering, for the card header.
+    score_desc = sorted(entries, key=lambda e: e.get("total_score", 0), reverse=True)
+    rank_map = {
+        (e["molecule_key"], e["plant_asset_id"]): i for i, e in enumerate(score_desc, 1)
+    }
+    ordered = sorted(filtered, key=lambda e: e.get("total_score", 0), reverse=True)
+
+    # -- Pagination (100 per page) ----------------------------------------
+    page_size = 100
+    total = len(ordered)
+    n_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(st.session_state.get("pf_card_page", 0), n_pages - 1))
+    start = page * page_size
+    page_items = ordered[start:start + page_size]
+
+    nav1, nav2, nav3 = st.columns([1, 2, 1])
+    with nav1:
+        if st.button("Previous", disabled=(page == 0), key="pf_card_prev"):
+            st.session_state["pf_card_page"] = page - 1
+            st.rerun()
+    with nav2:
+        st.markdown(
+            f"<div style='text-align:center; padding-top:6px; "
+            f"color:{THEME['text_muted']}; font-size:12px;'>"
+            f"Page {page + 1} of {n_pages} — showing {start + 1}–"
+            f"{min(start + page_size, total)} of {total}</div>",
+            unsafe_allow_html=True,
+        )
+    with nav3:
+        if st.button("Next", disabled=(page >= n_pages - 1), key="pf_card_next"):
+            st.session_state["pf_card_page"] = page + 1
+            st.rerun()
+
+    for d_idx, e in enumerate(page_items):
+        rank = rank_map.get((e["molecule_key"], e["plant_asset_id"]), 0)
+        with st.expander(f"#{rank} {e.get('brand_name') or e.get('molecule_key')} @ {e.get('plant_site_name')} — Total {e.get('total_score', 0):.0f}", expanded=(page == 0 and d_idx < 3)):
             c1, c2 = st.columns([3, 1])
             with c1:
-                st.markdown(
-                    f"""
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                      {tier_badge(e.get('commercial_fit_tier', 'stretch'))}
-                      <span style="font-size:12px; color:{THEME['text_secondary']};">Modality: {e.get('modality', '—')} | Form: {e.get('drug_form', '—')} | Sterility: {'Yes' if e.get('sterility_required') else 'No'}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+                attr_html = attribute_strip([
+                    ("Modality", humanize_enum(e.get("modality"))),
+                    ("Form", humanize_enum(e.get("drug_form"))),
+                    ("Sterility", "Yes" if e.get("sterility_required") else "No"),
+                ])
+                header_html = (
+                    f'<div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">'
+                    f'{tier_badge(e.get("commercial_fit_tier", "stretch"))}'
+                    f'{attr_html}'
+                    f'</div>'
                 )
-                score_cols = st.columns(4)
-                score_cols[0].metric("Patent", f"{e.get('patent_readiness_score', 0):.0f}")
-                score_cols[1].metric("Regulatory", f"{e.get('regulatory_clarity_score', 0):.0f}")
-                score_cols[2].metric("Demand", f"{e.get('demand_attractiveness_score', 0):.0f}")
-                score_cols[3].metric("Plant Fit", f"{e.get('plant_fit_score', 0):.0f}")
+                st.markdown(header_html, unsafe_allow_html=True)
+                score_cols = st.columns([3, 2])
+                with score_cols[0]:
+                    mini_scores = {
+                        "Patent": e.get("patent_readiness_score", 0),
+                        "Regulatory": e.get("regulatory_clarity_score", 0),
+                        "Demand": e.get("demand_attractiveness_score", 0),
+                        "Plant Fit": e.get("plant_fit_score", 0),
+                    }
+                    mini_fig = scientific_bullet_chart(
+                        mini_scores,
+                        target=80,
+                        max_value=100,
+                        title="Pillar profile",
+                        source="engine scoring",
+                    )
+                    # Key by the candidate's unique global rank: many candidates
+                    # share identical pillar scores, so the bullet figures would
+                    # otherwise collide on Streamlit's auto-generated element id.
+                    render_chart(mini_fig, key=f"card_pillar_{rank}")
+                with score_cols[1]:
+                    st.metric("Patent", f"{e.get('patent_readiness_score', 0):.0f}")
+                    st.metric("Regulatory", f"{e.get('regulatory_clarity_score', 0):.0f}")
+                    st.metric("Demand", f"{e.get('demand_attractiveness_score', 0):.0f}")
+                    st.metric("Plant Fit", f"{e.get('plant_fit_score', 0):.0f}")
 
                 gaps = e.get("gaps") or []
                 if gaps:
@@ -177,34 +295,59 @@ def _render_charts(entries: list[dict], weights: dict) -> None:
     with c1:
         top10 = df.head(10).copy()
         top10["label"] = top10["brand_name"].fillna(top10["molecule_key"]) + " @ " + top10["plant_site_name"].fillna(top10["plant_asset_id"])
-        fig = scientific_bar_chart(
-            top10,
-            x="total_score",
-            y="label",
-            title="Top 10 candidates by total CDMO score",
-            y_label="Candidate",
-            source="Engine four-pillar scoring; n={} molecule×plant combinations".format(len(df)),
-            stat_note="Score = weighted mean of patent ({:.0f}%), regulatory ({:.0f}%), demand ({:.0f}%), plant ({:.0f}%).".format(
-                weights["patent"] * 100, weights["regulatory"] * 100, weights["demand"] * 100, weights["plant"] * 100
-            ),
-            color=BLUE,
-            hover_template="%{y}<br>Total score: %{x:.1f}<extra></extra>",
+        tier_colors = {"strategic": BLUISH_GREEN, "core": BLUE, "adjacent": ORANGE, "stretch": VERMILION}
+        top10["bar_color"] = top10["commercial_fit_tier"].map(tier_colors).fillna(MID_GREY)
+        fig = go.Figure(
+            go.Bar(
+                x=top10["total_score"],
+                y=top10["label"],
+                orientation="h",
+                marker_color=top10["bar_color"],
+                hovertemplate="%{y}<br>Total score: %{x:.1f}<extra></extra>",
+                showlegend=False,
+            )
         )
-        fig.update_layout(yaxis=dict(autorange="reversed"))
+        fig.update_layout(
+            title={"text": "Top 10 candidates by total CDMO score", "font": {"size": 14, "color": THEME["text"]}, "x": 0, "xanchor": "left"},
+            xaxis_title="Total CDMO score",
+            yaxis_title=None,
+            yaxis={"autorange": "reversed"},
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font={"family": "Inter, sans-serif", "color": THEME["text"], "size": 11},
+            margin={"l": 160, "r": 16, "t": 56, "b": 64},
+            height=max(240, len(top10) * 28 + 80),
+        )
+        fig.add_annotation(
+            text=f"Source: engine four-pillar scoring; n={len(df)}. Score = weighted mean of patent ({weights['patent']*100:.0f}%), regulatory ({weights['regulatory']*100:.0f}%), demand ({weights['demand']*100:.0f}%), plant ({weights['plant']*100:.0f}%).",
+            xref="paper",
+            yref="paper",
+            x=0,
+            y=-0.18,
+            showarrow=False,
+            font={"size": 9, "color": THEME["text_muted"]},
+            align="left",
+        )
         render_chart(fig)
 
     with c2:
-        fig2 = scientific_scatter(
+        x_med = df["plant_fit_score"].median()
+        y_med = df["demand_attractiveness_score"].median()
+        # Encode cluster as numeric color so the continuous colorscale works; legend is harder but acceptable.
+        cluster_to_num = {c: i for i, c in enumerate(sorted(df["cluster"].unique()))}
+        df["cluster_num"] = df["cluster"].map(cluster_to_num)
+        fig2 = scientific_quadrant_scatter(
             df,
             x="plant_fit_score",
             y="demand_attractiveness_score",
-            title="Demand attractiveness vs. plant fit",
+            color_col="cluster_num",
+            size_col="total_score",
+            x_med=x_med,
+            y_med=y_med,
             x_label="Plant fit score (0–100)",
             y_label="Demand attractiveness (0–100)",
-            source="Engine scoring; candidate population n={}".format(len(df)),
-            stat_note="Each point is one molecule × plant line; point size ∝ total score.",
-            color_col="total_score",
-            size_col="total_score",
+            title="Demand vs. plant fit quadrant",
+            source="engine scoring; each point = molecule × plant",
             hover_name="brand_name",
         )
         render_chart(fig2)
@@ -283,7 +426,7 @@ def render() -> None:
 
         scenario = _build_scenario_from_ui(portfolio_id, portfolio_name, portfolio_description, use_mock=True)
 
-        run_clicked = st.button("Run portfolio scoring", type="primary", use_container_width=True)
+        run_clicked = st.button("Run portfolio scoring", type="primary", width="stretch")
 
     if run_clicked:
         with st.spinner("Ranking candidates across molecules and plant lines…"):
@@ -321,14 +464,14 @@ def render() -> None:
     st.markdown("### Export & save")
     c1, c2, c3 = st.columns(3)
     with c1:
-        if st.button("Save to Redis", use_container_width=True):
+        if st.button("Save to Redis", width="stretch"):
             result = save_portfolio(portfolio_id, scenario)
             if result:
                 st.success(f"Saved portfolio `{portfolio_id}` to Redis.")
             else:
                 st.error("Could not save portfolio via API.")
     with c2:
-        if st.button("Export JSON", use_container_width=True):
+        if st.button("Export JSON", width="stretch"):
             exported = export_portfolio(portfolio_id, "json")
             if exported:
                 st.download_button(
@@ -336,10 +479,10 @@ def render() -> None:
                     data=json.dumps(exported, indent=2),
                     file_name=f"{portfolio_id}.json",
                     mime="application/json",
-                    use_container_width=True,
+                    width="stretch",
                 )
     with c3:
-        if st.button("Export CSV", use_container_width=True):
+        if st.button("Export CSV", width="stretch"):
             exported = export_portfolio(portfolio_id, "csv")
             if exported:
                 st.download_button(
@@ -347,5 +490,5 @@ def render() -> None:
                     data=json.dumps(exported),
                     file_name=f"{portfolio_id}.csv",
                     mime="text/csv",
-                    use_container_width=True,
+                    width="stretch",
                 )

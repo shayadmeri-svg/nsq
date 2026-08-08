@@ -348,6 +348,172 @@ MOLECULE_CLASS_TAGS: dict[str, dict[str, Any]] = {
 }
 
 
+def derive_gmp_pillars(
+    complexity: "ManufacturingComplexity",
+    patent: Optional[PatentIntelligence],
+    regulatory: Optional[RegulatoryPassport],
+) -> list["GmpPillar"]:
+    """Derive the five Core GMP Methodological Pillars for a molecule.
+
+    The pillars are rule-based from dosage form, modality, potency class,
+    and therapeutic area. They can be overridden by molecule-specific seed
+    data in a later phase.
+    """
+    from intelligence_models import GmpPillar
+
+    modality = complexity.modality
+    drug_form = complexity.drug_form
+    sterility = complexity.sterility_required
+    potency = complexity.potency_classification
+    is_oncology = bool(patent and "oncology" in (patent.therapeutic_area or "").lower())
+    is_biologic = modality in ("monoclonal_antibody", "recombinant_protein", "fusion_protein", "peptide")
+
+    pillars: list[GmpPillar] = []
+
+    # 1. Aseptic Processing & Sterility Assurance
+    if sterility or is_biologic or drug_form in ("injection", "vial", "prefilled_pen", "prefilled_syringe", "lyophilized_vial"):
+        pillars.append(GmpPillar(
+            pillar_id="aseptic",
+            title="Aseptic Processing & Sterility Assurance",
+            applies=True,
+            rationale=(
+                "Grade A critical zones in Grade B background (RABS/isolator); "
+                "CCS, PUPSIT of 0.22 µm sterilizing filters, APS/media fills, "
+                "and viral clearance (ICH Q5A) for mammalian-derived products."
+            ),
+            key_controls=[
+                "Grade A in Grade B isolator/RABS",
+                "Contamination Control Strategy (CCS)",
+                "PUPSIT filter integrity testing",
+                "Aseptic Process Simulation (APS/media fills)",
+                "Viral clearance validation (low pH + nanofiltration)",
+            ],
+            applicable_forms=[drug_form] if drug_form else [],
+            required_capabilities=[
+                "aseptic_fill",
+                "isolator_technology",
+                "sterility_testing",
+                "bioreactor" if is_biologic else "",
+                "visual_inspection",
+            ],
+            required_certifications=["eu_gmp_annex_1"] if sterility or is_biologic else [],
+            risk_signals=["sterility_failure", "endotoxin", "particulate_matter"],
+        ))
+
+    # 2. HPAPI Containment & Operator Safety
+    if potency in ("potent", "cytotoxic", "high_potency") or (is_oncology and not is_biologic):
+        rationale = "OEB 4/5 potency with OEL < 1 µg/m³; high-containment suites required."
+        if is_oncology and not is_biologic:
+            rationale += " Oral oncology solid-dose API requires potent solid-handling containment."
+        pillars.append(GmpPillar(
+            pillar_id="hpapi",
+            title="HPAPI Containment & Operator Safety",
+            applies=True,
+            rationale=rationale,
+            key_controls=[
+                "Negative-pressure high-containment suites",
+                "Split butterfly valves (SBVs) / isolator gloveboxes",
+                "Continuous dust extraction",
+                "SMEPAC surrogate testing (lactose/mannitol)",
+            ],
+            applicable_forms=[drug_form] if drug_form else [],
+            required_capabilities=[
+                "potent_containment",
+                "isolator_technology",
+                "dust_extraction",
+                "dedicated_equipment" if potency == "cytotoxic" else "",
+            ],
+            required_certifications=["hpapi_handling"],
+            risk_signals=["cross_contamination", "operator_exposure", "environmental_monitoring"],
+        ))
+
+    # 3. Cleaning Validation & Cross-Contamination Control
+    # Applies to every multi-product facility; heightened for HPAPI/biologics.
+    cleaning_caps = ["analytical_qc", "validated_cleaning"]
+    if potency == "cytotoxic":
+        cleaning_caps.append("dedicated_equipment")
+    pillars.append(GmpPillar(
+        pillar_id="cleaning",
+        title="Cleaning Validation & Cross-Contamination Control",
+        applies=True,
+        rationale=(
+            "HBEL/PDE-based equipment surface limits, MACO calculations, and "
+            "validated swab/rinse verification (TOC for biologics, RP-UPLC for small molecules)."
+        ),
+        key_controls=[
+            "Health-Based Exposure Limits (HBEL / PDE)",
+            "Maximum Allowable Carryover (MACO)",
+            "TOC or RP-UPLC swab/rinse verification",
+            "Worst-case cleaning validation bracketing",
+        ],
+        applicable_forms=["solid_oral", "enteric_tablet", "capsule", "tablet"],
+        required_capabilities=cleaning_caps,
+        required_certifications=[],
+        risk_signals=["carryover", "cross_contamination", "residual_API"],
+    ))
+
+    # 4. Lifecycle Process & Method Validation
+    pillars.append(GmpPillar(
+        pillar_id="lifecycle",
+        title="Lifecycle Process & Method Validation",
+        applies=True,
+        rationale=(
+            "ICH Q8–Q14 framework: Stage 1 Process Design (QbD, CPPs/CQAs), "
+            "Stage 2 PPQ (three consecutive commercial-scale batches), "
+            "Stage 3 CPV with SPC, and analytical lifecycle with ATP / ALCOA+ CDS."
+        ),
+        key_controls=[
+            "Critical Quality Attributes (CQAs) & Critical Process Parameters (CPPs)",
+            "Quality-by-Design (QbD) design space",
+            "Stage 2 PPQ protocol",
+            "Stage 3 Continued Process Verification (SPC)",
+            "Analytical Target Profile (ATP) and method lifecycle",
+        ],
+        applicable_forms=[],
+        required_capabilities=[
+            "process_validation",
+            "analytical_development",
+            "stability_testing",
+            "method_validation",
+        ],
+        required_certifications=[],
+        risk_signals=["process_drift", "oos_trend", "method_failure"],
+    ))
+
+    # 5. Packaging, CCIT, and Supply Chain Integrity
+    if sterility or is_biologic or drug_form in ("injection", "vial", "prefilled_pen", "prefilled_syringe", "lyophilized_vial"):
+        ccit_caps = ["ccit_testing", "serialization"]
+        if is_biologic:
+            ccit_caps.append("cold_chain_logistics")
+        pillars.append(GmpPillar(
+            pillar_id="packaging",
+            title="Packaging, CCIT, and Supply Chain Integrity",
+            applies=True,
+            rationale=(
+                "Container Closure Integrity Testing (USP <1207> deterministic methods), "
+                "2–8 °C cold-chain datalogging for biologics, and DSCSA/FMD serialization/aggregation."
+            ),
+            key_controls=[
+                "High-Voltage Leak Detection (HVLD) or Vacuum Decay CCIT",
+                "2–8 °C continuous cold-chain monitoring",
+                "Thermal shipper qualification",
+                "DSCSA/FMD serialization & aggregation",
+            ],
+            applicable_forms=[drug_form] if drug_form else [],
+            required_capabilities=ccit_caps,
+            required_certifications=["gdp_logistics"] if is_biologic else [],
+            risk_signals=["container_closure_failure", "cold_chain_excursion", "serialization_error"],
+        ))
+
+    # Clean empty required_* entries.
+    for p in pillars:
+        p.required_capabilities = [c for c in p.required_capabilities if c]
+        p.required_certifications = [c for c in p.required_certifications if c]
+        p.applicable_forms = [f for f in p.applicable_forms if f]
+
+    return pillars
+
+
 def derive_manufacturing_complexity(
     molecule_key: str,
     patent: Optional[PatentIntelligence],
@@ -401,7 +567,7 @@ def derive_manufacturing_complexity(
     analytical = max(1.0, min(10.0, analytical))
     biologic = max(0.0, min(10.0, biologic))
 
-    return ManufacturingComplexity(
+    complexity = ManufacturingComplexity(
         molecule_key=molecule_key,
         modality=base["modality"],
         drug_form=base["drug_form"],
@@ -414,6 +580,8 @@ def derive_manufacturing_complexity(
         biologic_complexity_score=round(biologic, 1),
         notes=f"Derived from patent/regulatory signals: class={_molecule_class(patent)}, dosage_form={regulatory.dosage_form if regulatory else 'unknown'}.",
     )
+    complexity.gmp_pillars = derive_gmp_pillars(complexity, patent, regulatory)
+    return complexity
 
 
 def _equipment_matches(train: dict[str, Any], required_caps: set[str]) -> bool:
@@ -424,10 +592,10 @@ def _equipment_matches(train: dict[str, Any], required_caps: set[str]) -> bool:
 def score_customer_profile_fit(
     complexity: "ManufacturingComplexity",
     plant: Optional[PlantAsset],
-) -> tuple[float, float, float, float, str, list[str]]:
-    """Return infrastructure, talent, certification fit scores, overall customer fit score, tier, and gaps."""
+) -> tuple[float, float, float, float, float, str, list[str]]:
+    """Return infrastructure, talent, certification, and GMP readiness scores, overall customer fit score, tier, and gaps."""
     if plant is None:
-        return 0.0, 0.0, 0.0, 0.0, "stretch", ["No plant asset selected."]
+        return 0.0, 0.0, 0.0, 0.0, 0.0, "stretch", ["No plant asset selected."]
 
     # Required capabilities inferred from complexity.
     required_caps: set[str] = set()
@@ -481,8 +649,26 @@ def score_customer_profile_fit(
     cert_missing = required_certs - active_certs
     certification_score = 100.0 * (len(cert_matched) / len(required_certs)) if required_certs else 100.0
 
+    # GMP pillar readiness — average of applicable pillar capability matches.
+    pillar_scores: list[float] = []
+    for pillar in complexity.gmp_pillars:
+        if not pillar.applies:
+            continue
+        p_required = set((c or "").lower() for c in pillar.required_capabilities)
+        if not p_required:
+            pillar_scores.append(100.0)
+            continue
+        p_matched = p_required & available_caps
+        pillar_scores.append(100.0 * (len(p_matched) / len(p_required)))
+    gmp_readiness_score = sum(pillar_scores) / len(pillar_scores) if pillar_scores else 100.0
+
     # Commercial fit tier.
-    overall = (infrastructure_score * 0.45 + talent_score * 0.30 + certification_score * 0.25)
+    overall = (
+        infrastructure_score * 0.40
+        + talent_score * 0.25
+        + certification_score * 0.20
+        + gmp_readiness_score * 0.15
+    )
 
     if overall >= 80:
         tier = "strategic"
@@ -500,8 +686,18 @@ def score_customer_profile_fit(
         gaps.append(f"Missing certifications: {', '.join(sorted(cert_missing))}")
     if talent_score < 50:
         gaps.append("Talent depth below threshold for the modality/form")
+    if gmp_readiness_score < 50:
+        gaps.append("GMP pillar readiness below threshold for the molecule")
 
-    return round(infrastructure_score, 1), round(talent_score, 1), round(certification_score, 1), round(overall, 1), tier, gaps
+    return (
+        round(infrastructure_score, 1),
+        round(talent_score, 1),
+        round(certification_score, 1),
+        round(gmp_readiness_score, 1),
+        round(overall, 1),
+        tier,
+        gaps,
+    )
 
 
 def build_manufacturing_roadmap(
@@ -513,7 +709,20 @@ def build_manufacturing_roadmap(
     """Generate a modality-specific manufacturing readiness roadmap."""
     from intelligence_models import ManufacturingRoadmap, RoadmapPhase
 
-    infra, talent, cert, overall, tier, gaps = score_customer_profile_fit(complexity, plant)
+    infra, talent, cert, gmp_ready, overall, tier, gaps = score_customer_profile_fit(complexity, plant)
+
+    plant_caps = set((c or "").lower() for c in (plant.capabilities if plant else []))
+    train_caps = set((t.get("capability") or "").lower() for t in (plant.equipment_trains if plant else []))
+    available_caps = plant_caps | train_caps
+
+    # GMP pillar shortfalls become explicit roadmap gaps.
+    for pillar in complexity.gmp_pillars:
+        if not pillar.applies:
+            continue
+        p_required = set((c or "").lower() for c in pillar.required_capabilities)
+        p_missing = p_required - available_caps
+        if p_missing:
+            gaps.append(f"GMP pillar '{pillar.title}': missing {', '.join(sorted(p_missing))}")
 
     phases: list[RoadmapPhase] = []
     if complexity.modality in ("monoclonal_antibody", "recombinant_protein", "fusion_protein", "peptide"):
@@ -709,6 +918,7 @@ def build_manufacturing_roadmap(
         infrastructure_fit_score=infra,
         talent_fit_score=talent,
         certification_fit_score=cert,
+        gmp_readiness_score=gmp_ready,
         phases=phases,
         gaps=gaps,
         government_support_notes=government_notes,
@@ -886,12 +1096,14 @@ def evaluate_manufacturing_readiness(
             "infrastructure_fit_score": roadmap.infrastructure_fit_score,
             "talent_fit_score": roadmap.talent_fit_score,
             "certification_fit_score": roadmap.certification_fit_score,
+            "gmp_readiness_score": roadmap.gmp_readiness_score,
             "customer_profile_fit_score": roadmap.customer_profile_fit_score,
             "gaps": roadmap.gaps,
         },
         "roadmap": [p.model_dump() for p in roadmap.phases],
         "government_support_notes": roadmap.government_support_notes,
         "nsq_risk_notes": roadmap.nsq_risk_notes,
+        "gmp_pillars": [p.model_dump(mode="json") for p in complexity.gmp_pillars],
     }
 
 
@@ -974,6 +1186,7 @@ def build_portfolio(
                     infrastructure_fit_score=customer_fit.get("infrastructure_fit_score", 0.0),
                     talent_fit_score=customer_fit.get("talent_fit_score", 0.0),
                     certification_fit_score=customer_fit.get("certification_fit_score", 0.0),
+                    gmp_readiness_score=customer_fit.get("gmp_readiness_score", 0.0),
                     fto_risk=candidate.fto_risk,
                     earliest_loe=candidate.earliest_loe,
                     loe_years=round(loe_years, 2) if loe_years is not None else None,

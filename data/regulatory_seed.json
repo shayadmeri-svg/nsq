@@ -3,11 +3,17 @@
   "passports": [
     {
       "molecule_key": "pembrolizumab",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP <129>, Ph. Eur. 2031, JP 2.66, IP Bio",
+      "ph_eur_monograph": "USP <129>, Ph. Eur. 2031, JP 2.66, IP Bio",
+      "usp_monograph": "USP <129>, Ph. Eur. 2031, JP 2.66, IP Bio",
+      "analytical_specs": [
+        "SEC-HPLC (purity ≥ 98.0%)",
+        "CE-SDS",
+        "icIEF charge variants",
+        "SPR binding (KD)",
+        "LAL Endotoxin (USP <85>)"
+      ],
+      "stability_conditions": "Cleanroom: Grade A Isolators in Grade B background (EU GMP Annex 1). Process: Single-Use Bioreactors, PUPSIT filter validation, 20 nm viral filtration (ICH Q5A). Cleaning/CCIT: TOC swab validation (≤ 10 ppm); HVLD CCIT (USP <1207>).",
       "bcs_class": "N/A (biologic)",
       "rld": "Keytruda",
       "rld_applicant": "Merck Sharp & Dohme LLC",
@@ -27,18 +33,23 @@
           "description": "Orphan drug exclusivity for certain indications"
         }
       ],
-      "bioequivalence_notes": "Biosimilar pathway; analytical/functional similarity + clinical immunogenicity required",
+      "bioequivalence_notes": "Injectable (IV solution; Subcutaneous Qlex) — mAb (Humanized IgG4-kappa anti-PD-1). Primary LOE: Late 2028 – 2029; Thicket Horizon: 2033 – 2042+.",
       "readiness": "partial",
       "source_url": "https://www.fda.gov/drugs/drug-supplement-approval-biosimilar",
-      "notes": "Heavy formulation/device thicket; biosimilar launch planning must address subcutaneous device patents"
+      "notes": "Scientific context: CHO cell biomanufacturing, Protein A purification, rHuPH20 co-formulation, cold-chain (2–8°C), biomarker companion diagnostic IHC (PD-L1/MSI-H). | GMP / Containment / CCIT: Cleanroom: Grade A Isolators in Grade B background (EU GMP Annex 1). Process: Single-Use Bioreactors, PUPSIT filter validation, 20 nm viral filtration (ICH Q5A). Cleaning/CCIT: TOC swab validation (≤ 10 ppm); HVLD CCIT (USP <1207>)."
     },
     {
       "molecule_key": "daratumumab",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "ph_eur_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "usp_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "analytical_specs": [
+        "ADCC/CDC cell cytotoxicity bioassays",
+        "CE-SDS",
+        "HPAEC-PAD glycan profiling",
+        "Subvisible Particles (USP <787>/<788>)"
+      ],
+      "stability_conditions": "Cleanroom: Grade A barrier isolators. Process: High-viscosity SC metering pumps, continuous bioburden/endotoxin monitoring. Cleaning/CCIT: TOC/CEX-HPLC swab verification; Vacuum Decay CCIT (USP <1207>); 2–8°C cold chain.",
       "bcs_class": "N/A (biologic)",
       "rld": "Darzalex",
       "rld_applicant": "Janssen Biotech Inc",
@@ -53,18 +64,23 @@
           "description": "Orphan drug exclusivity for multiple myeloma"
         }
       ],
-      "bioequivalence_notes": "Biosimilar; IV and subcutaneous Faspro formulations have different immunogenicity/EXKIVITY considerations",
+      "bioequivalence_notes": "Injectable (IV infusion; Subcutaneous Faspro) — mAb (Human IgG1-kappa anti-CD38). Primary LOE: 2026 – 2029; Thicket Horizon: 2031 – 2035+.",
       "readiness": "partial",
       "source_url": "",
-      "notes": "Subcutaneous Darzalex Faspro adds formulation/device protection"
+      "notes": "Scientific context: High-concentration protein engineering (~15 mL SC volume), Fc effector function analysis, steroid/antihistamine premedication protocol. | GMP / Containment / CCIT: Cleanroom: Grade A barrier isolators. Process: High-viscosity SC metering pumps, continuous bioburden/endotoxin monitoring. Cleaning/CCIT: TOC/CEX-HPLC swab verification; Vacuum Decay CCIT (USP <1207>); 2–8°C cold chain."
     },
     {
       "molecule_key": "nivolumab",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "ph_eur_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "usp_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "analytical_specs": [
+        "Trypsin peptide mapping LC-MS/MS",
+        "CEX-HPLC charge profiling",
+        "Sterility (USP <71>)",
+        "Endotoxin (USP <85>)"
+      ],
+      "stability_conditions": "Cleanroom: ISO 5 / Class 100 fill-finish suite. Process: Redundant 0.22 µm filtration, low pH virus inactivation, depyrogenation tunnel (>250°C). Cleaning/CCIT: HBEL/PDE limits; 100% HVLD vial integrity testing; DSCSA track & trace.",
       "bcs_class": "N/A (biologic)",
       "rld": "Opdivo",
       "rld_applicant": "Bristol-Myers Squibb Co",
@@ -79,18 +95,23 @@
           "description": "NCE exclusivity"
         }
       ],
-      "bioequivalence_notes": "Biosimilar; PD-1 binding/functional assays + clinical PK/PD",
+      "bioequivalence_notes": "Injectable (IV solution; Subcutaneous formulation) — mAb (Fully human IgG4 anti-PD-1). Primary LOE: Late 2028; Thicket Horizon: 2036 – 2038.",
       "readiness": "partial",
       "source_url": "",
-      "notes": "Combination therapy patents extend commercial risk"
+      "notes": "Scientific context: Process Analytical Technology (PAT), BLI/SPR binding kinetics, immune-mediated adverse reaction (IMAR) monitoring protocols. | GMP / Containment / CCIT: Cleanroom: ISO 5 / Class 100 fill-finish suite. Process: Redundant 0.22 µm filtration, low pH virus inactivation, depyrogenation tunnel (>250°C). Cleaning/CCIT: HBEL/PDE limits; 100% HVLD vial integrity testing; DSCSA track & trace."
     },
     {
       "molecule_key": "osimertinib",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "ph_eur_monograph": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "usp_monograph": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "analytical_specs": [
+        "Dissolution (USP <711>, Q ≥ 80%)",
+        "RP-UPLC assay/impurities",
+        "Genotoxic Impurities LC-MS/MS (ICH M7)",
+        "XRPD (USP <941>)"
+      ],
+      "stability_conditions": "Containment: OEB 5 (OEL < 0.1 µg/m³), negative pressure, split butterfly valves. Process: In-line NIR for polymorph stability during wet granulation. Cleaning/CCIT: UPLC-MS/MS cleaning swab validation; Blister seal integrity testing.",
       "bcs_class": "BCS II",
       "rld": "Tagrisso",
       "rld_applicant": "AstraZeneca Pharmaceuticals LP",
@@ -105,18 +126,23 @@
           "description": "NCE exclusivity"
         }
       ],
-      "bioequivalence_notes": "Small-molecule oncology; polymorph/salt design-around needed for FTO",
+      "bioequivalence_notes": "Solid Tablet (Film-coated, oral) — Small Molecule (3rd-gen EGFR TKI; mesylate salt). Primary LOE: August 2032; Thicket Horizon: 2035 – 2042.",
       "readiness": "partial",
       "source_url": "",
-      "notes": "Formulation FTO manageable if polymorph patents are designed around"
+      "notes": "Scientific context: HPAPI containment (OEB 4/5), solid-state XRPD/DSC, companion diagnostic PCR/NGS testing for EGFR mutation status. | GMP / Containment / CCIT: Containment: OEB 5 (OEL < 0.1 µg/m³), negative pressure, split butterfly valves. Process: In-line NIR for polymorph stability during wet granulation. Cleaning/CCIT: UPLC-MS/MS cleaning swab validation; Blister seal integrity testing."
     },
     {
       "molecule_key": "durvalumab",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "ph_eur_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "usp_monograph": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "analytical_specs": [
+        "Flow cytometry cell-binding bioassay",
+        "C1q/FcγR non-binding assays (effector silencing)",
+        "CE-SDS",
+        "Glycan profiling"
+      ],
+      "stability_conditions": "Cleanroom: Grade A isolator on automated vial line. Process: Dual 0.22 µm filtration with pre/post bubble point testing. Cleaning/CCIT: TOC swab recovery on stainless steel bioreactors; Vacuum Decay CCIT (USP <1207>).",
       "bcs_class": "N/A (biologic)",
       "rld": "Imfinzi",
       "rld_applicant": "AstraZeneca UK Ltd",
@@ -131,18 +157,22 @@
           "description": "Orphan drug exclusivity for small cell lung cancer"
         }
       ],
-      "bioequivalence_notes": "Biosimilar; PD-L1 assay and clinical comparability required",
+      "bioequivalence_notes": "Injectable (IV infusion) — mAb (Fc-engineered human IgG1-kappa anti-PD-L1). Primary LOE: 2030 – 2031; Thicket Horizon: 2033 – 2038+.",
       "readiness": "partial",
       "source_url": "",
-      "notes": "Strong oncology demand signal through 2030"
+      "notes": "Scientific context: Fc-triple mutation engineering (silencing ADCC/CDC), large-scale mammalian bioreactors, TFF ultrafiltration/diafiltration. | GMP / Containment / CCIT: Cleanroom: Grade A isolator on automated vial line. Process: Dual 0.22 µm filtration with pre/post bubble point testing. Cleaning/CCIT: TOC swab recovery on stainless steel bioreactors; Vacuum Decay CCIT (USP <1207>)."
     },
     {
       "molecule_key": "abemaciclib",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP Monograph, Ph. Eur. 2.2.46, JP 2.01, IP 2026",
+      "ph_eur_monograph": "USP Monograph, Ph. Eur. 2.2.46, JP 2.01, IP 2026",
+      "usp_monograph": "USP Monograph, Ph. Eur. 2.2.46, JP 2.01, IP 2026",
+      "analytical_specs": [
+        "RP-HPLC assay & related substances",
+        "Content Uniformity (USP <905>, AV ≤ 15.0)",
+        "Residual Solvents HS-GC (USP <467>)"
+      ],
+      "stability_conditions": "Containment: OEB 4 (OEL 1–10 µg/m³). Process: Roller compaction / dry granulation; closed powder handling. Cleaning/CCIT: RP-HPLC swab testing based on HBEL/PDE limits; automated tablet friability/hardness testing.",
       "bcs_class": "BCS II",
       "rld": "Verzenio",
       "rld_applicant": "Eli Lilly and Co",
@@ -157,18 +187,23 @@
           "description": "NCE exclusivity"
         }
       ],
-      "bioequivalence_notes": "Oral CDK4/6 inhibitor; standard BE with food effect",
+      "bioequivalence_notes": "Solid Tablet (Film-coated, oral) — Small Molecule (CDK4/6 inhibitor; free base). Primary LOE: September 2031; Thicket Horizon: September 2031.",
       "readiness": "partial",
       "source_url": "",
-      "notes": "Good fit for oral-solid CDMO once composition patent expires"
+      "notes": "Scientific context: Organic chemical synthesis, particle size micronization (USP <429>), continuous dosing regimen, hepatic/hematologic lab monitoring. | GMP / Containment / CCIT: Containment: OEB 4 (OEL 1–10 µg/m³). Process: Roller compaction / dry granulation; closed powder handling. Cleaning/CCIT: RP-HPLC swab testing based on HBEL/PDE limits; automated tablet friability/hardness testing."
     },
     {
       "molecule_key": "ribociclib",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP Monograph, Ph. Eur. 2.9.40, JP 6.02, IP 2026",
+      "ph_eur_monograph": "USP Monograph, Ph. Eur. 2.9.40, JP 6.02, IP 2026",
+      "usp_monograph": "USP Monograph, Ph. Eur. 2.9.40, JP 6.02, IP 2026",
+      "analytical_specs": [
+        "Multipoint dissolution (USP <711>)",
+        "Ion Chromatography salt stoichiometry",
+        "XRPD (USP <941>)",
+        "ICP-MS (USP <232>/<233>)"
+      ],
+      "stability_conditions": "Containment: OEB 4 suite. Process: High-shear wet granulation, fluid-bed drying with bed temp/moisture monitoring (USP <921>). Cleaning/CCIT: Ion chromatography swab testing (< 1 µg/cm²); At-line XRPD polymorphic control.",
       "bcs_class": "BCS II",
       "rld": "Kisqali",
       "rld_applicant": "Novartis Pharmaceuticals Corp",
@@ -183,18 +218,22 @@
           "description": "NCE exclusivity"
         }
       ],
-      "bioequivalence_notes": "CDK4/6 inhibitor; dissolution in pH 4.5/6.8 media",
+      "bioequivalence_notes": "Solid Tablet (Film-coated, oral) — Small Molecule (CDK4/6 inhibitor; succinate salt). Primary LOE: 2028 – 2031; Thicket Horizon: October 2036.",
       "readiness": "partial",
       "source_url": "",
-      "notes": "Similar profile to Verzenio"
+      "notes": "Scientific context: High-drug-load tablet compression, salt stability control, intermittent 21/7 dosing schedule, mandatory baseline/periodic QTc ECG monitoring. | GMP / Containment / CCIT: Containment: OEB 4 suite. Process: High-shear wet granulation, fluid-bed drying with bed temp/moisture monitoring (USP <921>). Cleaning/CCIT: Ion chromatography swab testing (< 1 µg/cm²); At-line XRPD polymorphic control."
     },
     {
       "molecule_key": "palbociclib",
-      "ip_2026_monograph": "",
-      "ph_eur_monograph": "",
-      "usp_monograph": "",
-      "analytical_specs": [],
-      "stability_conditions": "",
+      "ip_2026_monograph": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "ph_eur_monograph": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "usp_monograph": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "analytical_specs": [
+        "Comparative dissolution across pH 1.2–6.8",
+        "RP-UPLC organic impurities",
+        "Karl Fischer water content (USP <921>, ≤ 2.0%)"
+      ],
+      "stability_conditions": "Containment: OEB 4 suite. Process: Hot-Melt Extrusion (HME) / spray drying for amorphous solid dispersion. Cleaning/CCIT: Automated CIP cycles; Al-Al blister moisture barrier with 100% vision system integrity check.",
       "bcs_class": "BCS II",
       "rld": "Ibrance",
       "rld_applicant": "Pfizer Inc",
@@ -209,10 +248,10 @@
           "description": "NCE exclusivity"
         }
       ],
-      "bioequivalence_notes": "First CDK4/6 inhibitor; generic versions expected at LOE",
+      "bioequivalence_notes": "Solid Capsule (Hard gelatin) & Solid Tablet (Film-coated, oral) — Small Molecule (CDK4/6 inhibitor; isethionate salt). Primary LOE: March 2027; Thicket Horizon: March 2027.",
       "readiness": "partial",
       "source_url": "",
-      "notes": "High-volume oral solid opportunity for mid-tier CDMO"
+      "notes": "Scientific context: Hot-melt extrusion for solid dispersions, overcoming pH-dependent solubility, 21/7 intermittent cycle, ANC neutropenia monitoring. | GMP / Containment / CCIT: Containment: OEB 4 suite. Process: Hot-Melt Extrusion (HME) / spray drying for amorphous solid dispersion. Cleaning/CCIT: Automated CIP cycles; Al-Al blister moisture barrier with 100% vision system integrity check."
     },
     {
       "molecule_key": "semaglutide",

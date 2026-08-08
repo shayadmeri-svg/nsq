@@ -1,0 +1,148 @@
+{
+  "_comment": "8-molecule oncology table used as a high-value starting portfolio for the CDMO off-patent intelligence engine. Enriched into patent_seed.json, regulatory_seed.json, and demand_seed.json via redis-loader/enrich_oncology_seeds.py.",
+  "molecules": [
+    {
+      "molecule_key": "pembrolizumab",
+      "brand_sponsor": "Keytruda — Merck",
+      "registry": "FDA Purple Book (BLA 125514 / BLA 761391)",
+      "form": "Injectable (IV solution; Subcutaneous Qlex)",
+      "formulation_class": "mAb (Humanized IgG4-kappa anti-PD-1)",
+      "loe_horizon": "Primary LOE: Late 2028 – 2029; Thicket Horizon: 2033 – 2042+",
+      "thicket_strategy": "40+ indication method patents, subcutaneous Qlex switch co-formulated with hyaluronidase, fixed-dose combination (FDC) patents (TIGIT/LAG-3).",
+      "compendial_standards": "USP <129>, Ph. Eur. 2031, JP 2.66, IP Bio",
+      "testing_protocols": [
+        "SEC-HPLC (purity ≥ 98.0%)",
+        "CE-SDS",
+        "icIEF charge variants",
+        "SPR binding (KD)",
+        "LAL Endotoxin (USP <85>)"
+      ],
+      "scientific_context": "CHO cell biomanufacturing, Protein A purification, rHuPH20 co-formulation, cold-chain (2–8°C), biomarker companion diagnostic IHC (PD-L1/MSI-H).",
+      "gmp_methodologies": "Cleanroom: Grade A Isolators in Grade B background (EU GMP Annex 1). Process: Single-Use Bioreactors, PUPSIT filter validation, 20 nm viral filtration (ICH Q5A). Cleaning/CCIT: TOC swab validation (≤ 10 ppm); HVLD CCIT (USP <1207>)."
+    },
+    {
+      "molecule_key": "daratumumab",
+      "brand_sponsor": "Darzalex / Darzalex Faspro — J&J / Genmab",
+      "registry": "FDA Purple Book (BLA 761036 / BLA 761143)",
+      "form": "Injectable (IV infusion; Subcutaneous Faspro)",
+      "formulation_class": "mAb (Human IgG1-kappa anti-CD38)",
+      "loe_horizon": "Primary LOE: 2026 – 2029; Thicket Horizon: 2031 – 2035+",
+      "thicket_strategy": "Conversion to subcutaneous Darzalex Faspro via ENHANZE (rHuPH20) technology, multiple myeloma combination regimens (VRd, Dara-Pd), orphan drug extensions.",
+      "compendial_standards": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "testing_protocols": [
+        "ADCC/CDC cell cytotoxicity bioassays",
+        "CE-SDS",
+        "HPAEC-PAD glycan profiling",
+        "Subvisible Particles (USP <787>/<788>)"
+      ],
+      "scientific_context": "High-concentration protein engineering (~15 mL SC volume), Fc effector function analysis, steroid/antihistamine premedication protocol.",
+      "gmp_methodologies": "Cleanroom: Grade A barrier isolators. Process: High-viscosity SC metering pumps, continuous bioburden/endotoxin monitoring. Cleaning/CCIT: TOC/CEX-HPLC swab verification; Vacuum Decay CCIT (USP <1207>); 2–8°C cold chain."
+    },
+    {
+      "molecule_key": "nivolumab",
+      "brand_sponsor": "Opdivo — Bristol Myers Squibb",
+      "registry": "FDA Purple Book (BLA 125554)",
+      "form": "Injectable (IV solution; Subcutaneous formulation)",
+      "formulation_class": "mAb (Fully human IgG4 anti-PD-1)",
+      "loe_horizon": "Primary LOE: Late 2028; Thicket Horizon: 2036 – 2038",
+      "thicket_strategy": "Subcutaneous reformulation switch, dual-checkpoint blockade combinations (Yervoy), extended dosing interval patents (Q2W/Q4W).",
+      "compendial_standards": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "testing_protocols": [
+        "Trypsin peptide mapping LC-MS/MS",
+        "CEX-HPLC charge profiling",
+        "Sterility (USP <71>)",
+        "Endotoxin (USP <85>)"
+      ],
+      "scientific_context": "Process Analytical Technology (PAT), BLI/SPR binding kinetics, immune-mediated adverse reaction (IMAR) monitoring protocols.",
+      "gmp_methodologies": "Cleanroom: ISO 5 / Class 100 fill-finish suite. Process: Redundant 0.22 µm filtration, low pH virus inactivation, depyrogenation tunnel (>250°C). Cleaning/CCIT: HBEL/PDE limits; 100% HVLD vial integrity testing; DSCSA track & trace."
+    },
+    {
+      "molecule_key": "osimertinib",
+      "brand_sponsor": "Tagrisso — AstraZeneca",
+      "registry": "FDA Orange Book (NDA 208065; RLD/RS)",
+      "form": "Solid Tablet (Film-coated, oral)",
+      "formulation_class": "Small Molecule (3rd-gen EGFR TKI; mesylate salt)",
+      "loe_horizon": "Primary LOE: August 2032; Thicket Horizon: 2035 – 2042",
+      "thicket_strategy": "Crystalline mesylate salt form claims, adjuvant EGFR+ NSCLC indications, mutation subgroup treatment methods (T790M/L858R).",
+      "compendial_standards": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "testing_protocols": [
+        "Dissolution (USP <711>, Q ≥ 80%)",
+        "RP-UPLC assay/impurities",
+        "Genotoxic Impurities LC-MS/MS (ICH M7)",
+        "XRPD (USP <941>)"
+      ],
+      "scientific_context": "HPAPI containment (OEB 4/5), solid-state XRPD/DSC, companion diagnostic PCR/NGS testing for EGFR mutation status.",
+      "gmp_methodologies": "Containment: OEB 5 (OEL < 0.1 µg/m³), negative pressure, split butterfly valves. Process: In-line NIR for polymorph stability during wet granulation. Cleaning/CCIT: UPLC-MS/MS cleaning swab validation; Blister seal integrity testing."
+    },
+    {
+      "molecule_key": "durvalumab",
+      "brand_sponsor": "Imfinzi — AstraZeneca",
+      "registry": "FDA Purple Book (BLA 761069)",
+      "form": "Injectable (IV infusion)",
+      "formulation_class": "mAb (Fc-engineered human IgG1-kappa anti-PD-L1)",
+      "loe_horizon": "Primary LOE: 2030 – 2031; Thicket Horizon: 2033 – 2038+",
+      "thicket_strategy": "Dual checkpoint combination patents with Imjudo (tremelimumab), layered indication claims across SCLC, uHCC, and biliary tract cancers.",
+      "compendial_standards": "USP <129>, Ph. Eur. 2031, JP General, IP Bio",
+      "testing_protocols": [
+        "Flow cytometry cell-binding bioassay",
+        "C1q/FcγR non-binding assays (effector silencing)",
+        "CE-SDS",
+        "Glycan profiling"
+      ],
+      "scientific_context": "Fc-triple mutation engineering (silencing ADCC/CDC), large-scale mammalian bioreactors, TFF ultrafiltration/diafiltration.",
+      "gmp_methodologies": "Cleanroom: Grade A isolator on automated vial line. Process: Dual 0.22 µm filtration with pre/post bubble point testing. Cleaning/CCIT: TOC swab recovery on stainless steel bioreactors; Vacuum Decay CCIT (USP <1207>)."
+    },
+    {
+      "molecule_key": "abemaciclib",
+      "brand_sponsor": "Verzenio — Eli Lilly",
+      "registry": "FDA Orange Book (NDA 208788; RLD/RS)",
+      "form": "Solid Tablet (Film-coated, oral)",
+      "formulation_class": "Small Molecule (CDK4/6 inhibitor; free base)",
+      "loe_horizon": "Primary LOE: September 2031; Thicket Horizon: September 2031",
+      "thicket_strategy": "Single PTE-extended core patent, polymorph and salt claims, global family filings covering 45+ jurisdictions.",
+      "compendial_standards": "USP Monograph, Ph. Eur. 2.2.46, JP 2.01, IP 2026",
+      "testing_protocols": [
+        "RP-HPLC assay & related substances",
+        "Content Uniformity (USP <905>, AV ≤ 15.0)",
+        "Residual Solvents HS-GC (USP <467>)"
+      ],
+      "scientific_context": "Organic chemical synthesis, particle size micronization (USP <429>), continuous dosing regimen, hepatic/hematologic lab monitoring.",
+      "gmp_methodologies": "Containment: OEB 4 (OEL 1–10 µg/m³). Process: Roller compaction / dry granulation; closed powder handling. Cleaning/CCIT: RP-HPLC swab testing based on HBEL/PDE limits; automated tablet friability/hardness testing."
+    },
+    {
+      "molecule_key": "ribociclib",
+      "brand_sponsor": "Kisqali — Novartis",
+      "registry": "FDA Orange Book (NDA 209101; RLD/RS)",
+      "form": "Solid Tablet (Film-coated, oral)",
+      "formulation_class": "Small Molecule (CDK4/6 inhibitor; succinate salt)",
+      "loe_horizon": "Primary LOE: 2028 – 2031; Thicket Horizon: October 2036",
+      "thicket_strategy": "Dense 24+ patent web: succinate salt forms, high-load tablet strengths, pediatric extensions, combination treatment methods with endocrine therapies.",
+      "compendial_standards": "USP Monograph, Ph. Eur. 2.9.40, JP 6.02, IP 2026",
+      "testing_protocols": [
+        "Multipoint dissolution (USP <711>)",
+        "Ion Chromatography salt stoichiometry",
+        "XRPD (USP <941>)",
+        "ICP-MS (USP <232>/<233>)"
+      ],
+      "scientific_context": "High-drug-load tablet compression, salt stability control, intermittent 21/7 dosing schedule, mandatory baseline/periodic QTc ECG monitoring.",
+      "gmp_methodologies": "Containment: OEB 4 suite. Process: High-shear wet granulation, fluid-bed drying with bed temp/moisture monitoring (USP <921>). Cleaning/CCIT: Ion chromatography swab testing (< 1 µg/cm²); At-line XRPD polymorphic control."
+    },
+    {
+      "molecule_key": "palbociclib",
+      "brand_sponsor": "Ibrance — Pfizer",
+      "registry": "FDA Orange Book (NDA 207400 / NDA 208271; RLD/RS)",
+      "form": "Solid Capsule (Hard gelatin) & Solid Tablet (Film-coated, oral)",
+      "formulation_class": "Small Molecule (CDK4/6 inhibitor; isethionate salt)",
+      "loe_horizon": "Primary LOE: March 2027; Thicket Horizon: March 2027",
+      "thicket_strategy": "Capsule-to-tablet formulation switch (solid dispersion removing food effect), polymorph claims, Paragraph IV litigation settlement agreements.",
+      "compendial_standards": "USP Monograph, Ph. Eur. 2.9.3, JP 6.06, IP 2026",
+      "testing_protocols": [
+        "Comparative dissolution across pH 1.2–6.8",
+        "RP-UPLC organic impurities",
+        "Karl Fischer water content (USP <921>, ≤ 2.0%)"
+      ],
+      "scientific_context": "Hot-melt extrusion for solid dispersions, overcoming pH-dependent solubility, 21/7 intermittent cycle, ANC neutropenia monitoring.",
+      "gmp_methodologies": "Containment: OEB 4 suite. Process: Hot-Melt Extrusion (HME) / spray drying for amorphous solid dispersion. Cleaning/CCIT: Automated CIP cycles; Al-Al blister moisture barrier with 100% vision system integrity check."
+    }
+  ]
+}

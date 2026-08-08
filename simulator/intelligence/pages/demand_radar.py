@@ -7,6 +7,8 @@ score (pillar D).
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import streamlit as st
 
@@ -17,10 +19,19 @@ from intelligence.api_client import (
     list_demand,
     list_molecules,
     list_plants,
+    list_regulatory,
     score,
 )
-from intelligence.palette import BLUE, THEME, cluster_color, risk_color
-from intelligence.ui_components import mock_data_badge, page_header, scientific_scatter, render_chart
+from intelligence.palette import THEME, cluster_color, risk_color
+from intelligence.ui_components import (
+    mock_data_badge,
+    page_header,
+    render_chart,
+    scientific_bullet_chart,
+    scientific_gauge,
+    scientific_nested_ring,
+    scientific_stacked_bar,
+)
 
 
 def _badge(label: str, color: str) -> str:
@@ -35,6 +46,37 @@ def _cluster_color(cluster: str) -> str:
     return cluster_color(cluster)
 
 
+def _demand_score_breakdown(d: dict) -> dict[str, float]:
+    """Replicate the demand scorer component breakdown for visualization.
+
+    Returns the raw additive components so they can be stacked.
+    """
+    components: dict[str, float] = {"base": 10.0}
+    combined = (d.get("disease_prevalence_global_millions", 0) or 0) + (d.get("disease_prevalence_india_millions", 0) or 0)
+    components["prevalence"] = min(25.0, 8.0 * math.log10(combined + 1)) if combined > 0 else 0.0
+
+    trend = (d.get("growth_trend") or "").lower()
+    components["trend"] = {"growing": 15.0, "stable": 5.0, "declining": -10.0}.get(trend, 0.0)
+
+    p3 = d.get("trial_count_phase_3_plus", 0) or 0
+    components["pipeline"] = min(20.0, p3 * 2.0)
+
+    cluster_scores = {
+        "oncology": 15,
+        "specialty injectable": 14,
+        "immunology": 13,
+        "lifestyle / chronic": 9,
+        "lifestyle/chronic": 9,
+        "lifestyle": 9,
+        "commodity": 4,
+    }
+    components["cluster_premium"] = float(cluster_scores.get((d.get("cluster") or "").lower(), 8))
+
+    momentum = ((d.get("buyer_activity_score", 0) or 0) + (d.get("market_momentum_score", 0) or 0)) / 2.0
+    components["momentum"] = min(15.0, momentum * 0.15)
+    return components
+
+
 def _merge_pillar_summary(molecules, demand_list, regulatory_list):
     """Build a list of dicts with A/B/C summary fields joined by molecule_key."""
     demand_by_key = {d["molecule_key"]: d for d in demand_list}
@@ -44,6 +86,7 @@ def _merge_pillar_summary(molecules, demand_list, regulatory_list):
         key = m["molecule_key"]
         d = demand_by_key.get(key, {})
         r = reg_by_key.get(key, {})
+        components = _demand_score_breakdown(d)
         loe = m.get("earliest_loe")
         rows.append({
             "molecule_key": key,
@@ -63,6 +106,8 @@ def _merge_pillar_summary(molecules, demand_list, regulatory_list):
             "te_rating": r.get("te_rating", ""),
             "readiness": r.get("readiness", ""),
             "bcs_class": r.get("bcs_class", ""),
+            "demand_heat": sum(components.values()),
+            **components,
         })
     return rows
 
@@ -117,24 +162,21 @@ def render() -> None:
         st.info("No molecules match the current filters.")
         return
 
-    # Scientific scatter: demand heat vs. LOE horizon
-    filtered["demand_heat"] = filtered["buyer_activity_score"] + filtered["market_momentum_score"]
-    scatter_df = filtered.copy()
-    scatter_df["loe_numeric"] = pd.to_numeric(scatter_df["loe"].replace("off-patent / unknown", pd.NA), errors="coerce")
-    fig = scientific_scatter(
-        scatter_df,
-        x="loe_numeric",
-        y="demand_heat",
-        title="Demand heat vs. LOE horizon",
-        x_label="Years to earliest LOE",
-        y_label="Demand heat proxy (buyer + momentum, 0–200)",
-        source="Engine demand signals; n={} molecules".format(len(scatter_df)),
-        stat_note="Higher values indicate stronger near-term demand; missing LOE shown as off-patent/unknown.",
-        color_col="trial_count_phase_3_plus",
-        size_col="market_momentum_score",
-        hover_name="brand_name",
+    # Decomposed demand stacked bar: each bar is a molecule, segments are the
+    # additive components that the demand scorer uses (prevalence, trend, pipeline,
+    # cluster premium, momentum).  This is more actionable than a synthetic
+    # "demand heat" scatter against LOE.
+    stack_cols = ["prevalence", "trend", "pipeline", "cluster_premium", "momentum"]
+    bar_df = filtered[["brand_name"] + stack_cols].copy()
+    bar_df = bar_df.sort_values(by=stack_cols, ascending=False).head(15)
+    stack_fig = scientific_stacked_bar(
+        bar_df,
+        label_col="brand_name",
+        segment_cols=stack_cols,
+        title="Demand attractiveness composition (top 15 molecules)",
+        source="engine demand signals; n={} molecules".format(len(filtered)),
     )
-    render_chart(fig)
+    render_chart(stack_fig)
 
     display = filtered.sort_values("demand_heat", ascending=False)[[
         "molecule_key", "brand_name", "api_name", "therapeutic_area",
@@ -146,7 +188,7 @@ def render() -> None:
         "Export Mkt", "Total Geo", "Trend", "P3+ Trials", "TE", "Regulatory",
     ]
 
-    st.dataframe(display, use_container_width=True, hide_index=True)
+    st.dataframe(display, width="stretch", hide_index=True)
 
     # Drug selector for four-pillar scoring
     st.markdown("---")
@@ -171,42 +213,55 @@ def render() -> None:
             "plant": st.slider("Plant weight", 0.0, 1.0, 0.30, 0.05, key="dr_plant"),
         }
     with col2:
-        if st.button("Run four-pillar evaluation", type="primary", use_container_width=True) and selected_plant_id:
+        if st.button("Run four-pillar evaluation", type="primary", width="stretch") and selected_plant_id:
             with st.spinner("Scoring…"):
                 result = score(selected_key, selected_plant_id, weights=weights)
                 st.session_state["last_demand_score"] = result.model_dump(mode="json")
 
     if "last_demand_score" in st.session_state:
         r = st.session_state["last_demand_score"]
-        st.markdown("#### Four-pillar score")
-        score_df = pd.DataFrame([{
-            "Pillar": "Patent readiness",
-            "Score": r["patent_readiness_score"],
-            "Explanation": r["explanation"]["patent"],
-        }, {
-            "Pillar": "Regulatory clarity",
-            "Score": r["regulatory_clarity_score"],
-            "Explanation": r["explanation"]["regulatory"],
-        }, {
-            "Pillar": "Demand attractiveness",
-            "Score": r["demand_attractiveness_score"],
-            "Explanation": r["explanation"]["demand"],
-        }, {
-            "Pillar": "Plant fit",
-            "Score": r["plant_fit_score"],
-            "Explanation": r["explanation"]["plant"],
-        }])
-        st.dataframe(score_df, use_container_width=True, hide_index=True)
-        st.markdown(
-            f"""
-            <div style="border:1px solid {THEME['border']}; border-radius:6px; padding:16px; background:{THEME['surface']}; text-align:center;">
-              <div style="font-size:12px; color:{THEME['text_muted']};">Total CDMO Score</div>
-              <div style="font-size:40px; font-weight:900; color:{THEME['primary']};">{r['total_score']:.0f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.markdown("### Four-pillar score")
+
+        pillar_scores = {
+            "Patent": r["patent_readiness_score"],
+            "Regulatory": r["regulatory_clarity_score"],
+            "Demand": r["demand_attractiveness_score"],
+            "Plant Fit": r["plant_fit_score"],
+        }
+        ring_fig = scientific_nested_ring(
+            pillar_scores,
+            max_value=100,
+            title="Pillar score profile",
+            source="engine scoring model",
         )
+        render_chart(ring_fig)
+
+        bullet_fig = scientific_bullet_chart(
+            pillar_scores,
+            target=80,
+            max_value=100,
+            title="Score completion vs. target",
+            source="engine scoring model",
+        )
+        render_chart(bullet_fig)
+
+        total_col1, total_col2 = st.columns([1, 3])
+        with total_col1:
+            gauge_fig = scientific_gauge(
+                r["total_score"],
+                title="Total CDMO Score",
+                source="weighted four-pillar composite",
+            )
+            render_chart(gauge_fig)
+        with total_col2:
+            st.markdown("#### Rationale")
+            for pillar, text in r["explanation"].items():
+                if pillar == "tier":
+                    continue
+                st.caption(f"**{pillar.title()}:** {text}")
+
         if r["warnings"]:
+            st.markdown("#### Warnings")
             for w in r["warnings"]:
                 st.warning(w)
 

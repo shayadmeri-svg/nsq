@@ -42,7 +42,7 @@
         }
       ],
       "fto_risk": "high",
-      "notes": "Biosimilar entry expected 2028-2029 in US/EU; India likely 6-12 months later. Heavy defensive thicket around formulation and device.",
+      "notes": "Keytruda — Merck. FDA Purple Book (BLA 125514 / BLA 761391). Injectable (IV solution; Subcutaneous Qlex) — mAb (Humanized IgG4-kappa anti-PD-1). Primary LOE: Late 2028 – 2029; Thicket Horizon: 2033 – 2042+. Thicket strategy: 40+ indication method patents, subcutaneous Qlex switch co-formulated with hyaluronidase, fixed-dose combination (FDC) patents (TIGIT/LAG-3).",
       "source_url": "https://www.fda.gov/drugs/drug-supplement-approval-biosimilar",
       "geo_coverage": [
         {
@@ -172,7 +172,7 @@
         }
       ],
       "fto_risk": "high",
-      "notes": "Subcutaneous Darzalex Faspro has additional formulation/device patents extending protection. Intravenous biosimilar path likely earlier.",
+      "notes": "Darzalex / Darzalex Faspro — J&J / Genmab. FDA Purple Book (BLA 761036 / BLA 761143). Injectable (IV infusion; Subcutaneous Faspro) — mAb (Human IgG1-kappa anti-CD38). Primary LOE: 2026 – 2029; Thicket Horizon: 2031 – 2035+. Thicket strategy: Conversion to subcutaneous Darzalex Faspro via ENHANZE (rHuPH20) technology, multiple myeloma combination regimens (VRd, Dara-Pd), orphan drug extensions.",
       "source_url": "",
       "geo_coverage": [
         {
@@ -302,7 +302,7 @@
         }
       ],
       "fto_risk": "medium",
-      "notes": "First-wave PD-1 biosimilars expected 2028. Process and secondary patents present but subcutaneous/device thicket lighter than Keytruda.",
+      "notes": "Opdivo — Bristol Myers Squibb. FDA Purple Book (BLA 125554). Injectable (IV solution; Subcutaneous formulation) — mAb (Fully human IgG4 anti-PD-1). Primary LOE: Late 2028; Thicket Horizon: 2036 – 2038. Thicket strategy: Subcutaneous reformulation switch, dual-checkpoint blockade combinations (Yervoy), extended dosing interval patents (Q2W/Q4W).",
       "source_url": "",
       "geo_coverage": [
         {
@@ -432,7 +432,7 @@
         }
       ],
       "fto_risk": "medium",
-      "notes": "Small-molecule EGFR inhibitor; LOE expected 2027 in US/EU. India may lag by 12-18 months. Formulation freedom-to-operate should be manageable if polymorph patents are designed around.",
+      "notes": "Tagrisso — AstraZeneca. FDA Orange Book (NDA 208065; RLD/RS). Solid Tablet (Film-coated, oral) — Small Molecule (3rd-gen EGFR TKI; mesylate salt). Primary LOE: August 2032; Thicket Horizon: 2035 – 2042. Thicket strategy: Crystalline mesylate salt form claims, adjuvant EGFR+ NSCLC indications, mutation subgroup treatment methods (T790M/L858R).",
       "source_url": "",
       "geo_coverage": [
         {
@@ -562,7 +562,7 @@
         }
       ],
       "fto_risk": "medium",
-      "notes": "PD-L1 biologic; later LOE than PD-1 leaders. Strong oncology demand signal expected through 2030.",
+      "notes": "Imfinzi — AstraZeneca. FDA Purple Book (BLA 761069). Injectable (IV infusion) — mAb (Fc-engineered human IgG1-kappa anti-PD-L1). Primary LOE: 2030 – 2031; Thicket Horizon: 2033 – 2038+. Thicket strategy: Dual checkpoint combination patents with Imjudo (tremelimumab), layered indication claims across SCLC, uHCC, and biliary tract cancers.",
       "source_url": "",
       "geo_coverage": [
         {
@@ -692,7 +692,7 @@
         }
       ],
       "fto_risk": "medium",
-      "notes": "Oral CDK4/6 inhibitor for breast cancer. Small-molecule launch fits a mid-tier oral-solid CDMO well.",
+      "notes": "Verzenio — Eli Lilly. FDA Orange Book (NDA 208788; RLD/RS). Solid Tablet (Film-coated, oral) — Small Molecule (CDK4/6 inhibitor; free base). Primary LOE: September 2031; Thicket Horizon: September 2031. Thicket strategy: Single PTE-extended core patent, polymorph and salt claims, global family filings covering 45+ jurisdictions.",
       "source_url": "",
       "geo_coverage": [
         {
@@ -822,7 +822,7 @@
         }
       ],
       "fto_risk": "medium",
-      "notes": "Oral CDK4/6 inhibitor; similar profile to Verzenio. Strong fit for oral-solid CDMO capabilities.",
+      "notes": "Kisqali — Novartis. FDA Orange Book (NDA 209101; RLD/RS). Solid Tablet (Film-coated, oral) — Small Molecule (CDK4/6 inhibitor; succinate salt). Primary LOE: 2028 – 2031; Thicket Horizon: October 2036. Thicket strategy: Dense 24+ patent web: succinate salt forms, high-load tablet strengths, pediatric extensions, combination treatment methods with endocrine therapies.",
       "source_url": "",
       "geo_coverage": [
         {
@@ -952,7 +952,7 @@
         }
       ],
       "fto_risk": "medium",
-      "notes": "First-to-market oral CDK4/6 inhibitor; LOE expected 2027. High-volume oral solid opportunity for a mid-tier CDMO.",
+      "notes": "Ibrance — Pfizer. FDA Orange Book (NDA 207400 / NDA 208271; RLD/RS). Solid Capsule (Hard gelatin) & Solid Tablet (Film-coated, oral) — Small Molecule (CDK4/6 inhibitor; isethionate salt). Primary LOE: March 2027; Thicket Horizon: March 2027. Thicket strategy: Capsule-to-tablet formulation switch (solid dispersion removing food effect), polymorph claims, Paragraph IV litigation settlement agreements.",
       "source_url": "",
       "geo_coverage": [
         {
