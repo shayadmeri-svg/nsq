@@ -14,7 +14,7 @@ set dotenv-filename := ".env"
 
 LOADER := "redis-loader"
 INPUT := env_var_or_default("NSQ_JSON", "data/publicNsqDrugTable.json")
-CSV := env_var_or_default("NSQ_CSV", "data/data Jan25_May26.csv")
+CSV := env_var_or_default("NSQ_CSV", "data/data Jan25_Jun26.csv")
 AUGMENT := env_var_or_default("NSQ_AUGMENT", "1")
 CDSCO_URL := env_var_or_default("CDSCO_URL", "https://cdscoonline.gov.in/CDSCO/publicNsqDrugTable")
 GEOJSON := env_var_or_default("GEOJSON_FILE", "analytics/india_states_slim.geojson")

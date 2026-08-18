@@ -20,7 +20,13 @@ from data_loader import (  # noqa: E402
     load_and_preprocess_data,
     fuzzy_search_products,
 )
-from landing import render_landing_page  # noqa: E402
+from gmp_knowledge import (  # noqa: E402
+    PRODUCT_CATALOG,
+    match_api,
+    match_molecule,
+    mitigations_for,
+    generic_standards,
+)
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION & SETUP
@@ -213,7 +219,12 @@ def _render_product_investigation(df: pd.DataFrame) -> None:
         st.info("No parseable `Reporting Month & Year` for this product/manufacturer.")
         return
 
-    # Aggregate by month AND by primary category for a stacked view.
+    # Aggregate by month AND by primary category for a stacked view. Fold the
+    # failure-category tail into "Other" so the stack uses <=8 hues (top-7 +
+    # Other) and never cycles past _SCIENTIFIC_COLORWAY.
+    timeline['Failure_Category_Primary'] = _fold_categories(
+        timeline['Failure_Category_Primary'], top_k=7, other="Other"
+    )
     monthly = (
         timeline.groupby([pd.Grouper(key='__date', freq='MS'), 'Failure_Category_Primary'])
                .size()
@@ -228,9 +239,579 @@ def _render_product_investigation(df: pd.DataFrame) -> None:
         ),
         labels={'__date': 'Reporting Month', 'count': 'Alert Count',
                 'Failure_Category_Primary': 'Failure Category'},
+        color_discrete_sequence=_SCIENTIFIC_COLORWAY,
     )
     fig.update_layout(barmode='stack', legend_title='Failure Category')
     st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Manufacturer-first investigation. Counterpart to _render_product_investigation
+# (product-first). Lets a sales agent start from the manufacturers facing the most
+# NSQ issues and drill into one for full alert history, issue analysis, GMP &
+# testing standards recap, probable causes, and a mitigation plan. Uses df_raw
+# (full dataset) deliberately — same contract as the product-first mode.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Reusable chart helpers (shared by the Sankey, heatmaps, timelines, and the
+# manufacturer summary). Form follows the dataviz method: a single accent color
+# on nominal bars (color is reserved for where it *is* the encoding —
+# heatmaps/choropleth), and categorical tails fold into "Other" so we never
+# cycle past the 8-hue _SCIENTIFIC_COLORWAY ceiling.
+# ---------------------------------------------------------------------------
+
+_ACCENT = _SCIENTIFIC_COLORWAY[0]       # #0072B2 — single accent for nominal bars
+_CONTEXT = _SCIENTIFIC_COLORWAY[7]      # #999999 — de-emphasis / context series
+_MOLECULE_OTHER = "Other / unmapped molecule"
+
+
+def _mfg_label(df: pd.DataFrame) -> pd.Series:
+    """Per-row canonical manufacturer label: Mfg_Company_Canonical, falling back
+    to the first segment of 'Manufactured By'. Index-aligned to df (no rows
+    dropped) so Sankey/heatmap/timeline callers can group and slice freely."""
+    canon = df['Mfg_Company_Canonical'].fillna('').astype(str)
+    raw = (
+        df['Manufactured By'].fillna('').astype(str)
+        .str.split(',').str[0].str.strip()
+    )
+    return canon.where(canon != '', raw)
+
+
+def _molecule_hybrid(df: pd.DataFrame, other_label: str = _MOLECULE_OTHER) -> pd.Series:
+    """Hybrid molecule label per row, index-aligned to df. Curated API via
+    match_molecule (PRODUCT_CATALOG then EXTRA_CURATED_APIS) where it matches
+    — clean, aggregated top nodes (paracetamol, telmisartan …) — and the
+    product-ontology canonical key (active-ingredient token grouping, ~99.5%
+    coverage) for the rest, so the tail carries real named molecules instead
+    of a blanket 'unclassified' bucket. Blank keys fall to other_label.
+
+    Curated-first matters for aggregation: a combo like 'Aceclofenac
+    Paracetamol' matches the curated token 'paracetamol' and rolls into the
+    paracetamol node, while 'Albendazole' (not yet curated) keeps its own
+    ontology-key node and shows up as a curation candidate."""
+    curated = df['Name of Product'].map(match_molecule).fillna('')
+    key = df['Product_Ontology_Key'].fillna('').astype(str)
+    label = curated.where(curated != '', key)
+    return label.where(label != '', other_label)
+
+
+def _fallback_molecules(df: pd.DataFrame) -> pd.Series:
+    """Distinct product-ontology keys used as the molecule fallback — i.e.
+    products whose name matched no curated/extra API — ranked by alert count.
+    These are the candidates to promote into EXTRA_CURATED_APIS in
+    shared/gmp_knowledge.py to progressively grow the curated molecule list."""
+    curated = df['Name of Product'].map(match_molecule).fillna('')
+    key = df['Product_Ontology_Key'].fillna('').astype(str)
+    fb = key[(curated == '') & (key != '')]
+    return fb.value_counts()
+
+
+def _fold_categories(series: pd.Series, top_k: int = 7, other: str = "Other") -> pd.Series:
+    """Keep the top_k categories by count; replace the tail (and NaN) with
+    `other`. Index-aligned. Keeps stacked-bar/timeline colour counts within the
+    8-hue _SCIENTIFIC_COLORWAY ceiling (top-7 + Other)."""
+    s = series.fillna(other).astype(str)
+    counts = s[s != other].value_counts()
+    keep = set(counts.head(top_k).index.tolist())
+    return s.where(s.isin(keep) | (s == other), other)
+
+
+def _render_sankey(df: pd.DataFrame, levels, title: str) -> None:
+    """Generic N-level Sankey. `levels` is a list of (series, label, cap,
+    other_label) tuples; each `series` is index-aligned to df. Each level is
+    capped to its top `cap` values by count (tail -> other_label). Nodes use
+    the accent hue; links are light-gray. Per-level node ids keep coincident
+    labels (e.g. "Other" on every level) as distinct nodes."""
+    if df.empty:
+        st.warning("No rows available for this flow under the current filters.")
+        return
+    capped = []
+    for series, _label, cap, other_label in levels:
+        s = series.fillna(other_label).astype(str)
+        top = s[s != other_label].value_counts().head(cap).index.tolist()
+        capped.append(s.where(s.isin(top) | (s == other_label), other_label))
+    # Per-level node order: count desc, other_label forced last.
+    node_labels = []
+    for (series, _label, _cap, other_label), s in zip(levels, capped):
+        vc = s[s != other_label].value_counts().sort_values(ascending=False)
+        ordered = vc.index.tolist()
+        if (s == other_label).any():
+            ordered = ordered + [other_label]
+        node_labels.append(ordered)
+    all_nodes: list[str] = []
+    node_idx: dict[tuple[int, str], int] = {}
+    for li, ordered in enumerate(node_labels):
+        for name in ordered:
+            node_idx[(li, name)] = len(all_nodes)
+            all_nodes.append(name)
+    sources, targets, values = [], [], []
+    for i in range(len(capped) - 1):
+        pair = pd.crosstab(capped[i], capped[i + 1])
+        for src in pair.index:
+            for tgt in pair.columns:
+                v = int(pair.loc[src, tgt])
+                if v:
+                    sources.append(node_idx[(i, src)])
+                    targets.append(node_idx[(i + 1, tgt)])
+                    values.append(v)
+    if not sources:
+        st.warning("No flow links could be built from the current filters.")
+        return
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15, thickness=20, line=dict(color="black", width=0.5),
+            label=all_nodes, color=_ACCENT,
+        ),
+        link=dict(
+            source=sources, target=targets, value=values,
+            color="rgba(180, 180, 180, 0.35)",
+        ),
+    )])
+    fig.update_layout(title_text=title, font_size=11)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _topn_heatmap(row_series: pd.Series, col_series: pd.Series,
+                  row_cap: int, col_cap: int, title: str,
+                  xlab: str, ylab: str,
+                  row_other_label: str = "Other",
+                  col_other_label: str = "Other",
+                  include_other: bool = False) -> None:
+    """Crosstab heatmap of top-row_cap rows x top-col_cap cols, rendered with
+    the sequential ramp. Both series must be index-aligned to the same frame.
+    Sorts rows/cols by marginal total so the densest pairing sits top-right.
+
+    When include_other is False (default) the tail beyond each cap and any
+    other-label bucket are dropped entirely and the excluded alert count is
+    reported in a caption — no giant 'Other' cell. When True, the tail folds
+    into the other-label rows/cols (for callers that want the bucket)."""
+    r = row_series.fillna(row_other_label).astype(str)
+    c = col_series.fillna(col_other_label).astype(str)
+    row_top = r[r != row_other_label].value_counts().head(row_cap).index.tolist()
+    col_top = c[c != col_other_label].value_counts().head(col_cap).index.tolist()
+    if include_other:
+        r = r.where(r.isin(row_top) | (r == row_other_label), row_other_label)
+        c = c.where(c.isin(col_top) | (c == col_other_label), col_other_label)
+        ct = pd.crosstab(r, c)
+        keep_rows = [x for x in row_top if x in ct.index] + (
+            [row_other_label] if row_other_label in ct.index else [])
+        keep_cols = [x for x in col_top if x in ct.columns] + (
+            [col_other_label] if col_other_label in ct.columns else [])
+        ct = ct.reindex(index=keep_rows, columns=keep_cols).fillna(0)
+        excluded = 0
+    else:
+        # Drop the tail + other-label bucket entirely; report what's excluded.
+        keep = r.isin(row_top) & c.isin(col_top)
+        ct = pd.crosstab(r[keep], c[keep])
+        ct = ct.reindex(
+            index=[x for x in row_top if x in ct.index],
+            columns=[x for x in col_top if x in ct.columns],
+        ).fillna(0)
+        excluded = int(len(r) - keep.sum())
+    ct = ct.loc[ct.sum(axis=1).sort_values(ascending=True).index]
+    ct = ct[ct.sum(axis=0).sort_values(ascending=True).index]
+    if ct.empty or ct.values.sum() == 0:
+        st.info("No data to populate this heatmap under the current filters.")
+        return
+    fig = px.imshow(
+        ct,
+        labels=dict(x=xlab, y=ylab, color="Alert Count"),
+        x=ct.columns, y=ct.index,
+        color_continuous_scale=_SCIENTIFIC_CONTINUOUS,
+        title=title,
+    )
+    fig.update_xaxes(side="bottom", tickangle=30)
+    fig.update_layout(margin=dict(l=8, r=8, t=40, b=8))
+    st.plotly_chart(fig, use_container_width=True)
+    if excluded:
+        st.caption(
+            f"Top {len(ct.index)} × {len(ct.columns)}; {excluded} alerts "
+            f"outside this matrix excluded (rare rows/cols or {col_other_label})."
+        )
+
+
+def _manufacturer_heatmap(df: pd.DataFrame, col_series: pd.Series,
+                          n_mfg: int, n_col: int, title: str,
+                          xlab: str, ylab: str,
+                          col_other_label: str = "Other") -> None:
+    """Manufacturer × column heatmap with relevance-based manufacturer
+    selection and no 'Other' bucket. Columns are the top n_col categories by
+    count (col_other_label excluded). Manufacturers are then ranked by how
+    many of those top columns they actually appear in (coverage breadth),
+    tie-broken by total alerts within the top columns — so the matrix is
+    dense and informative instead of a few one-hot rows. The folded tail
+    (rare manufacturers, non-top columns, col_other_label) is dropped and its
+    alert count reported."""
+    mfg = _mfg_label(df).fillna('').astype(str)
+    col = col_series.fillna(col_other_label).astype(str)
+    col_top = col[col != col_other_label].value_counts().head(n_col).index.tolist()
+    if not col_top:
+        st.info("No data to populate this heatmap under the current filters.")
+        return
+    keep = (mfg != '') & col.isin(col_top)
+    ct = pd.crosstab(mfg[keep], col[keep])
+    # Relevance: total alerts within the top columns first (the major
+    # manufacturers facing issues), tie-broken by coverage breadth (how many
+    # of the top columns they hit). Total-first guarantees every selected row
+    # carries real volume; the top-column restriction guarantees no empty rows
+    # — a dense, informative matrix rather than a few one-hot rows.
+    coverage = (ct > 0).sum(axis=1)
+    totals = ct.sum(axis=1)
+    mfg_order = (
+        pd.DataFrame({'cov': coverage, 'tot': totals})
+        .sort_values(['tot', 'cov'], ascending=[False, False])
+        .head(n_mfg).index.tolist()
+    )
+    ct = ct.reindex(index=mfg_order, columns=col_top).fillna(0)
+    # Columns by total desc; rows by total asc so the biggest sits on top.
+    ct = ct[ct.sum(axis=0).sort_values(ascending=False).index]
+    ct = ct.loc[ct.sum(axis=1).sort_values(ascending=True).index]
+    excluded = int(len(mfg) - int(ct.values.sum()))
+    if ct.empty or ct.values.sum() == 0:
+        st.info("No data to populate this heatmap under the current filters.")
+        return
+    fig = px.imshow(
+        ct,
+        labels=dict(x=xlab, y=ylab, color="Alert Count"),
+        x=ct.columns, y=ct.index,
+        color_continuous_scale=_SCIENTIFIC_CONTINUOUS,
+        title=title,
+    )
+    fig.update_xaxes(side="bottom", tickangle=30)
+    fig.update_layout(margin=dict(l=8, r=8, t=40, b=8))
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        f"Top {len(ct.index)} manufacturers by alert volume within the top "
+        f"{len(ct.columns)} {xlab.lower()}s (coverage breadth as tiebreaker). "
+        f"{excluded} alerts outside this matrix excluded (rare manufacturers, "
+        f"non-top {xlab.lower()}s, or {col_other_label})."
+    )
+
+
+def _mfg_summary(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Group alerts by canonical manufacturer: Mfg_Company_Canonical, falling
+    back to the first segment of 'Manufactured By' (the raw company name).
+    Returns (mfg_df labelled with an '__mfg' column, empties dropped; summary
+    table sorted by alert count desc). Mirrors the grouping in the product
+    investigation flow so both modes collapse manufacturers identically."""
+    mfg_df = df.copy()
+    mfg_df['__mfg'] = _mfg_label(mfg_df)
+    mfg_df = mfg_df[mfg_df['__mfg'].fillna('') != '']
+    summary = (
+        mfg_df.groupby('__mfg')
+              .agg(
+                  alerts=('Name of Product', 'size'),
+                  products=('Name of Product', 'nunique'),
+                  first_seen=('Reporting Month & Year', 'min'),
+                  last_seen=('Reporting Month & Year', 'max'),
+                  cities=('Mfg_City', lambda s: sorted(set(x for x in s if x))),
+              )
+              .reset_index()
+              .rename(columns={'__mfg': 'Manufacturer'})
+              .sort_values(['alerts', 'Manufacturer'], ascending=[False, True])
+    )
+    return mfg_df, summary
+
+
+def _render_api_card(drug) -> None:
+    """One curated-API standards card: optimal process, patent, GMP corridor,
+    IP 2026 / Ph. Eur. testing, typical defect causes."""
+    st.markdown(
+        f"**Process:** {drug.optimal_process or '—'}  ·  **Patent:** {drug.patent_ref or '—'}"
+    )
+    if drug.ideal_parameters:
+        gmp_lines = [
+            f"- {p.label}: {p.min}–{p.max} {p.unit} (target {p.ideal} {p.unit})"
+            for p in drug.ideal_parameters.values()
+        ]
+        st.markdown("**GMP corridor**\n" + "\n".join(gmp_lines))
+    elif drug.gmp_note:
+        st.markdown(f"**GMP** — {drug.gmp_note}")
+    else:
+        st.markdown("**GMP corridor** — not specified in the curated catalog.")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**IP 2026**")
+        st.markdown(f"- Assay: {drug.ip2026.assay}")
+        st.markdown(f"- Dissolution: {drug.ip2026.dissolution}")
+        st.markdown(f"- Impurities: {drug.ip2026.impurities}")
+    with c2:
+        st.markdown("**Ph. Eur.**")
+        st.markdown(f"- Assay: {drug.ph_eur.assay}")
+        st.markdown(f"- Dissolution: {drug.ph_eur.dissolution}")
+        st.markdown(f"- Impurities: {drug.ph_eur.impurities}")
+    if drug.common_alerts:
+        st.markdown("**Typical defect causes:** " + "; ".join(drug.common_alerts))
+
+
+def _curated_apis(drill: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Return (curated API ids in first-appearance order, uncurated product
+    names) for the manufacturer's distinct flagged products. Matches on the
+    raw 'Name of Product' (always present, retains the API token match_api
+    expects) so no product is silently skipped — consistent with the
+    'matched K of M' caption, which uses Name of Product nunique for M."""
+    curated: list[str] = []
+    seen: set[str] = set()
+    uncurated: list[str] = []
+    for p in drill['Name of Product'].dropna().unique():
+        name = str(p).strip()
+        if not name:
+            continue
+        api = match_api(name)
+        if api and api not in seen:
+            curated.append(api)
+            seen.add(api)
+        elif not api:
+            uncurated.append(name)
+    return curated, uncurated
+
+
+def _render_standards_recap(drill: pd.DataFrame) -> None:
+    """(d) Recap of GMP & testing standards — one card per curated API among the
+    manufacturer's flagged products; generic pharmacopeial guidance for the rest.
+    No fabricated specifics: uncurated products show generic_standards()."""
+    curated, uncurated = _curated_apis(drill)
+    n_products = drill['Name of Product'].nunique()
+    st.caption(
+        f"Matched {len(curated)} of {n_products} distinct flagged products to a "
+        f"curated active ingredient; {len(uncurated)} product(s) fall back to "
+        f"generic pharmacopeial guidance."
+    )
+    if curated:
+        for api_id in curated:
+            drug = PRODUCT_CATALOG[api_id]
+            with st.expander(f"{drug.name} ({api_id})", expanded=False):
+                _render_api_card(drug)
+    if uncurated:
+        with st.expander(
+            f"Uncurated products — generic pharmacopeial guidance ({len(uncurated)})",
+            expanded=False,
+        ):
+            gs = generic_standards(uncurated[0])
+            st.markdown(f"**Scientific context** — {gs['scientific']}")
+            st.markdown(f"**Regulatory guidelines** — {gs['regulatory']}")
+            st.caption(
+                "Applies to: " + ", ".join(uncurated[:12])
+                + (" …" if len(uncurated) > 12 else "")
+            )
+
+
+def _render_probable_causes(drill: pd.DataFrame, fc_counts: pd.DataFrame) -> None:
+    """(e) Potential causes — data-driven failure-mode signals (recovered
+    _risk_card logic) + API-informed typical defect mechanisms."""
+    causes: list[str] = []
+    for _, r in fc_counts.head(3).iterrows():
+        causes.append(
+            f"{r['Failure Category']} is a dominant failure mode ({int(r['Alerts'])} alerts)."
+        )
+    if 'Form type' in drill.columns:
+        forms = drill['Form type'].dropna()
+        forms = forms[forms.astype(str) != '']
+        if forms.nunique() > 1:
+            causes.append(
+                f"Issues span {forms.nunique()} dosage forms: "
+                f"{', '.join(sorted(forms.unique()))}."
+            )
+    if 'Mfg_State' in drill.columns:
+        states = drill['Mfg_State'].dropna()
+        states = states[states.astype(str) != '']
+        if not states.empty:
+            causes.append(
+                "Geographic concentration: "
+                + ", ".join(states.value_counts().head(3).index.tolist()) + "."
+            )
+    st.markdown("**Data-driven signals**")
+    if causes:
+        for c in causes:
+            st.markdown(f"- {c}")
+    else:
+        st.caption("No dominant failure-mode signal for this manufacturer.")
+
+    st.markdown("**API-informed typical defect mechanisms**")
+    curated, uncurated = _curated_apis(drill)
+    if curated:
+        for api_id in curated:
+            drug = PRODUCT_CATALOG[api_id]
+            if drug.common_alerts:
+                st.markdown(f"- **{drug.name}**: " + "; ".join(drug.common_alerts))
+            else:
+                st.markdown(
+                    f"- **{drug.name}**: no curated typical-defect list "
+                    f"(review the NSQ result text for this product)."
+                )
+    if uncurated:
+        st.markdown(
+            "- For products not in the curated catalog: review the NSQ result "
+            "text against the relevant pharmacopeial monograph for the active "
+            "substance."
+        )
+    if not curated and not uncurated:
+        st.caption("No products resolved for this manufacturer.")
+
+
+def _render_mitigation_plan(drill: pd.DataFrame, fc_counts: pd.DataFrame) -> None:
+    """(f) Mitigation plan — per top failure category, pull mitigations from
+    SOLUTION_BANK (via mitigations_for). Categories without a curated playbook
+    fall back to ICH Q9; never fabricates."""
+    st.caption(
+        "Mitigations are keyed to the manufacturer's dominant failure "
+        "categories; categories without a curated playbook fall back to "
+        "ICH Q9 risk-management."
+    )
+    top = fc_counts.head(5)
+    if top.empty:
+        st.caption("No failure categories resolved for this manufacturer.")
+        return
+    for _, r in top.iterrows():
+        cat = r['Failure Category']
+        n = int(r['Alerts'])
+        st.markdown(f"**{cat}** ({n} alerts)")
+        for m in mitigations_for(cat):
+            st.markdown(f"- {m}")
+
+
+def _render_manufacturer_investigation(df: pd.DataFrame) -> None:
+    """Manufacturer-first investigation: visualize the major manufacturers
+    facing NSQ issues, then drill into one for its full alert history, an issue
+    analysis, a recap of GMP & testing standards, probable causes, and a
+    mitigation plan."""
+    st.markdown(
+        "Start from the manufacturers facing the most NSQ issues, then drill "
+        "into one for its full alert history, issue analysis, a recap of GMP "
+        "& testing standards, probable causes, and a mitigation plan."
+    )
+    st.caption(
+        "This view uses the full dataset (all reporting periods); sidebar "
+        "filters (Drug type / Form type / search / dissolution focus) scope "
+        "tabs 1–4 only."
+    )
+
+    mfg_df, summary = _mfg_summary(df)
+    if summary.empty:
+        st.info("No manufacturer-resolved alerts in the dataset.")
+        return
+
+    # ---- (a) Major manufacturers facing issues (visualized) ----
+    st.subheader("Major manufacturers facing NSQ issues")
+    top_n = summary.head(15)
+    fig_bar = px.bar(
+        top_n, x='alerts', y='Manufacturer', orientation='h',
+        title=f"Top {len(top_n)} manufacturers by NSQ alert count",
+        labels={'alerts': 'NSQ Alerts', 'Manufacturer': 'Manufacturer'},
+        color_discrete_sequence=[_ACCENT],
+    )
+    # Single accent — bar length already encodes the alert count.
+    fig_bar.update_layout(
+        showlegend=False,
+        yaxis=dict(categoryorder='total ascending'),
+        margin=dict(l=8, r=8, t=40, b=8),
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+    st.dataframe(summary, use_container_width=True, hide_index=True)
+
+    # ---- Pick a manufacturer ----
+    st.markdown("---")
+    mfg_choice = st.selectbox(
+        "Pick a manufacturer to investigate:",
+        options=summary['Manufacturer'].tolist(),
+        key="inv_mfg_mfg_choice",
+    )
+    drill = mfg_df[mfg_df['__mfg'] == mfg_choice].copy()
+    st.caption(
+        f"Showing {len(drill)} alerts for **{mfg_choice}** across "
+        f"{drill['Name of Product'].nunique()} products."
+    )
+
+    # ---- (b) What errors they've had in the past ----
+    st.subheader("Past NSQ alerts (full history)")
+    alert_cols = [
+        'Name of Product', 'Batch No', 'Mfg', 'Exp', 'Manufactured By',
+        'Mfg_State', 'NSQ Result', 'Failure_Category_Primary',
+        'Reporting Source', 'Reporting by Lab/State', 'Reporting Month & Year',
+    ]
+    alert_cols = [c for c in alert_cols if c in drill.columns]
+    alert_view = drill[alert_cols].sort_values(
+        ['Reporting Month & Year', 'Name of Product'], na_position='last'
+    )
+    st.dataframe(alert_view, use_container_width=True, hide_index=True)
+    st.download_button(
+        label="Export this manufacturer's NSQ history to CSV",
+        data=alert_view.to_csv(index=False).encode('utf-8'),
+        file_name=f"nsq_history_{mfg_choice[:30].replace(' ', '_').replace('/', '_')}.csv",
+        mime="text/csv",
+        key="inv_mfg_drill_csv",
+    )
+
+    # ---- (c) Issue analysis ----
+    st.subheader("Issue analysis")
+    fc_col = 'Failure_Category_Primary'
+    fc_counts = (
+        drill[fc_col].fillna('Uncategorized').value_counts()
+        .reset_index()
+    )
+    fc_counts.columns = ['Failure Category', 'Alerts']
+    fig_fc = px.bar(
+        fc_counts, x='Alerts', y='Failure Category', orientation='h',
+        title=f"Failure-category breakdown — {mfg_choice}",
+        labels={'Alerts': 'NSQ Alerts'},
+        color_discrete_sequence=[_ACCENT],
+    )
+    # Single accent — bar length already encodes the alert count.
+    fig_fc.update_layout(
+        showlegend=False,
+        yaxis=dict(categoryorder='total ascending'),
+        margin=dict(l=8, r=8, t=40, b=8),
+    )
+    st.plotly_chart(fig_fc, use_container_width=True)
+
+    timeline = drill.copy()
+    timeline['__date'] = pd.to_datetime(
+        timeline['Reporting Month & Year'].fillna('Unknown'),
+        format='%b-%Y', errors='coerce',
+    )
+    timeline = timeline.dropna(subset=['__date'])
+    if timeline.empty:
+        st.info("No parseable reporting dates for this manufacturer.")
+    else:
+        # Fold the failure-category tail into "Other" so the stacked bar uses
+        # <=8 hues (top-7 + Other) and never cycles past _SCIENTIFIC_COLORWAY.
+        timeline[fc_col] = _fold_categories(timeline[fc_col], top_k=7, other="Other")
+        monthly = (
+            timeline.groupby([pd.Grouper(key='__date', freq='MS'), fc_col])
+                   .size().reset_index(name='count').sort_values('__date')
+        )
+        fig_t = px.bar(
+            monthly, x='__date', y='count', color=fc_col,
+            title=f"NSQ alert history — {mfg_choice}",
+            labels={'__date': 'Reporting Month', 'count': 'Alert Count',
+                    fc_col: 'Failure Category'},
+            color_discrete_sequence=_SCIENTIFIC_COLORWAY,
+        )
+        fig_t.update_layout(barmode='stack', legend_title='Failure Category')
+        st.plotly_chart(fig_t, use_container_width=True)
+
+    n_labs = (
+        drill['Reporting by Lab/State'].dropna().nunique()
+        if 'Reporting by Lab/State' in drill.columns else 0
+    )
+    st.caption(
+        f"Totals — alerts: {len(drill)} · products: {drill['Name of Product'].nunique()} · "
+        f"reporting labs: {n_labs} · first seen: {drill['Reporting Month & Year'].min()} · "
+        f"last seen: {drill['Reporting Month & Year'].max()}"
+    )
+
+    # ---- (d) Recap of GMP & testing standards ----
+    st.subheader("Recap of GMP & testing standards")
+    _render_standards_recap(drill)
+
+    # ---- (e) Potential causes of issue/failure ----
+    st.subheader("Potential causes of issue / failure")
+    _render_probable_causes(drill, fc_counts)
+
+    # ---- (f) Mitigation plan ----
+    st.subheader("Mitigation plan")
+    _render_mitigation_plan(drill, fc_counts)
 
 
 @st.cache_data
@@ -276,27 +857,6 @@ def to_geojson_name(state):
         return GEOJSON_NAME_MAP[state]
     return state if state else None
 
-# -----------------------------------------------------------------------------
-# 3. HOME / DASHBOARD VIEW SWITCHER
-# -----------------------------------------------------------------------------
-if "nsq_view" not in st.session_state:
-    st.session_state["nsq_view"] = "home"
-
-if st.session_state["nsq_view"] == "home":
-    with st.sidebar:
-        st.title("🗺️ NSQ Analytics")
-        st.caption("Animated home page")
-        if st.button("🔬 Open Dashboard", use_container_width=True):
-            st.session_state["nsq_view"] = "dashboard"
-            st.rerun()
-    render_landing_page()
-    st.stop()
-
-# When in dashboard mode, offer a way back to the animated home page.
-if st.sidebar.button("🏠 Back to home"):
-    st.session_state["nsq_view"] = "home"
-    st.rerun()
-
 try:
     df_raw = load_and_preprocess_data()
 except Exception as e:
@@ -304,7 +864,7 @@ except Exception as e:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 4. SIDEBAR CONTROLS & FILTERING
+# 3. SIDEBAR CONTROLS & FILTERING
 # -----------------------------------------------------------------------------
 st.sidebar.title("🎯 Control & Filters")
 st.sidebar.markdown("Filter downstream metrics to isolate dissolution anomalies.")
@@ -485,8 +1045,12 @@ with tab1:
                 trend_grouped, x='Parsed_Date', y='Alert Count', color='Alert Type',
                 labels={'Parsed_Date': 'Reporting Timeline', 'Alert Count': 'Volume of Incidents'},
                 title="Monthly Progression of Recorded Drug Defects",
+                color_discrete_map={'Dissolution Defect': _ACCENT, 'Other Defect': _CONTEXT},
+                category_orders={'Alert Type': ['Dissolution Defect', 'Other Defect']},
                 markers=True
             )
+            # Emphasis: this dashboard's story is dissolution, so dissolution
+            # wears the accent and "Other" recedes to context gray.
             fig_line.update_layout(legend_title="Defect Category", hovermode="x unified")
             st.plotly_chart(fig_line, use_container_width=True)
         else:
@@ -505,9 +1069,11 @@ with tab1:
             top_products, x='Total Incidents', y='Product Name', orientation='h',
             labels={'Total Incidents': 'Alert Counts Recorded', 'Product Name': 'Commercial Formulation Name'},
             title="Top 10 Flagged Products within Selected View Filters",
-            color='Total Incidents', color_continuous_scale=_SCIENTIFIC_CONTINUOUS
+            color_discrete_sequence=[_ACCENT],
         )
-        fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, coloraxis_showscale=False)
+        # Single accent color: bar length already encodes magnitude, so a
+        # value-ramp would double-encode and burn the colour channel (anti-pattern).
+        fig_bar.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
         st.plotly_chart(fig_bar, use_container_width=True)
 
     # Secondary Breakdown split
@@ -519,12 +1085,15 @@ with tab1:
         # Form Type Breakdown
         form_counts = df_filtered['Form type'].value_counts().head(12).reset_index()
         form_counts.columns = ['Form Factor', 'Alert Volume']
+        # Horizontal + single accent: form-type labels are long, and magnitude
+        # is already shown by bar length (no value-ramp on a nominal category).
         fig_form = px.bar(
-            form_counts, x='Form Factor', y='Alert Volume',
+            form_counts, x='Alert Volume', y='Form Factor', orientation='h',
             labels={'Form Factor': 'Formulation Form Type', 'Alert Volume': 'Alert Count'},
             title="Alert Volume Categorized by Dosage Form Factors",
-            color='Alert Volume', color_continuous_scale=_SCIENTIFIC_CONTINUOUS
+            color_discrete_sequence=[_ACCENT],
         )
+        fig_form.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
         st.plotly_chart(fig_form, use_container_width=True)
 
     with col_f2:
@@ -532,15 +1101,21 @@ with tab1:
         # Class" pie (which was always 100% "Unclassified" because the
         # CSV doesn't carry recall-class data). Now uses the harmonized
         # Failure_Category_Primary derived from each row's NSQ Result.
+        # Failure Category Distribution — horizontal bar. The harmonized
+        # Failure_Category_Primary yields ~17 classes, which is well past the
+        # ~7-class pie/donut ceiling (adjacent slices blur and can't be compared).
+        # A sorted horizontal bar is the magnitude-comparison form for many
+        # classes; one accent colour, length carries the value.
         cat_counts = df_filtered['Failure_Category_Primary'].value_counts().reset_index()
         cat_counts.columns = ['Failure Category', 'Alert Volume']
-        fig_pie = px.pie(
-            cat_counts, values='Alert Volume', names='Failure Category',
+        fig_cat = px.bar(
+            cat_counts, x='Alert Volume', y='Failure Category', orientation='h',
+            labels={'Alert Volume': 'Alert Count', 'Failure Category': 'Failure Category'},
             title="Failure Category Breakdown (Harmonized from NSQ Result)",
-            color_discrete_sequence=_SCIENTIFIC_COLORWAY
+            color_discrete_sequence=[_ACCENT],
         )
-        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig_pie, use_container_width=True)
+        fig_cat.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
+        st.plotly_chart(fig_cat, use_container_width=True)
 
 # -----------------------------------------------------------------------------
 # TAB 2: GEOGRAPHIC & HEATMAPS
@@ -566,7 +1141,7 @@ with tab2:
             locations='Geo_Name',
             featureidkey='properties.NAME_1',
             color='Recorded Anomalies',
-            color_continuous_scale='Reds',
+            color_continuous_scale=_SCIENTIFIC_CONTINUOUS,
             range_color=(0, state_df['Recorded Anomalies'].max() if len(state_df) else 1),
             labels={'Recorded Anomalies': 'Total Incident Frequency', 'Geo_Name': 'State'},
             title="Manufacturing-Origin Anomalies Mapped to Indian States",
@@ -593,11 +1168,17 @@ with tab2:
     # Companion bar chart for precise counts
     with st.expander("Show state-level counts as bar chart"):
         fig_geo_bar = px.bar(
-            state_df.sort_values('Recorded Anomalies', ascending=False),
-            x='Indian State / Origin Region', y='Recorded Anomalies',
-            color='Recorded Anomalies', color_continuous_scale='Reds',
-            labels={'Recorded Anomalies': 'Total Incident Frequency'},
-            title="Incident Origins — Sorted Counts"
+            state_df.sort_values('Recorded Anomalies', ascending=True),
+            x='Recorded Anomalies', y='Indian State / Origin Region',
+            orientation='h',
+            labels={'Recorded Anomalies': 'Total Incident Frequency',
+                    'Indian State / Origin Region': 'State / Origin Region'},
+            title="Incident Origins — Sorted Counts",
+            color_discrete_sequence=[_ACCENT],
+        )
+        # Single accent (magnitude is in the bar length, not a colour ramp).
+        fig_geo_bar.update_layout(
+            yaxis={'categoryorder': 'total ascending'}, showlegend=False,
         )
         st.plotly_chart(fig_geo_bar, use_container_width=True)
     
@@ -606,93 +1187,156 @@ with tab2:
     # 2. Variable Cross-Tabulation Pseudo Correlation Heatmap
     st.subheader("Cross-Tabulation Risk Correlation Matrix Heatmap")
     st.markdown("Identifies dense systemic risk cross-overs between specific **Form Factors** and **Testing Labs / Sourcing Jurisdictions**.")
-    
-    # Pivot calculation
-    top_forms = df_filtered['Form type'].value_counts().head(10).index.tolist()
-    top_labs = df_filtered['Reporting by Lab/State'].value_counts().head(10).index.tolist()
-    
-    df_pivot_subset = df_filtered[
-        df_filtered['Form type'].isin(top_forms) & 
-        df_filtered['Reporting by Lab/State'].isin(top_labs)
-    ]
-    
-    if not df_pivot_subset.empty:
-        cross_tab = pd.crosstab(df_pivot_subset['Form type'], df_pivot_subset['Reporting by Lab/State'])
-        
-        fig_heatmap = px.imshow(
-            cross_tab,
-            labels=dict(x="Testing Lab Branch", y="Formulation Style", color="Incident Density"),
-            x=cross_tab.columns,
-            y=cross_tab.index,
-            color_continuous_scale='YlOrRd',
-            title="Risk Co-Occurrence (Top 10 Form Factors vs Top 10 CDSCO Testing Entities)"
+
+    # Grid magnitude -> sequential colour is the correct encoding (one hue,
+    # light->dark). Routed through the shared _topn_heatmap helper so the tail
+    # folds into "Other" and the ramp matches the rest of the dashboard.
+    if {'Form type', 'Reporting by Lab/State'}.issubset(df_filtered.columns) and not df_filtered.empty:
+        _topn_heatmap(
+            df_filtered['Form type'], df_filtered['Reporting by Lab/State'],
+            row_cap=10, col_cap=10,
+            title="Risk Co-Occurrence (Top 10 Form Factors vs Top 10 CDSCO Testing Entities)",
+            xlab="Testing Lab Branch", ylab="Formulation Style",
         )
-        fig_heatmap.update_xaxes(side="bottom", tickangle=45)
-        st.plotly_chart(fig_heatmap, use_container_width=True)
     else:
         st.info("Please expand filter parameters to populate the Correlation Matrix Heatmap.")
+
+    st.markdown("---")
+
+    # 3. Manufacturer-keyed heatmaps — the relational matrices a sales agent
+    # needs: which failure reasons cluster on which manufacturers, and which
+    # molecules (APIs) each manufacturer's flagged products map to.
+    st.subheader("Manufacturer Risk Matrices")
+    st.markdown(
+        "Each row is a manufacturer; colour is alert count. Manufacturers are "
+        "selected by **relevance to the matrix**: ranked by alert volume within "
+        "the top failure reasons / molecules, with coverage breadth (how many "
+        "of those top categories they hit) as a tiebreaker — so every shown row "
+        "carries real volume and the matrix stays dense instead of a few "
+        "one-hot rows. The 'Other' buckets are excluded; only the named top "
+        "categories are shown. The **Molecule (API)** column uses a hybrid "
+        "label: curated active ingredient where known (PRODUCT_CATALOG + the "
+        "progressive EXTRA_CURATED_APIS list), otherwise the product-ontology "
+        "canonical key (~99.5% coverage). See the Sankey tab's *Molecules to "
+        "curate* list for the fallbacks to promote next."
+    )
+    if not df_filtered.empty:
+        n_mfg = st.slider(
+            "Manufacturers to show (most relevant first)",
+            min_value=5, max_value=25, value=15, step=1, key="hm_mfg_n",
+            help="Manufacturers are ranked by alert volume within the top "
+                 "categories, then by coverage breadth. Adjust to scope the matrix.",
+        )
+        _manufacturer_heatmap(
+            df_filtered, df_filtered['Failure_Category_Primary'],
+            n_mfg=n_mfg, n_col=12,
+            title="Manufacturer × Failure Reason",
+            xlab="Failure Reason", ylab="Manufacturer",
+        )
+        _mol = _molecule_hybrid(df_filtered)
+        _manufacturer_heatmap(
+            df_filtered, _mol,
+            n_mfg=n_mfg, n_col=12,
+            title="Manufacturer × Molecule (API)",
+            xlab="Molecule (API)", ylab="Manufacturer",
+            col_other_label=_MOLECULE_OTHER,
+        )
+    else:
+        st.info("No data available for the manufacturer matrices under the current filters.")
 
 # -----------------------------------------------------------------------------
 # TAB 3: SANKEY GRAPH COUPLING
 # -----------------------------------------------------------------------------
 with tab3:
     st.header("Sankey Vulnerability Chain Flow Topology")
-    st.markdown("Traces how operational breakdowns map from **Origin State/Hubs** $\\rightarrow$ **Drug Categories** $\\rightarrow$ **Failure Categorizations**.")
-    
-    # Aggregate data loops to format connections dynamically.
-    # The right-most level now uses the harmonized primary failure
-    # category (one node per Failure_Category_Primary, e.g. "Dissolution",
-    # "Assay / Content", "Sterility / Microbial", ...) instead of the
-    # boolean Dissolution/Other split — gives much more actionable
-    # flow insight.
-    sankey_data = df_filtered.dropna(subset=['Mfg_State', 'Drug type', 'Failure_Category_Primary']).copy()
-    # Cap string sizes for aesthetic balance
-    sankey_data['Drug_Type_Short'] = sankey_data['Drug type'].apply(lambda x: str(x)[:25] + '...' if len(str(x)) > 25 else str(x))
+    st.markdown(
+        "Trace how operational breakdowns flow across three relational cuts. "
+        "Pick a flow — the manufacturer- and molecule-keyed cuts are the most "
+        "actionable for a sales agent; the state cut is retained for hub mapping. "
+        "Each level is capped to its top values (tail folded into **Other**) so "
+        "the diagram stays readable."
+    )
+    st.caption(
+        "Molecule (API) is a hybrid label: the curated active ingredient where "
+        "one is known (PRODUCT_CATALOG + the progressive EXTRA_CURATED_APIS list "
+        "in shared/gmp_knowledge.py), otherwise the product-ontology canonical "
+        "key — the active-ingredient token grouping derived from every product "
+        "name (~99.5% coverage). Only truly unmapped products fall into "
+        "**Other / unmapped molecule**."
+    )
 
-    if len(sankey_data) > 0:
-        # Create Nodes Indexing mapping list
-        level0 = sankey_data['Mfg_State'].unique().tolist()
-        level1 = sankey_data['Drug_Type_Short'].unique().tolist()
-        level2 = sankey_data['Failure_Category_Primary'].unique().tolist()
-        
-        all_nodes = level0 + level1 + level2
-        node_map = {node: idx for idx, node in enumerate(all_nodes)}
-        
-        sources = []
-        targets = []
-        values = []
-        
-        # Stream 1: State to Drug Type
-        pair1 = sankey_data.groupby(['Mfg_State', 'Drug_Type_Short']).size().reset_index(name='count')
-        for _, row in pair1.iterrows():
-            sources.append(node_map[row['Mfg_State']])
-            targets.append(node_map[row['Drug_Type_Short']])
-            values.append(row['count'])
-            
-        # Stream 2: Drug Type to Failure Status
-        pair2 = sankey_data.groupby(['Drug_Type_Short', 'Failure_Category_Primary']).size().reset_index(name='count')
-        for _, row in pair2.iterrows():
-            sources.append(node_map[row['Drug_Type_Short']])
-            targets.append(node_map[row['Failure_Category_Primary']])
-            values.append(row['count'])
-            
-        fig_sankey = go.Figure(data=[go.Sankey(
-            node=dict(
-                pad=15, thickness=20,
-                line=dict(color="black", width=0.5),
-                label=all_nodes,
-                color="cornflowerblue"
-            ),
-            link=dict(
-                source=sources, target=targets, value=values,
-                color="rgba(200, 200, 200, 0.4)"
-            )
-        )])
-        
-        fig_sankey.update_layout(title_text="Traceability Flow: Hub State ➔ Therapeutic Category ➔ Dissolution Condition Status Map", font_size=11)
-        st.plotly_chart(fig_sankey, use_container_width=True)
+    flow = st.radio(
+        "Relational flow:",
+        [
+            "Manufacturer → Molecule (API) → Issue",
+            "Indication (Drug type) → Molecule (API) → Reason",
+            "State → Drug type → Issue",
+        ],
+        horizontal=True,
+        key="sankey_flow",
+    )
+
+    sankey_data = df_filtered.copy()
+    if sankey_data.empty:
+        st.warning("Insufficient data to draft a Sankey flow under the current filters.")
     else:
-        st.warning("Insufficient data combinations available to draft an integrated Sankey Trace Flow Topology.")
+        mfg = _mfg_label(sankey_data)
+        mol = _molecule_hybrid(sankey_data)
+        if flow.startswith("Manufacturer"):
+            _render_sankey(
+                sankey_data,
+                [
+                    (mfg, "Manufacturer", 12, "Other manufacturers"),
+                    (mol, "Molecule (API)", 12, _MOLECULE_OTHER),
+                    (sankey_data['Failure_Category_Primary'], "Issue", 10, "Other"),
+                ],
+                "Traceability Flow: Manufacturer ➔ Molecule (API) ➔ Issue",
+            )
+        elif flow.startswith("Indication"):
+            _render_sankey(
+                sankey_data,
+                [
+                    (sankey_data['Drug type'], "Indication", 12, "Other"),
+                    (mol, "Molecule (API)", 12, _MOLECULE_OTHER),
+                    (sankey_data['Failure_Category_Primary'], "Reason", 10, "Other"),
+                ],
+                "Traceability Flow: Indication (Drug type) ➔ Molecule (API) ➔ Reason",
+            )
+        else:
+            _render_sankey(
+                sankey_data,
+                [
+                    (sankey_data['Mfg_State'], "State", 12, "Other"),
+                    (sankey_data['Drug type'], "Drug type", 12, "Other"),
+                    (sankey_data['Failure_Category_Primary'], "Issue", 10, "Other"),
+                ],
+                "Traceability Flow: Hub State ➔ Drug type ➔ Issue",
+            )
+
+    # Progressive curation list: the molecules seen in the data but not yet
+    # in the curated API catalog (or EXTRA_CURATED_APIS). Computed over the
+    # full dataset (not the filtered view) so the candidate list is stable
+    # and complete. Promote an entry by adding it to EXTRA_CURATED_APIS in
+    # shared/gmp_knowledge.py — match_molecule then recognises it on the next
+    # run and it leaves this fallback list.
+    fb = _fallback_molecules(df_raw)
+    with st.expander(
+        f"Molecules to curate ({len(fb)} not yet in the curated API list)", expanded=False
+    ):
+        st.caption(
+            "These active-ingredient groupings (product-ontology keys) appear "
+            "in the data but match no curated API, so the molecule layer falls "
+            "back to the ontology key for them. To promote one, add it to "
+            "`EXTRA_CURATED_APIS` in `shared/gmp_knowledge.py` "
+            "(`\"<token>\": \"<display label>\"`). Ranked by alert count."
+        )
+        if fb.empty:
+            st.info("Every flagged product already maps to a curated API — no fallbacks.")
+        else:
+            st.dataframe(
+                fb.head(50).rename_axis("Molecule (ontology key)").reset_index(name="Alerts"),
+                use_container_width=True, hide_index=True,
+            )
 
 # -----------------------------------------------------------------------------
 # TAB 4: LEDGER SEARCH AND EXPORT MANAGEMENT
@@ -710,10 +1354,10 @@ with tab4:
         # derived name columns
         'Product_Name_Norm', 'Product_Name_Canonical', 'Product_Ontology_Key',
         # derived classification columns
-        'Form type', 'Form', 'Indication', 'Drug type', 'Recall Class',
+        'Form type', 'Form', 'Drug type',
         'Failure_Category', 'Failure_Category_Primary', 'Is_Dissolution',
         # derived temporal columns
-        'Parsed_Date', 'Year_Month_Str',
+        'Parsed_Date',
         # derived location + company ontology columns
         'Mfg_Company', 'Mfg_Company_Canonical', 'Mfg_Ontology_Key',
         'Mfg_City', 'Mfg_State', 'Mfg_Website',
@@ -739,15 +1383,12 @@ with tab4:
         # derived classification columns
         'Form type',
         'Form',
-        'Indication',
         'Drug type',
-        'Recall Class',
         'Failure_Category',
         'Failure_Category_Primary',
         'Is_Dissolution',
         # derived temporal columns
         'Parsed_Date',
-        'Year_Month_Str',
         # derived location + company ontology columns
         'Mfg_Company',
         'Mfg_Company_Canonical',
@@ -799,4 +1440,16 @@ with tab4:
 # the product's history, not the currently filtered view.
 with tab5:
     st.header("Product → Manufacturer Investigation")
-    _render_product_investigation(df_raw)
+    mode = st.radio(
+        "Investigation entry:",
+        ["By product", "By manufacturer"],
+        horizontal=True,
+        key="inv_mode",
+        help="By product: search a product, see which manufacturers had issues "
+             "with it. By manufacturer: start from major manufacturers, drill "
+             "into one's full history, GMP standards, causes and mitigation.",
+    )
+    if mode == "By product":
+        _render_product_investigation(df_raw)
+    else:
+        _render_manufacturer_investigation(df_raw)

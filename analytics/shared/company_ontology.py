@@ -166,6 +166,96 @@ _STATE_TOKENS = {
     "dadra and nagar haveli", "daman and diu", "lakshadweep", "ladakh",
     "the government of NCT of delhi",
 }
+
+# City / town -> Indian state. Used by extract_state() as a fallback when
+# the free-text 'Manufactured By' line names a city but not the state.
+# Migrated from analytics/shared/data_loader.py so there is one shared
+# state-extraction path (the regex map there was richer than the
+# state-token-only check this module used to do).
+_CITY_TO_STATE = {
+    # Uttar Pradesh
+    "noida": "Uttar Pradesh", "greater noida": "Uttar Pradesh",
+    "lucknow": "Uttar Pradesh", "kanpur": "Uttar Pradesh",
+    "ghaziabad": "Uttar Pradesh", "meerut": "Uttar Pradesh",
+    "agra": "Uttar Pradesh", "varanasi": "Uttar Pradesh",
+    "prayagraj": "Uttar Pradesh", "allahabad": "Uttar Pradesh",
+    "saharanpur": "Uttar Pradesh", "manglour": "Uttar Pradesh",
+    "gautam budh nagar": "Uttar Pradesh",
+    "gautam buddha nagar": "Uttar Pradesh",
+    # Uttarakhand
+    "haridwar": "Uttarakhand", "roorkee": "Uttarakhand",
+    "dehradun": "Uttarakhand", "bhagwanpur": "Uttarakhand",
+    "rudrapur": "Uttarakhand", "kashipur": "Uttarakhand",
+    "sidcul": "Uttarakhand",
+    # Himachal Pradesh
+    "baddi": "Himachal Pradesh", "solan": "Himachal Pradesh",
+    "nahan": "Himachal Pradesh", "sirmaur": "Himachal Pradesh",
+    "kala amb": "Himachal Pradesh", "kalujhanda": "Himachal Pradesh",
+    "barotiwala": "Himachal Pradesh", "nalagarh": "Himachal Pradesh",
+    "parwanoo": "Himachal Pradesh", "kangra": "Himachal Pradesh",
+    "una": "Himachal Pradesh", "mandi": "Himachal Pradesh",
+    "subathu": "Himachal Pradesh", "ghatti": "Himachal Pradesh",
+    "raja ka bagh": "Himachal Pradesh", "jharmajri": "Himachal Pradesh",
+    "epip": "Himachal Pradesh",
+    # Madhya Pradesh
+    "indore": "Madhya Pradesh", "bhopal": "Madhya Pradesh",
+    "dewas": "Madhya Pradesh", "mandideep": "Madhya Pradesh",
+    "pigdamber": "Madhya Pradesh", "pithampur": "Madhya Pradesh",
+    "mandleshwar": "Madhya Pradesh",
+    # Maharashtra
+    "mumbai": "Maharashtra", "pune": "Maharashtra",
+    "nashik": "Maharashtra", "aurangabad": "Maharashtra",
+    "nagpur": "Maharashtra", "tarapur": "Maharashtra",
+    "boisar": "Maharashtra", "palghar": "Maharashtra",
+    "raigad": "Maharashtra", "thane": "Maharashtra",
+    "mahalunge": "Maharashtra", "chakan": "Maharashtra",
+    # Gujarat
+    "ahmedabad": "Gujarat", "vadodara": "Gujarat", "baroda": "Gujarat",
+    "surat": "Gujarat", "rajkot": "Gujarat", "bhavnagar": "Gujarat",
+    "mehsana": "Gujarat", "kadi": "Gujarat", "sanand": "Gujarat",
+    "budas": "Gujarat", "budasan": "Gujarat", "panchmahal": "Gujarat",
+    # Punjab
+    "mohali": "Punjab", "chandigarh": "Punjab", "ludhiana": "Punjab",
+    "amritsar": "Punjab", "jalandhar": "Punjab", "patiala": "Punjab",
+    "zirakpur": "Punjab", "sahnewal": "Punjab", "dera bassi": "Punjab",
+    # Haryana
+    "karnal": "Haryana", "gurugram": "Haryana", "gurgaon": "Haryana",
+    "faridabad": "Haryana", "panipat": "Haryana", "ambala": "Haryana",
+    "manesar": "Haryana", "sonipat": "Haryana", "bhiwadi": "Haryana",
+    # Karnataka
+    "bengaluru": "Karnataka", "bangalore": "Karnataka",
+    "mysore": "Karnataka", "mysuru": "Karnataka",
+    "mangalore": "Karnataka", "hubli": "Karnataka",
+    "belgaum": "Karnataka", "tumkur": "Karnataka",
+    # Tamil Nadu
+    "chennai": "Tamil Nadu", "coimbatore": "Tamil Nadu",
+    "madurai": "Tamil Nadu", "salem": "Tamil Nadu", "trichy": "Tamil Nadu",
+    "tiruchirappalli": "Tamil Nadu", "hosur": "Tamil Nadu",
+    "chengalpattu": "Tamil Nadu", "sriperumbudur": "Tamil Nadu",
+    "vanagaram": "Tamil Nadu", "kanniamman nagar": "Tamil Nadu",
+    # Puducherry
+    "puducherry": "Puducherry", "pondicherry": "Puducherry",
+    # Telangana / Andhra Pradesh
+    "hyderabad": "Telangana", "secunderabad": "Telangana",
+    "warangal": "Telangana",
+    "visakhapatnam": "Andhra Pradesh", "vijayawada": "Andhra Pradesh",
+    "guntur": "Andhra Pradesh", "nellore": "Andhra Pradesh",
+    # Kerala
+    "kochi": "Kerala", "cochin": "Kerala", "trivandrum": "Kerala",
+    "thiruvananthapuram": "Kerala", "kozhikode": "Kerala", "calicut": "Kerala",
+    # Rajasthan
+    "jaipur": "Rajasthan", "jodhpur": "Rajasthan", "udaipur": "Rajasthan",
+    "kota": "Rajasthan", "bikaner": "Rajasthan", "alwar": "Rajasthan",
+    # West Bengal / Odisha / Bihar / Assam / Sikkim / Goa / J&K
+    "kolkata": "West Bengal", "howrah": "West Bengal", "siliguri": "West Bengal",
+    "bhubaneswar": "Odisha", "cuttack": "Odisha",
+    "patna": "Bihar", "gaya": "Bihar",
+    "guwahati": "Assam", "dispur": "Assam",
+    "gangtok": "Sikkim",
+    "goa": "Goa", "panaji": "Goa", "margao": "Goa",
+    "jammu": "Jammu and Kashmir", "srinagar": "Jammu and Kashmir",
+    "kathua": "Jammu and Kashmir",
+}
 _CITY_HINTS = {
     "mumbai", "delhi", "bengaluru", "bangalore", "hyderabad", "ahmedabad",
     "chennai", "kolkata", "pune", "jaipur", "lucknow", "kanpur", "nagpur",
@@ -211,13 +301,22 @@ def extract_city(line: str) -> str:
 
 
 def extract_state(line: str) -> str:
-    """Best-effort state extraction from a 'Manufactured By' line."""
+    """Best-effort Indian state extraction from a 'Manufactured By' line.
+
+    Tries a direct state-name match first (word boundary), then a
+    city/town -> state lookup via _CITY_TO_STATE, then returns "".
+    Consolidates the richer regex map that used to live in
+    data_loader.extract_state_local so there is one state path.
+    """
     if not line:
         return ""
     t = _strip_accents(str(line).lower())
     for s in sorted(_STATE_TOKENS, key=len, reverse=True):
-        if s in t:
+        if re.search(r"\b" + re.escape(s) + r"\b", t):
             return s.title().replace("&", "and")
+    for city, st in _CITY_TO_STATE.items():
+        if re.search(r"\b" + re.escape(city) + r"\b", t):
+            return st
     return ""
 
 

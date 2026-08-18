@@ -10,8 +10,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
-COPY landing.py .
-COPY static/ static/
 COPY shared/ shared/
 
 EXPOSE 8501

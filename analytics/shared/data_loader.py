@@ -25,6 +25,8 @@ from company_ontology import (
     extract_website,
     load_ontology,
     load_product_ontology,
+    normalize_company_name,
+    product_key,
     resolve_or_create,
     resolve_or_create_product,
 )
@@ -79,6 +81,62 @@ def _first_api_match(text: str) -> str | None:
     return None
 
 
+# Dosage-form taxonomy. `Form type` is the single keyword pass over the
+# product name (fine-grained, 9 values incl. a vet/specialty tier checked
+# first). `Form` is a deterministic rollup of `Form type` (coarse, 5
+# buckets) — never derived from independent keywords, so the two columns
+# can never disagree.
+_VET_SPECIALTY_TOKENS = [
+    "veterinary", "vet ", "bolus", "pour-on", "pour on",
+    "otic", "ophthalmic", "eye drop", "ear drop", "inhaler",
+    "nebulizer", "nebulisation", "transdermal", "patch",
+    "gargle", "paint", "lotion", "shampoo",
+    "infusion", "large volume parenteral", "lvp",
+    "irrigation", "dialysis", "rectal", "enema", "suppository",
+    "pellet", "implant", "gel", "jelly", "foam", "aerosol",
+    "nasal", "spray",
+]
+
+_FORM_TYPE_TO_FORM = {
+    "Tablet": "Oral tablets",
+    "Capsule": "Oral tablets",
+    "Syrup/Suspension": "Oral suspensions, syrups & drops",
+    "Drops": "Oral suspensions, syrups & drops",
+    "Injection": "Injectables",
+    "Speciality/Vet": "Speciality & vet formulations",
+    "Ointment/Cream": "Other",
+    "Powder/Granules": "Other",
+    "Other": "Other",
+}
+
+
+def _infer_form_type(text: str) -> str:
+    """Fine-grained dosage form from a product name.
+
+    Vet/specialty tokens are checked FIRST so e.g. 'eye drop'/'ear drop'
+    land in Speciality/Vet rather than falling through to Drops. Order
+    matters: vet_specialty must precede the 'drops' substring.
+    """
+    t = str(text or "").lower()
+    if any(k in t for k in _VET_SPECIALTY_TOKENS):
+        return "Speciality/Vet"
+    if "tablet" in t:
+        return "Tablet"
+    if "capsule" in t:
+        return "Capsule"
+    if "syrup" in t or "suspension" in t:
+        return "Syrup/Suspension"
+    if "injection" in t or "injectable" in t:
+        return "Injection"
+    if "ointment" in t or "cream" in t:
+        return "Ointment/Cream"
+    if "drops" in t:
+        return "Drops"
+    if "powder" in t or "granules" in t:
+        return "Powder/Granules"
+    return "Other"
+
+
 def _generic_research(row) -> str:
     """Fallback scientific context when no curated profile matches."""
     name = row.get("Name of Product") or "Unknown product"
@@ -97,6 +155,29 @@ def _generic_regulatory() -> str:
         "I.P. 2026: consult Indian Pharmacopoeia 2026 monograph; "
         "if not monographed, follow IP general chapters for the dosage form"
     )
+
+
+def normalize_product(name) -> str:
+    """Cosmetically harmonize a raw product name for display/grouping.
+
+    Whitespace cleanup, split digit-letter boundaries, and case-fold the
+    common pharmacopeial / strength abbreviations. Module-level so the
+    product-ontology fallback can reuse it without Redis.
+    """
+    if pd.isna(name):
+        return ""
+    s = str(name)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"(\d)([A-Za-z])", r"\1 \2", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    tokens = []
+    for tok in s.split(" "):
+        upper = tok.upper()
+        if upper in {"IP", "BP", "USP", "NF", "NFI", "HCL", "HBR", "EC", "SR", "IP.", "BP.", "W/V", "W/W", "V/V", "MG", "ML", "GM", "MCG", "IU"}:
+            tokens.append(upper.rstrip("."))
+        else:
+            tokens.append(tok.capitalize())
+    return " ".join(tokens)
 
 
 def _load_predictions_from_redis() -> dict:
@@ -164,7 +245,11 @@ def _derive_company_fields(line: str) -> pd.Series:
             if not state and record.get("state"):
                 state = record["state"]
     except Exception:
-        pass
+        # Redis/ontology unreachable: fall back to the extracted company
+        # name and its normalized form so the canonical + ontology-key
+        # columns are never blank offline (stable grouping still works).
+        canonical = raw_company
+        key = normalize_company_name(raw_company)
 
     return pd.Series({
         "Mfg_Company": raw_company,
@@ -175,7 +260,17 @@ def _derive_company_fields(line: str) -> pd.Series:
     })
 
 
-@st.cache_data(ttl=300)
+# show_spinner=False is load-bearing: this cached call sits ABOVE the
+# st.tabs(...) declaration in app.py. With the default show_spinner=True a
+# spinner widget is inserted into the element tree on a cache MISS (cold
+# load) and removed on every cache HIT (e.g. a radio/slider change). That
+# appear/disappear above the tab container unmounts Streamlit's React Tab
+# component, which holds the active-tab index only in frontend state — so
+# it resets to the first tab on every widget change (Streamlit #13341).
+# Suppressing the spinner keeps the element count above st.tabs invariant
+# across reruns. Do not re-enable without also moving st.tabs above this
+# call or backing the tab selection with session_state.
+@st.cache_data(ttl=300, show_spinner=False)
 def load_and_preprocess_data() -> pd.DataFrame:
     """Fetch NSQ data from Redis or CSV and return an enriched DataFrame."""
     # Load dataset from Redis (populated by redis-loader/load_nsq_redis.py)
@@ -219,108 +314,19 @@ def load_and_preprocess_data() -> pd.DataFrame:
         df["Failure_Category"] = categorized.apply(lambda x: x[0])
         df["Failure_Category_Primary"] = categorized.apply(lambda x: x[1])
 
-    # 2. Derive Form type from product name if missing
+    # 2. Derive Form type (fine-grained) from product name if missing.
     if "Form type" not in df.columns:
-        def infer_form(text):
-            t = text.lower()
-            if "tablet" in t:
-                return "Tablet"
-            if "capsule" in t:
-                return "Capsule"
-            if "syrup" in t or "suspension" in t:
-                return "Syrup/Suspension"
-            if "injection" in t or "injectable" in t:
-                return "Injection"
-            if "ointment" in t or "cream" in t or "gel" in t:
-                return "Ointment/Cream"
-            if "drops" in t:
-                return "Drops"
-            if "powder" in t or "granules" in t:
-                return "Powder/Granules"
-            return "Other"
-        df["Form type"] = df["Name of Product"].fillna("").astype(str).apply(infer_form)
+        df["Form type"] = df["Name of Product"].fillna("").astype(str).apply(_infer_form_type)
 
-    # 3. Derive Form (user-facing taxonomy) from product name only if missing.
+    # 3. Derive Form (coarse user-facing taxonomy) as a deterministic
+    # rollup of Form type — never from independent keywords, so the two
+    # columns stay consistent.
     if "Form" not in df.columns:
-        def infer_form_v2(product_name):
-            t = str(product_name).lower()
-            vet_specialty = [
-                "veterinary", "vet ", "bolus", "pour-on", "pour on",
-                "otic", "ophthalmic", "eye drop", "ear drop", "inhaler",
-                "nebulizer", "nebulisation", "transdermal", "patch",
-                "gargle", "paint", "lotion", "shampoo",
-                "infusion", "large volume parenteral", "lvp",
-                "irrigation", "dialysis", "rectal", "enema", "suppository",
-                "pellet", "implant", "gel", "jelly", "foam", "aerosol",
-                "nasal", "spray",
-            ]
-            liquid_oral = [
-                "syrup", "suspension", "dry syrup", "oral suspension",
-                "oral drops", "oral drop", "drops", "paediatric drops",
-                "pediatric drops", "elixir", "solution", "emulsion",
-                "linctus", "mixture", "tonic", "oral gel", "oral powder",
-                "oral granules", "effervescent", "dispersible", "sachet",
-            ]
-            solid_oral = [
-                "tablet", "tab ", "tablets", "caplet", "capsule", "cap ",
-                "capsules", "caplets", "pill", "pillules",
-                "chewable", "orodispersible", "od ", "mouth dissolving",
-                "sublingual", "buccal", "enteric coated", "gastro-resistant",
-                "film coated", "uncoated", "modified release", "extended release",
-                "extended-release", "sustained release", "prolonged release",
-                "delayed release", "immediate release", "mr ", "er ", "sr ",
-                "dr ", "ir ",
-            ]
-            if any(k in t for k in vet_specialty):
-                return "Speciality & vet formulations"
-            if any(k in t for k in liquid_oral):
-                return "Oral suspensions, syrups & drops"
-            if any(k in t for k in solid_oral):
-                return "Oral tablets"
-            return "Other"
+        df["Form"] = df["Form type"].map(_FORM_TYPE_TO_FORM).fillna("Other")
 
-        df["Form"] = df["Name of Product"].fillna("").astype(str).apply(infer_form_v2)
-
-    # 4. Derive Indication (therapeutic use) from product name only if missing.
-    if "Indication" not in df.columns:
-        def infer_indication(product_name):
-            t = str(product_name).lower()
-            oncology = [
-                "tamoxifen", "anastrozole", "letrozole", "exemestane",
-                "capecitabine", "imatinib", "gefitinib", "erlotinib",
-                "bortezomib", "cisplatin", "carboplatin", "oxaliplatin",
-                "doxorubicin", "epirubicin", "cyclophosphamide",
-                "methotrexate", "5-fluorouracil", "5 fu", "gemcitabine",
-                "paclitaxel", "docetaxel", "sorafenib", "sunitinib",
-                "trastuzumab", "rituximab", "bevacizumab",
-                "bicalutamide", "flutamide", "leuprolide", "goserelin",
-            ]
-            hypertension = [
-                "amlodipine", "telmisartan", "losartan", "atenolol",
-                "metoprolol", "ramipril", "atorvastatin", "rosuvastatin",
-                "simvastatin", "pravastatin", "clopidogrel", "aspirin",
-                "warfarin", "heparin", "enalapril", "lisinopril",
-                "propranolol", "carvedilol", "bisoprolol", "nebivolol",
-                "hydrochlorothiazide", "chlorthalidone", "furosemide",
-                "spironolactone", "diltiazem", "verapamil", "nifedipine",
-                "olmesartan", "valsartan", "irbesartan", "candesartan",
-            ]
-            fever = [
-                "paracetamol", "acetaminophen", "ibuprofen", "diclofenac",
-                "aceclofenac", "aspirin", "nimesulide", "mefenamic",
-                "tramadol", "codeine", "morphine", "fentanyl", "tapentadol",
-                "ketorolac", "piroxicam", "indomethacin", "naproxen",
-                "celecoxib", "etoricoxib",
-            ]
-            if any(k in t for k in oncology):
-                return "Oncology"
-            if any(k in t for k in hypertension):
-                return "Hypertension"
-            if any(k in t for k in fever):
-                return "Fever"
-            return "Other"
-
-        df["Indication"] = df["Name of Product"].fillna("").astype(str).apply(infer_indication)
+    # 4. (removed) Indication — redundant with Drug type (step 6 below);
+    #    no filter or chart consumed it. Therapeutic classification is
+    #    now single-sourced from Drug type.
 
     # 5. Derive Research enrichment bundle from product name.
     if "Scientific context research" not in df.columns:
@@ -377,9 +383,9 @@ def load_and_preprocess_data() -> pd.DataFrame:
             return "Other / Unclassified"
         df["Drug type"] = df["Name of Product"].apply(infer_drug_type)
 
-    # 7. Recall Class placeholder
-    if "Recall Class" not in df.columns:
-        df["Recall Class"] = "Unclassified"
+    # 7. (removed) Recall Class — was a hardcoded "Unclassified" placeholder
+    #    with no source data. If a future CDSCO export ships a real recall /
+    #    risk-class column, add a real derivation then.
 
     # 8. Identify Dissolution Failures
     text_search_space = df[["Failure_Category", "NSQ Result", "Name of Product"]].fillna("").astype(str)
@@ -389,88 +395,15 @@ def load_and_preprocess_data() -> pd.DataFrame:
         | df["Name of Product"].fillna("").str.contains("dissolution", case=False, regex=False)
     )
 
-    # 9. Parse Date Features
+    # 9. Parse Date Features. (Year_Month_Str removed — it was a copy of
+    #    Reporting Month & Year; Parsed_Date covers typed usage.)
     df["Parsed_Date"] = pd.to_datetime(df["Reporting Month & Year"], format="%b-%Y", errors="coerce")
-    df["Year_Month_Str"] = df["Reporting Month & Year"].fillna("Unknown")
 
-    # 10. Extract Indian State from "Manufactured By"
-    def extract_state_local(text):
-        if pd.isna(text):
-            return "Unknown"
-        text = str(text)
-        states = [
-            "Gujarat", "Himachal Pradesh", "Uttarakhand", "Sikkim", "Madhya Pradesh",
-            "Maharashtra", "Punjab", "Haryana", "Andhra Pradesh", "Telangana",
-            "Tamil Nadu", "Karnataka", "Kerala", "Goa", "Rajasthan", "Uttar Pradesh",
-            "Bihar", "West Bengal", "Odisha", "Assam", "Jammu and Kashmir", "Jammu & Kashmir",
-            "Chandigarh", "Puducherry"
-        ]
-        for s in states:
-            if re.search(r"\b" + re.escape(s) + r"\b", text, re.IGNORECASE):
-                return s
-        city_state_map = {
-            "noida": "Uttar Pradesh", "greater noida": "Uttar Pradesh", "lucknow": "Uttar Pradesh",
-            "kanpur": "Uttar Pradesh", "ghaziabad": "Uttar Pradesh", "meerut": "Uttar Pradesh",
-            "agra": "Uttar Pradesh", "varanasi": "Uttar Pradesh", "prayagraj": "Uttar Pradesh",
-            "allahabad": "Uttar Pradesh", "saharanpur": "Uttar Pradesh", "manglour": "Uttar Pradesh",
-            "gautam budh nagar": "Uttar Pradesh", "gautam buddha nagar": "Uttar Pradesh",
-            "haridwar": "Uttarakhand", "roorkee": "Uttarakhand", "dehradun": "Uttarakhand",
-            "bhagwanpur": "Uttarakhand", "rudrapur": "Uttarakhand", "kashipur": "Uttarakhand",
-            "sidcul": "Uttarakhand",
-            "baddi": "Himachal Pradesh", "solan": "Himachal Pradesh", "nahan": "Himachal Pradesh",
-            "sirmaur": "Himachal Pradesh", "kala amb": "Himachal Pradesh", "kalujhanda": "Himachal Pradesh",
-            "barotiwala": "Himachal Pradesh", "nalagarh": "Himachal Pradesh", "parwanoo": "Himachal Pradesh",
-            "kangra": "Himachal Pradesh", "una": "Himachal Pradesh", "mandi": "Himachal Pradesh",
-            "subathu": "Himachal Pradesh", "ghatti": "Himachal Pradesh", "raja ka bagh": "Himachal Pradesh",
-            "jharmajri": "Himachal Pradesh", "epip": "Himachal Pradesh",
-            "indore": "Madhya Pradesh", "bhopal": "Madhya Pradesh", "dewas": "Madhya Pradesh",
-            "mandideep": "Madhya Pradesh", "pigdamber": "Madhya Pradesh", "pithampur": "Madhya Pradesh",
-            "mandleshwar": "Madhya Pradesh",
-            "mumbai": "Maharashtra", "pune": "Maharashtra", "nashik": "Maharashtra",
-            "aurangabad": "Maharashtra", "nagpur": "Maharashtra", "tarapur": "Maharashtra",
-            "boisar": "Maharashtra", "palghar": "Maharashtra", "raigad": "Maharashtra",
-            "thane": "Maharashtra", "mahalunge": "Maharashtra", "chakan": "Maharashtra",
-            "ahmedabad": "Gujarat", "vadodara": "Gujarat", "baroda": "Gujarat",
-            "surat": "Gujarat", "rajkot": "Gujarat", "bhavnagar": "Gujarat",
-            "mehsana": "Gujarat", "kadi": "Gujarat", "sanand": "Gujarat",
-            "budas": "Gujarat", "budasan": "Gujarat", "panchmahal": "Gujarat",
-            "mohali": "Punjab", "chandigarh": "Punjab", "ludhiana": "Punjab",
-            "amritsar": "Punjab", "jalandhar": "Punjab", "patiala": "Punjab",
-            "zirakpur": "Punjab", "sahnewal": "Punjab", "dera bassi": "Punjab",
-            "karnal": "Haryana",
-            "gurugram": "Haryana", "gurgaon": "Haryana", "faridabad": "Haryana",
-            "panipat": "Haryana", "ambala": "Haryana",
-            "manesar": "Haryana", "sonipat": "Haryana", "bhiwadi": "Haryana",
-            "bengaluru": "Karnataka", "bangalore": "Karnataka", "mysore": "Karnataka",
-            "mysuru": "Karnataka", "mangalore": "Karnataka", "hubli": "Karnataka",
-            "belgaum": "Karnataka", "tumkur": "Karnataka",
-            "chennai": "Tamil Nadu", "coimbatore": "Tamil Nadu", "madurai": "Tamil Nadu",
-            "salem": "Tamil Nadu", "trichy": "Tamil Nadu", "tiruchirappalli": "Tamil Nadu",
-            "hosur": "Tamil Nadu", "chengalpattu": "Tamil Nadu", "sriperumbudur": "Tamil Nadu",
-            "vanagaram": "Tamil Nadu", "kanniamman nagar": "Tamil Nadu",
-            "puducherry": "Puducherry", "pondicherry": "Puducherry",
-            "hyderabad": "Telangana", "secunderabad": "Telangana", "warangal": "Telangana",
-            "visakhapatnam": "Andhra Pradesh", "vijayawada": "Andhra Pradesh",
-            "guntur": "Andhra Pradesh", "nellore": "Andhra Pradesh",
-            "kochi": "Kerala", "cochin": "Kerala", "trivandrum": "Kerala",
-            "thiruvananthapuram": "Kerala", "kozhikode": "Kerala", "calicut": "Kerala",
-            "jaipur": "Rajasthan", "jodhpur": "Rajasthan", "udaipur": "Rajasthan",
-            "kota": "Rajasthan", "bikaner": "Rajasthan", "alwar": "Rajasthan",
-            "bhiwadi": "Rajasthan",
-            "kolkata": "West Bengal", "howrah": "West Bengal", "siliguri": "West Bengal",
-            "bhubaneswar": "Odisha", "cuttack": "Odisha",
-            "patna": "Bihar", "gaya": "Bihar",
-            "guwahati": "Assam", "dispur": "Assam",
-            "gangtok": "Sikkim",
-            "goa": "Goa", "panaji": "Goa", "margao": "Goa",
-            "jammu": "Jammu and Kashmir", "srinagar": "Jammu and Kashmir", "kathua": "Jammu and Kashmir",
-        }
-        for city, st in city_state_map.items():
-            if re.search(r"\b" + re.escape(city) + r"\b", text, re.IGNORECASE):
-                return st
-        return "Other / Outside India"
-
-    df["Mfg_State"] = df["Manufactured By"].apply(extract_state_local)
+    # 10. Extract Indian State from "Manufactured By". State extraction is
+    # consolidated in company_ontology.extract_state (state-name match then
+    # city -> state map); it returns "" for no match. Step 11 overrides
+    # this with the ontology state when a Redis prediction is available.
+    df["Mfg_State"] = df["Manufactured By"].apply(extract_state)
 
     # 11. Read pre-computed predictions from Redis if available.
     needed_cols = ("Mfg_Company", "Mfg_Company_Canonical", "Mfg_City",
@@ -520,22 +453,6 @@ def load_and_preprocess_data() -> pd.DataFrame:
         )
 
     # 13. Harmonize product names for grouping.
-    def normalize_product(name):
-        if pd.isna(name):
-            return ""
-        s = str(name)
-        s = re.sub(r"\s+", " ", s).strip()
-        s = re.sub(r"(\d)([A-Za-z])", r"\1 \2", s)
-        s = re.sub(r"\s+", " ", s).strip()
-        tokens = []
-        for tok in s.split(" "):
-            upper = tok.upper()
-            if upper in {"IP", "BP", "USP", "NF", "NFI", "HCL", "HBR", "EC", "SR", "IP.", "BP.", "W/V", "W/W", "V/V", "MG", "ML", "GM", "MCG", "IU"}:
-                tokens.append(upper.rstrip("."))
-            else:
-                tokens.append(tok.capitalize())
-        return " ".join(tokens)
-
     df["Product_Name_Norm"] = df["Name of Product"].apply(normalize_product)
 
     # 14. Resolve each product to a canonical entry in the product ontology.
@@ -549,6 +466,13 @@ def load_and_preprocess_data() -> pd.DataFrame:
                 r = nsq_redis.get_redis_client()
                 cache = load_product_ontology(r)
             except Exception:
+                # Redis/ontology unreachable: fall back to a locally
+                # computed key + normalized display name so these columns
+                # are never blank for the whole DataFrame offline. Mirrors
+                # landing.py's _product_group_key fallback.
+                for idx, raw in enumerate(product_names):
+                    key_col[idx] = product_key(raw)
+                    canonical_col[idx] = normalize_product(raw)
                 return canonical_col, key_col
 
             dirty_keys: set[str] = set()
@@ -567,7 +491,8 @@ def load_and_preprocess_data() -> pd.DataFrame:
                     if key:
                         dirty_keys.add(key)
                 except Exception:
-                    continue
+                    key_col[idx] = product_key(raw)
+                    canonical_col[idx] = normalize_product(raw)
 
             if dirty_keys:
                 try:

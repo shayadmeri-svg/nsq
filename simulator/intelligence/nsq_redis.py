@@ -12,7 +12,7 @@ logic in both apps is unchanged.
 
 If Redis is unreachable or returns an empty dataset, load_dataframe()
 falls back to reading the CSV specified by NSQ_CSV (default
-'data/data Jan25_May26.csv') directly via pandas. This keeps the
+'data/data Jan25_Jun26.csv') directly via pandas. This keeps the
 analytics app usable offline; the simulator doesn't use the fallback
 (simulator reads from the canonical Redis snapshot for its live-data
 overlay).
@@ -108,7 +108,7 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
     working unchanged.
 
     Falls back to reading the CSV at $NSQ_CSV (default
-    'data/data Jan25_May26.csv') when Redis is unreachable or returns
+    'data/data Jan25_Jun26.csv') when Redis is unreachable or returns
     an empty dataset — so the analytics app still works offline.
     """
     try:
@@ -123,7 +123,7 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
         return df
 
     # Empty Redis — try the CSV fallback.
-    csv_path = Path(os.environ.get("NSQ_CSV", "data/data Jan25_May26.csv"))
+    csv_path = Path(os.environ.get("NSQ_CSV", "data/data Jan25_Jun26.csv"))
     if not csv_path.is_file():
         return df
     return _load_from_csv(csv_path)
