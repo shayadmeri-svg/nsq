@@ -12,7 +12,7 @@ logic in both apps is unchanged.
 
 If Redis is unreachable or returns an empty dataset, load_dataframe()
 falls back to reading the CSV specified by NSQ_CSV (default
-'data/data Jan25_Jun26.csv') directly via pandas. This keeps the
+'data/data Jan25_May26.csv') directly via pandas. This keeps the
 analytics app usable offline; the simulator doesn't use the fallback
 (simulator reads from the canonical Redis snapshot for its live-data
 overlay).
@@ -76,13 +76,22 @@ def _load_from_redis(r: redis.Redis) -> pd.DataFrame:
     if not ids:
         return pd.DataFrame(columns=list(FIELD_MAP.values()))
 
+    # Capture a stable ordered list so the per-row record id stays aligned
+    # with the pipeline results (set iteration order is consistent within a
+    # process, but materializing once makes the pairing explicit).
+    id_list = list(ids)
     pipe = r.pipeline()
-    for rid in ids:
+    for rid in id_list:
         pipe.hgetall(f"nsq:record:{rid}")
     rows = pipe.execute()
 
     df = pd.DataFrame(rows)
     df = df.rename(columns=FIELD_MAP)
+    # Carry the Redis record id (the key of nsq:record:<rid>) so downstream
+    # code can join nsq:prediction:<rid> on the same stable rid. The CDSCO
+    # `index` field is NOT a stable join key across mixed data loads (it
+    # collides between a live CDSCO fetch and a CSV load); the rid is.
+    df["record_id"] = id_list
     return df
 
 
@@ -108,7 +117,7 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
     working unchanged.
 
     Falls back to reading the CSV at $NSQ_CSV (default
-    'data/data Jan25_Jun26.csv') when Redis is unreachable or returns
+    'data/data Jan25_May26.csv') when Redis is unreachable or returns
     an empty dataset — so the analytics app still works offline.
     """
     try:
@@ -123,7 +132,7 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
         return df
 
     # Empty Redis — try the CSV fallback.
-    csv_path = Path(os.environ.get("NSQ_CSV", "data/data Jan25_Jun26.csv"))
+    csv_path = Path(os.environ.get("NSQ_CSV", "data/data Jan25_May26.csv"))
     if not csv_path.is_file():
         return df
     return _load_from_csv(csv_path)

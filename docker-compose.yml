@@ -77,6 +77,29 @@ services:
     networks:
       - nsq-net
 
+  # Manufacturer (tenant) app — user-facing Q-engine dashboard. One app,
+  # config-driven tenant (NSQ_TENANT). Phase 1: dashboard only; no
+  # depends_on the engine/simulator (those come in phase 2 diagnostics).
+  manufacturer:
+    build:
+      context: ./manufacturer
+    image: nsq-manufacturer:local
+    container_name: nsq-manufacturer
+    ports:
+      - "8503:8503"
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - NSQ_TENANT=${NSQ_TENANT:-regent-ajanta-biotech}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8503/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - nsq-net
+
 networks:
   nsq-net:
     driver: bridge

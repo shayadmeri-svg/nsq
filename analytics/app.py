@@ -15,6 +15,7 @@ from nsq_redis import load_geojson as load_redis_geojson  # noqa: E402
 from company_ontology import (  # noqa: E402
     load_ontology,
     load_product_ontology,
+    normalize_company_name,
 )
 from data_loader import (  # noqa: E402
     load_and_preprocess_data,
@@ -26,7 +27,23 @@ from gmp_knowledge import (  # noqa: E402
     match_molecule,
     mitigations_for,
     generic_standards,
+    Provenance,
+    AUTHORITY_TIER_ORDER,
+    provenance_audit,
+    GENERIC_STANDARDS_PROVENANCE,
+    Pharmacopeia,
+    PharmacopeialMethod,
+    CONFIDENCE_HIGH,
+    CONFIDENCE_LOW,
+    CONFIDENCE_MEDIUM,
+    CONFIDENCE_NONE,
+    DIFF_NSQ_RELEVANT,
+    DIFF_METHOD_EQUIVALENT,
+    DIFF_INCOMPARABLE,
 )
+import pharmacopeia_diff  # noqa: E402
+import us_regulatory_data  # noqa: E402  # stamps real FDA Orange Book data onto the catalog
+import ich_registry  # noqa: E402  # stamps cited ICH Q4B harmonisation context onto the catalog
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION & SETUP
@@ -140,28 +157,39 @@ def _render_product_investigation(df: pd.DataFrame) -> None:
 
     # Manufacturers — collapse to the canonical ontology key when present,
     # fall back to the first segment of 'Manufactured By' (which is the
-    # raw company name).
+    # raw company name). Reuses _mfg_group_label so this table groups
+    # identically to the heatmap/Sankey/table flows: grouping is by the
+    # deterministic bin (constant per bin), so 'Regent Ajanta Biotech' and
+    # 'Regent Ajanta Biotech 86-87' collapse to one row.
     mfg_df = matched_rows.copy()
-    mfg_df['__mfg'] = mfg_df['Mfg_Company_Canonical'].fillna('').where(
-        mfg_df['Mfg_Company_Canonical'].fillna('') != '',
-        mfg_df['Manufactured By'].fillna('').astype(str).str.split(',').str[0].str.strip()
-    )
+    mfg_df['__mfg'] = _mfg_group_label(mfg_df)
     # Drop empty/Unknown placeholders so the table is informative.
     mfg_df = mfg_df[mfg_df['__mfg'].fillna('') != '']
+    # Parse reporting month to datetime so first_seen/last_seen min/max and
+    # column sorting are chronological, not alphabetical on month names.
+    mfg_df['__rmy_dt'] = _rmy_datetime(mfg_df)
     mfg_summary = (
         mfg_df.groupby('__mfg')
               .agg(
                   alerts=('Name of Product', 'size'),
                   products=('Name of Product', 'nunique'),
-                  first_seen=('Reporting Month & Year', 'min'),
-                  last_seen=('Reporting Month & Year', 'max'),
+                  first_seen=('__rmy_dt', 'min'),
+                  last_seen=('__rmy_dt', 'max'),
                   cities=('Mfg_City', lambda s: sorted(set(x for x in s if x))),
               )
               .reset_index()
               .rename(columns={'__mfg': 'Manufacturer'})
               .sort_values(['alerts', 'Manufacturer'], ascending=[False, True])
     )
-    st.dataframe(mfg_summary, use_container_width=True, hide_index=True)
+    st.dataframe(
+        mfg_summary,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "first_seen": st.column_config.DateColumn("First seen", format=_DATE_FMT),
+            "last_seen": st.column_config.DateColumn("Last seen", format=_DATE_FMT),
+        },
+    )
 
     # ---- Drill into one manufacturer ----
     st.markdown("### Drill into a manufacturer")
@@ -192,9 +220,7 @@ def _render_product_investigation(df: pd.DataFrame) -> None:
         'Reporting Month & Year',
     ]
     alert_cols = [c for c in alert_cols if c in drill.columns]
-    alert_view = drill[alert_cols].sort_values(
-        ['Reporting Month & Year', 'Name of Product'], na_position='last'
-    )
+    alert_view = _sort_alerts_chronological(drill[alert_cols])
     st.dataframe(alert_view, use_container_width=True, hide_index=True)
 
     # Download the drill-down as CSV
@@ -267,15 +293,91 @@ _MOLECULE_OTHER = "Other / unmapped molecule"
 
 
 def _mfg_label(df: pd.DataFrame) -> pd.Series:
-    """Per-row canonical manufacturer label: Mfg_Company_Canonical, falling back
-    to the first segment of 'Manufactured By'. Index-aligned to df (no rows
-    dropped) so Sankey/heatmap/timeline callers can group and slice freely."""
+    """Per-row manufacturer DISPLAY label (trusted upstream canonical, else
+    the raw first segment). NOT used for grouping — callers group on
+    _mfg_group_label (constant per bin) so same-company rows with different
+    display spellings collapse. The trust rule is the deterministic defense
+    against stale/contaminated upstream canonicals: the bin is re-derived
+    from the raw company name (Mfg_Bin_Key = a pure function of the name via
+    normalize_company_name), NOT trusted from Mfg_Company_Canonical. The
+    upstream canonical is used as the DISPLAY label ONLY when it normalizes
+    to the same bin as the raw name — so a canonical that was contaminated
+    upstream (e.g. a Regent Ajanta row stamped with a Jackson canonical, the
+    bin contamination we traced) is rejected and the raw name's first
+    segment is used instead. This keeps unrelated manufacturers in separate
+    bins even if stale canonicals persist in Redis.
+
+    Index-aligned to df (no rows dropped) so Sankey/heatmap/timeline callers
+    can group and slice freely."""
     canon = df['Mfg_Company_Canonical'].fillna('').astype(str)
     raw = (
         df['Manufactured By'].fillna('').astype(str)
         .str.split(',').str[0].str.strip()
     )
-    return canon.where(canon != '', raw)
+    # Re-derived bin from the raw name. Prefer the Mfg_Bin_Key column
+    # (populated in data_loader); fall back to normalizing the raw first
+    # segment for frames that lack it (legacy/offline).
+    if 'Mfg_Bin_Key' in df.columns:
+        bin_from_raw = df['Mfg_Bin_Key'].fillna('').astype(str)
+    else:
+        bin_from_raw = raw.apply(normalize_company_name)
+    # Trust the upstream canonical only when it agrees with the raw bin.
+    canon_bin = canon.apply(normalize_company_name)
+    trusted = (canon != '') & (canon_bin == bin_from_raw) & (bin_from_raw != '')
+    return canon.where(trusted, raw)
+
+
+def _mfg_bin(df: pd.DataFrame) -> pd.Series:
+    """Per-row deterministic manufacturer BIN key — the grouping key, not a
+    display label. The bin is normalize_company_name of the raw first
+    segment (a pure function of the name), re-derived here so grouping
+    NEVER splits same-company rows over a stale/contaminated upstream
+    canonical. Index-aligned to df. This is what makes 'Regent Ajanta
+    Biotech' and 'Regent Ajanta Biotech 86-87' (both -> 'regent ajanta')
+    collapse to one row in every manufacturer view."""
+    if 'Mfg_Bin_Key' in df.columns:
+        return df['Mfg_Bin_Key'].fillna('').astype(str)
+    raw = (
+        df['Manufactured By'].fillna('').astype(str)
+        .str.split(',').str[0].str.strip()
+    )
+    return raw.apply(normalize_company_name)
+
+
+def _mfg_group_label(df: pd.DataFrame) -> pd.Series:
+    """Per-row manufacturer label that is CONSTANT within each bin: the
+    best display label for the bin, applied to every row in it. Callers
+    group/crosstab/Sankey on this so two rows with the same bin but
+    different per-row display labels (e.g. 'Regent Ajanta Biotech' and
+    'Regent Ajanta Biotech 86-87', or 'Martin & Brown Bio-Sciences' &
+    'Martin And Brown Bio-Sciences' variants) collapse to one group
+    instead of splitting.
+
+    Label selection per bin prefers a TRUSTED upstream canonical (so a raw
+    'M/s. ...' spelling never wins over a clean canonical 'Regent Ajanta
+    Biotech' in the same bin); among those, .mode() picks the most frequent
+    spelling and breaks ties alphabetically (the shorter/cleaner spelling
+    sorts first, e.g. 'Regent Ajanta Biotech' before 'Regent Ajanta Biotech
+    86-87'). Falls back to raw labels only when no row in the bin has a
+    trusted canonical. Index-aligned to df; empty bins map to '' so the
+    existing `!= ''` drop keeps working."""
+    bin_ = _mfg_bin(df)
+    canon = df['Mfg_Company_Canonical'].fillna('').astype(str)
+    label = _mfg_label(df)
+    # True where this row's label came from a trusted upstream canonical
+    # (not the raw fallback) — prefer those for the bin's display label.
+    is_canon = (canon != '') & (label == canon)
+    paired = pd.DataFrame({'__b': bin_, '__l': label, '__c': is_canon}, index=df.index)
+    mask = paired['__b'].fillna('') != ''
+
+    def _pick(g: pd.DataFrame) -> str:
+        canon_rows = g[g['__c']]
+        src = canon_rows if len(canon_rows) else g
+        m = src['__l'].mode()
+        return str(m.iloc[0]) if not m.empty else str(src['__l'].iloc[0])
+
+    mode_map = paired[mask].groupby('__b')[['__l', '__c']].apply(_pick).to_dict()
+    return bin_.map(mode_map).fillna('')
 
 
 def _molecule_hybrid(df: pd.DataFrame, other_label: str = _MOLECULE_OTHER) -> pd.Series:
@@ -315,6 +417,37 @@ def _fold_categories(series: pd.Series, top_k: int = 7, other: str = "Other") ->
     counts = s[s != other].value_counts()
     keep = set(counts.head(top_k).index.tolist())
     return s.where(s.isin(keep) | (s == other), other)
+
+
+def _rmy_datetime(df: pd.DataFrame) -> pd.Series:
+    """A datetime view of 'Reporting Month & Year' (format %b-%Y, e.g.
+    'Apr-2025') for chronological min/max aggregation and chronological column
+    sorting. String min/max on '%b-%Y' values is alphabetical on the month
+    name, so 'Apr-2026' ranks before 'Sep-2025' — wrong. Reuses the loader's
+    'Parsed_Date' when present; otherwise parses on the fly. Unparseable values
+    become NaT so min/max skip them (never alphabetically ranked)."""
+    if "Parsed_Date" in df.columns:
+        return df["Parsed_Date"]
+    return pd.to_datetime(df["Reporting Month & Year"], format="%b-%Y", errors="coerce")
+
+
+# Display format for the first_seen / last_seen DateColumns — matches the
+# source '%b-%Y' string ('Apr-2025') exactly while sorting chronologically.
+_DATE_FMT = "MMM-YYYY"
+
+
+def _sort_alerts_chronological(view: pd.DataFrame) -> pd.DataFrame:
+    """Sort an alert ledger by reporting month chronologically (then product
+    name), returning the view without the temp datetime key. String sort on
+    '%b-%Y' is alphabetical on the month name ('Apr-2026' before 'Sep-2025');
+    parsing to datetime first makes the default row order chronological."""
+    view = view.copy()
+    view["__sort_dt"] = _rmy_datetime(view)
+    by = ["__sort_dt"]
+    if "Name of Product" in view.columns:
+        by.append("Name of Product")
+    view = view.sort_values(by, na_position="last")
+    return view.drop(columns="__sort_dt")
 
 
 def _render_sankey(df: pd.DataFrame, levels, title: str) -> None:
@@ -443,7 +576,7 @@ def _manufacturer_heatmap(df: pd.DataFrame, col_series: pd.Series,
     dense and informative instead of a few one-hot rows. The folded tail
     (rare manufacturers, non-top columns, col_other_label) is dropped and its
     alert count reported."""
-    mfg = _mfg_label(df).fillna('').astype(str)
+    mfg = _mfg_group_label(df).fillna('').astype(str)
     col = col_series.fillna(col_other_label).astype(str)
     col_top = col[col != col_other_label].value_counts().head(n_col).index.tolist()
     if not col_top:
@@ -496,15 +629,18 @@ def _mfg_summary(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     table sorted by alert count desc). Mirrors the grouping in the product
     investigation flow so both modes collapse manufacturers identically."""
     mfg_df = df.copy()
-    mfg_df['__mfg'] = _mfg_label(mfg_df)
+    mfg_df['__mfg'] = _mfg_group_label(mfg_df)
     mfg_df = mfg_df[mfg_df['__mfg'].fillna('') != '']
+    # Parse reporting month to datetime so first_seen/last_seen min/max and
+    # column sorting are chronological, not alphabetical on month names.
+    mfg_df['__rmy_dt'] = _rmy_datetime(mfg_df)
     summary = (
         mfg_df.groupby('__mfg')
               .agg(
                   alerts=('Name of Product', 'size'),
                   products=('Name of Product', 'nunique'),
-                  first_seen=('Reporting Month & Year', 'min'),
-                  last_seen=('Reporting Month & Year', 'max'),
+                  first_seen=('__rmy_dt', 'min'),
+                  last_seen=('__rmy_dt', 'max'),
                   cities=('Mfg_City', lambda s: sorted(set(x for x in s if x))),
               )
               .reset_index()
@@ -514,18 +650,200 @@ def _mfg_summary(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return mfg_df, summary
 
 
+def _render_provenance_badge(prov: Provenance | None, label: str = "Source") -> None:
+    """Compact, monochrome provenance caption — the rigour gate made visible.
+    Renders the authority tier + source ref (and a 'citation TODO' flag where a
+    real citation is still to be sourced). No emoji: the tier name is the label."""
+    if prov is None:
+        st.caption(f"{label}: no provenance — do not treat as authoritative.")
+        return
+    tier = prov.authority_tier
+    bits = [f"{label}: [{tier}] {prov.source_ref or '(no ref)'}"]
+    if prov.reference_url:
+        bits.append(f"({prov.reference_url})")
+    if prov.retrieved_at:
+        bits.append(f"retrieved {prov.retrieved_at}")
+    if prov.n:
+        bits.append(f"n={prov.n}")
+    if "TODO" in (prov.notes or ""):
+        bits.append("· citation TODO")
+    st.caption(" ".join(bits))
+
+
+def _render_tier_legend() -> None:
+    """One-time authority-tier legend for the manufacturer-investigation
+    section. Ordered highest-to-lowest evidentiary strength per ICH Q9(R1)."""
+    st.caption(
+        "**Authority tiers** — every claim below carries one: "
+        "[monograph] compendial spec · [ich_guideline] ICH Q4B/Q8/Q9/Q10 "
+        "(cited to database.ich.org) · [regulatory_registry] FDA Orange Book / "
+        "EMA / CDSCO determination · [patent] registry-cited · "
+        "[empirical_cohort] cohort n+query · [expert_corridor] illustrative · "
+        "[uncited] citation TODO. Uncited/TODO claims are shown for "
+        "transparency, not as grounded fact."
+    )
+
+
+_VERDICT_LABEL = {
+    DIFF_NSQ_RELEVANT: "NSQ-relevant",
+    DIFF_METHOD_EQUIVALENT: "equivalent",
+    DIFF_INCOMPARABLE: "incomparable",
+}
+
+
+def _fmt_method(method: PharmacopeialMethod | None, section: str) -> str:
+    """Compact one-line rendering of a parsed PharmacopeialMethod cell. Returns
+    '—' for an absent/NONE method (the USP seam today). A trailing [LOW]/
+    [MEDIUM] flag marks sparse parses so the reader never mistakes an
+    unparseable compendial line for a clean structured method."""
+    if method is None or method.parse_confidence == CONFIDENCE_NONE:
+        return "—"
+    parts: list[str] = []
+    if section == "dissolution":
+        if method.apparatus:
+            parts.append(method.apparatus)
+        if method.rpm is not None:
+            parts.append(f"{method.rpm:g} RPM")
+        if method.medium:
+            parts.append(method.medium)
+        if method.medium_ph is not None:
+            parts.append(f"pH {method.medium_ph:g}")
+        if method.q_limit_pct is not None:
+            parts.append(f"Q≥{method.q_limit_pct:g}%")
+        for t in method.timepoints:
+            parts.append(f"@{t.time_min:g} min")
+    elif section == "assay":
+        if method.detection:
+            parts.append(method.detection)
+        if method.column:
+            parts.append(method.column)
+        if method.mobile_phase:
+            parts.append(f"MP {method.mobile_phase}")
+    elif section == "impurities":
+        if method.impurity_name:
+            parts.append(method.impurity_name)
+        if method.impurity_limit_pct is not None:
+            parts.append(f"≤{method.impurity_limit_pct:g}%")
+    conf = "" if method.parse_confidence == CONFIDENCE_HIGH else f" [{method.parse_confidence}]"
+    if not parts:
+        return f"text unparseable{conf}"
+    return " · ".join(parts) + conf
+
+
+def _render_pharmacopeia_diff(drug) -> None:
+    """Structured cross-pharmacopeia method diff for one curated API (Idea 4).
+    Parses the IP 2026 / Ph. Eur. TestingGuidelines text into comparable
+    PharmacopeialMethod objects and classifies each section's comparison.
+    USP is empty today (the simulator regulatory-passport seam — see caption)."""
+    diffs = pharmacopeia_diff.diff_drug(drug)
+    nq = pharmacopeia_diff.nsq_relevant_count(drug)
+    st.markdown(
+        f"**Cross-pharmacopeia method diff** — {nq}/3 sections NSQ-relevant "
+        f"(IP 2026 vs Ph. Eur.)"
+    )
+    rows = []
+    for d in diffs:
+        rows.append({
+            "Section": d.section,
+            "IP 2026": _fmt_method(d.methods[Pharmacopeia.IP2026], d.section),
+            "Ph. Eur.": _fmt_method(d.methods[Pharmacopeia.PH_EUR], d.section),
+            "USP": _fmt_method(d.methods[Pharmacopeia.USP], d.section),
+            "ICH Q4B": (
+                "Annex 7(R2) — general ch.; prod.-specific outside scope"
+                if d.ich_harmonisation else "—"
+            ),
+            "Verdict": _VERDICT_LABEL[d.significance],
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    # Surface only the NSQ-relevant rationales — the signal the app exists for.
+    nq_rationales = [
+        f"**{d.section}**: {d.rationale}"
+        for d in diffs if d.significance == DIFF_NSQ_RELEVANT
+    ]
+    if nq_rationales:
+        st.caption("NSQ-relevant differences: " + " | ".join(nq_rationales))
+    # ICH Q4B harmonisation scope note (dissolution only): states the honest
+    # boundary — the general chapter is harmonised across ICH regions, but the
+    # product-specific conditions compared here, and IP, are outside Q4B scope.
+    diss = next((d for d in diffs if d.ich_harmonisation), None)
+    if diss is not None:
+        st.caption(f"**ICH Q4B harmonisation** — {diss.ich_harmonisation}")
+        _render_provenance_badge(drug.ich_harmonisation_prov, "ICH Q4B source")
+    st.caption(
+        "USP method column empty: USP-NF compendial method text is "
+        "subscription-gated. The US regulatory axis is carried by the real FDA "
+        "Orange Book block below (TE codes, RLD, applicant — cited to openFDA). "
+        "The FDA Dissolution Methods database is the identified public citable "
+        "source to wire next for US dissolution methods. Verdict compares the "
+        "two sourced compendial axes (IP 2026 vs Ph. Eur.); incomparable = a "
+        "side too sparse to compare honestly, never silent equivalence."
+    )
+
+
+def _fmt_te_codes(te_codes: list[str]) -> str:
+    """Therapeutic Equivalence codes as a compact, honest label. AB1/AB2/AB3
+    is flagged because it means not all AB generics are equivalent to each
+    other — a real NSQ-relevant substitution risk, not just 'equivalent'."""
+    if not te_codes:
+        return "(none — OTC / not TE-coded)"
+    parts = []
+    for c in te_codes:
+        if c in ("AB", "AA", "AN", "AO", "AP", "AT"):
+            parts.append(c)
+        elif c.startswith("AB"):
+            parts.append(f"{c} (not all generics equivalent)")
+        elif c in ("BC", "BD", "BE", "BN", "BP", "BR", "BS", "BT", "BX"):
+            parts.append(f"{c} (NOT therapeutically equivalent)")
+        else:
+            parts.append(c)
+    return " · ".join(parts)
+
+
+def _render_orange_book(drug) -> None:
+    """Real FDA Orange Book regulatory-equivalence block for the US axis (Idea 4).
+    TE codes, RLD originator, application number, approval date, dosage forms —
+    all from the openFDA Orange Book endpoint with a real, dated citation."""
+    ob = drug.orange_book
+    if ob is None:
+        st.caption(
+            "FDA Orange Book: no entry (not FDA-approved in the US, e.g. "
+            "vildagliptin) — honestly absent, not faked."
+        )
+        return
+    st.markdown("**FDA Orange Book** — real US regulatory-equivalence data")
+    rows = [
+        {"Field": "Active ingredient (US)", "Value": ob.active_ingredient},
+        {"Field": "TE codes", "Value": _fmt_te_codes(ob.te_codes)},
+        {"Field": "RLD applicant", "Value": ob.rld_applicant or "—"},
+        {"Field": "RLD application", "Value": ob.rld_app_number or "—"},
+        {"Field": "RLD approval date", "Value": (ob.rld_approval_date or "—")},
+        {"Field": "Reference standard", "Value": "yes" if ob.reference_standard else "no"},
+        {"Field": "Dosage forms", "Value": ", ".join(ob.dosage_forms) or "—"},
+        {"Field": "Marketing status", "Value": ", ".join(ob.marketing_statuses) or "—"},
+    ]
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    _render_provenance_badge(ob.provenance, "FDA Orange Book")
+
+
 def _render_api_card(drug) -> None:
     """One curated-API standards card: optimal process, patent, GMP corridor,
-    IP 2026 / Ph. Eur. testing, typical defect causes."""
+    IP 2026 / Ph. Eur. testing, typical defect causes. Each block is followed
+    by its provenance caption so the authority tier is visible per claim."""
     st.markdown(
         f"**Process:** {drug.optimal_process or '—'}  ·  **Patent:** {drug.patent_ref or '—'}"
     )
+    _render_provenance_badge(drug.optimal_process_prov, "Process")
+    _render_provenance_badge(drug.patent_prov, "Patent")
     if drug.ideal_parameters:
         gmp_lines = [
             f"- {p.label}: {p.min}–{p.max} {p.unit} (target {p.ideal} {p.unit})"
             for p in drug.ideal_parameters.values()
         ]
         st.markdown("**GMP corridor**\n" + "\n".join(gmp_lines))
+        # All ParamSpec corridors share the expert-corridor default until a
+        # design-space / vendor spec is sourced; surface it once for the block.
+        first_prov = next(iter(drug.ideal_parameters.values())).provenance
+        _render_provenance_badge(first_prov, "GMP corridor")
     elif drug.gmp_note:
         st.markdown(f"**GMP** — {drug.gmp_note}")
     else:
@@ -536,13 +854,19 @@ def _render_api_card(drug) -> None:
         st.markdown(f"- Assay: {drug.ip2026.assay}")
         st.markdown(f"- Dissolution: {drug.ip2026.dissolution}")
         st.markdown(f"- Impurities: {drug.ip2026.impurities}")
+        _render_provenance_badge(drug.ip2026.provenance, "IP 2026")
     with c2:
         st.markdown("**Ph. Eur.**")
         st.markdown(f"- Assay: {drug.ph_eur.assay}")
         st.markdown(f"- Dissolution: {drug.ph_eur.dissolution}")
         st.markdown(f"- Impurities: {drug.ph_eur.impurities}")
+        _render_provenance_badge(drug.ph_eur.provenance, "Ph. Eur.")
+    _render_pharmacopeia_diff(drug)
+    _render_orange_book(drug)
     if drug.common_alerts:
         st.markdown("**Typical defect causes:** " + "; ".join(drug.common_alerts))
+        # Honest label: common_alerts is authored narrative with no denominator.
+        _render_provenance_badge(drug.common_alerts_prov, "Typical causes")
 
 
 def _curated_apis(drill: pd.DataFrame) -> tuple[list[str], list[str]]:
@@ -578,6 +902,7 @@ def _render_standards_recap(drill: pd.DataFrame) -> None:
         f"curated active ingredient; {len(uncurated)} product(s) fall back to "
         f"generic pharmacopeial guidance."
     )
+    _render_tier_legend()
     if curated:
         for api_id in curated:
             drug = PRODUCT_CATALOG[api_id]
@@ -590,7 +915,9 @@ def _render_standards_recap(drill: pd.DataFrame) -> None:
         ):
             gs = generic_standards(uncurated[0])
             st.markdown(f"**Scientific context** — {gs['scientific']}")
+            _render_provenance_badge(GENERIC_STANDARDS_PROVENANCE["scientific"], "Scientific")
             st.markdown(f"**Regulatory guidelines** — {gs['regulatory']}")
+            _render_provenance_badge(GENERIC_STANDARDS_PROVENANCE["regulatory"], "Regulatory")
             st.caption(
                 "Applies to: " + ", ".join(uncurated[:12])
                 + (" …" if len(uncurated) > 12 else "")
@@ -629,6 +956,11 @@ def _render_probable_causes(drill: pd.DataFrame, fc_counts: pd.DataFrame) -> Non
         st.caption("No dominant failure-mode signal for this manufacturer.")
 
     st.markdown("**API-informed typical defect mechanisms**")
+    st.caption(
+        "Curated typical-defect lists below are authored narrative (uncited, no "
+        "denominator) — review against the empirical cohort distribution, not as "
+        "grounded fact."
+    )
     curated, uncurated = _curated_apis(drill)
     if curated:
         for api_id in curated:
@@ -653,11 +985,13 @@ def _render_probable_causes(drill: pd.DataFrame, fc_counts: pd.DataFrame) -> Non
 def _render_mitigation_plan(drill: pd.DataFrame, fc_counts: pd.DataFrame) -> None:
     """(f) Mitigation plan — per top failure category, pull mitigations from
     SOLUTION_BANK (via mitigations_for). Categories without a curated playbook
-    fall back to ICH Q9; never fabricates."""
+    fall back to ICH Q9; never fabricates. The bank is a general ICH Q9-rooted
+    playbook (cited), not a product-specific verdict."""
     st.caption(
-        "Mitigations are keyed to the manufacturer's dominant failure "
-        "categories; categories without a curated playbook fall back to "
-        "ICH Q9 risk-management."
+        "General ICH Q9-rooted mitigation playbook (not product-specific, not a "
+        "verdict). Mitigations are keyed to the manufacturer's dominant failure "
+        "categories; categories without a curated playbook fall back to ICH Q9 "
+        "risk-management."
     )
     top = fc_counts.head(5)
     if top.empty:
@@ -667,8 +1001,13 @@ def _render_mitigation_plan(drill: pd.DataFrame, fc_counts: pd.DataFrame) -> Non
         cat = r['Failure Category']
         n = int(r['Alerts'])
         st.markdown(f"**{cat}** ({n} alerts)")
-        for m in mitigations_for(cat):
-            st.markdown(f"- {m}")
+        mitigations = mitigations_for(cat)
+        for m in mitigations:
+            st.markdown(f"- {m.text}")
+        # All bank entries share the ICH-guideline provenance; surface it once
+        # per category rather than per mitigation to avoid noise.
+        if mitigations:
+            _render_provenance_badge(mitigations[0].provenance, "Playbook")
 
 
 def _render_manufacturer_investigation(df: pd.DataFrame) -> None:
@@ -708,7 +1047,15 @@ def _render_manufacturer_investigation(df: pd.DataFrame) -> None:
         margin=dict(l=8, r=8, t=40, b=8),
     )
     st.plotly_chart(fig_bar, use_container_width=True)
-    st.dataframe(summary, use_container_width=True, hide_index=True)
+    st.dataframe(
+        summary,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "first_seen": st.column_config.DateColumn("First seen", format=_DATE_FMT),
+            "last_seen": st.column_config.DateColumn("Last seen", format=_DATE_FMT),
+        },
+    )
 
     # ---- Pick a manufacturer ----
     st.markdown("---")
@@ -731,9 +1078,7 @@ def _render_manufacturer_investigation(df: pd.DataFrame) -> None:
         'Reporting Source', 'Reporting by Lab/State', 'Reporting Month & Year',
     ]
     alert_cols = [c for c in alert_cols if c in drill.columns]
-    alert_view = drill[alert_cols].sort_values(
-        ['Reporting Month & Year', 'Name of Product'], na_position='last'
-    )
+    alert_view = _sort_alerts_chronological(drill[alert_cols])
     st.dataframe(alert_view, use_container_width=True, hide_index=True)
     st.download_button(
         label="Export this manufacturer's NSQ history to CSV",
@@ -795,10 +1140,16 @@ def _render_manufacturer_investigation(df: pd.DataFrame) -> None:
         drill['Reporting by Lab/State'].dropna().nunique()
         if 'Reporting by Lab/State' in drill.columns else 0
     )
+    # Chronological first/last seen (string min/max on '%b-%Y' is alphabetical
+    # on the month name; parse to datetime first). Fallback '—' if no dates parse.
+    _rmy = _rmy_datetime(drill)
+    first_seen = _rmy.min()
+    last_seen = _rmy.max()
+    fs = first_seen.strftime('%b-%Y') if pd.notna(first_seen) else '—'
+    ls = last_seen.strftime('%b-%Y') if pd.notna(last_seen) else '—'
     st.caption(
         f"Totals — alerts: {len(drill)} · products: {drill['Name of Product'].nunique()} · "
-        f"reporting labs: {n_labs} · first seen: {drill['Reporting Month & Year'].min()} · "
-        f"last seen: {drill['Reporting Month & Year'].max()}"
+        f"reporting labs: {n_labs} · first seen: {fs} · last seen: {ls}"
     )
 
     # ---- (d) Recap of GMP & testing standards ----
@@ -1029,34 +1380,54 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # -----------------------------------------------------------------------------
 with tab1:
     st.header("Chronological Trends & Product Dissections")
-    
-    c_left, c_right = st.columns(2)
-    
-    with c_left:
-        st.subheader("Temporal Timeline Trend")
-        # Line Chart over time
-        trend_df = df_filtered.dropna(subset=['Parsed_Date']).copy()
-        if not trend_df.empty:
-            trend_grouped = trend_df.groupby([trend_df['Parsed_Date'].dt.to_period('M'), 'Is_Dissolution']).size().reset_index(name='Alert Count')
-            trend_grouped['Parsed_Date'] = trend_grouped['Parsed_Date'].dt.to_timestamp()
-            trend_grouped['Alert Type'] = trend_grouped['Is_Dissolution'].map({True: 'Dissolution Defect', False: 'Other Defect'})
-            
-            fig_line = px.line(
-                trend_grouped, x='Parsed_Date', y='Alert Count', color='Alert Type',
-                labels={'Parsed_Date': 'Reporting Timeline', 'Alert Count': 'Volume of Incidents'},
-                title="Monthly Progression of Recorded Drug Defects",
-                color_discrete_map={'Dissolution Defect': _ACCENT, 'Other Defect': _CONTEXT},
-                category_orders={'Alert Type': ['Dissolution Defect', 'Other Defect']},
-                markers=True
-            )
-            # Emphasis: this dashboard's story is dissolution, so dissolution
-            # wears the accent and "Other" recedes to context gray.
-            fig_line.update_layout(legend_title="Defect Category", hovermode="x unified")
-            st.plotly_chart(fig_line, use_container_width=True)
-        else:
-            st.info("Insufficient chronological date variables detected to parse timeline trends.")
 
-    with c_right:
+    # The timeline spans 67 months — it needs the full page width. Full-width
+    # first row, then the two compact bar pairs below.
+    st.subheader("Temporal Timeline Trend")
+    # Stacked area chart over time by harmonized failure category —
+    # dissolution is one major cause among several (Assay / Content is
+    # actually the largest), so the binary Dissolution-vs-Other line
+    # hid the composition. Fold the category tail into "Other" so the
+    # stack uses <=8 hues (top-7 + Other), matching the drill-down
+    # timelines and never cycling past _SCIENTIFIC_COLORWAY.
+    trend_df = df_filtered.dropna(subset=['Parsed_Date']).copy()
+    if not trend_df.empty:
+        trend_df['Failure Category'] = _fold_categories(
+            trend_df['Failure_Category_Primary'], top_k=7, other="Other"
+        )
+        trend_grouped = (
+            trend_df.groupby([trend_df['Parsed_Date'].dt.to_period('M'), 'Failure Category'])
+                    .size().reset_index(name='Alert Count')
+        )
+        trend_grouped['Parsed_Date'] = trend_grouped['Parsed_Date'].dt.to_timestamp()
+        # Stack largest band first (bottom-up by total volume) so the
+        # dominant categories read first and the band order is stable.
+        cat_order = (
+            trend_grouped.groupby('Failure Category')['Alert Count'].sum()
+                         .sort_values(ascending=False).index.tolist()
+        )
+        fig_line = px.area(
+            trend_grouped, x='Parsed_Date', y='Alert Count', color='Failure Category',
+            labels={'Parsed_Date': 'Reporting Timeline', 'Alert Count': 'Volume of Incidents'},
+            title="Monthly Progression of Recorded Drug Defects",
+            category_orders={'Failure Category': cat_order},
+            color_discrete_sequence=_SCIENTIFIC_COLORWAY,
+        )
+        # All traces into one stack group: px.area alone overlays the
+        # bands filled-to-zero, which double-counts visually.
+        fig_line.update_traces(stackgroup='one', line=dict(width=0.5))
+        fig_line.update_layout(
+            legend_title="Failure Category", hovermode="x unified",
+            height=460, margin=dict(l=8, r=8, t=40, b=8),
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
+    else:
+        st.info("Insufficient chronological date variables detected to parse timeline trends.")
+
+    # Risk matrices — two compact bar charts share a row.
+    c_left, c_right = st.columns(2)
+
+    with c_left:
         st.subheader("Top Defective Product Matrices")
         # Horizontal Bar Chart — prefer the canonical column (merged
         # near-duplicate product spellings); fall back to the cosmetic
@@ -1064,7 +1435,7 @@ with tab1:
         col = 'Product_Name_Canonical' if 'Product_Name_Canonical' in df_filtered.columns else 'Product_Name_Norm'
         top_products = df_filtered[col].value_counts().head(10).reset_index()
         top_products.columns = ['Product Name', 'Total Incidents']
-        
+
         fig_bar = px.bar(
             top_products, x='Total Incidents', y='Product Name', orientation='h',
             labels={'Total Incidents': 'Alert Counts Recorded', 'Product Name': 'Commercial Formulation Name'},
@@ -1076,12 +1447,8 @@ with tab1:
         fig_bar.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    # Secondary Breakdown split
-    st.markdown("---")
-    st.subheader("Form Factor Risk Assessments")
-    
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
+    with c_right:
+        st.subheader("Form Factor Risk Assessments")
         # Form Type Breakdown
         form_counts = df_filtered['Form type'].value_counts().head(12).reset_index()
         form_counts.columns = ['Form Factor', 'Alert Volume']
@@ -1096,26 +1463,31 @@ with tab1:
         fig_form.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
         st.plotly_chart(fig_form, use_container_width=True)
 
-    with col_f2:
-        # Failure Category Distribution — replaces the previous "Recall
-        # Class" pie (which was always 100% "Unclassified" because the
-        # CSV doesn't carry recall-class data). Now uses the harmonized
-        # Failure_Category_Primary derived from each row's NSQ Result.
-        # Failure Category Distribution — horizontal bar. The harmonized
-        # Failure_Category_Primary yields ~17 classes, which is well past the
-        # ~7-class pie/donut ceiling (adjacent slices blur and can't be compared).
-        # A sorted horizontal bar is the magnitude-comparison form for many
-        # classes; one accent colour, length carries the value.
-        cat_counts = df_filtered['Failure_Category_Primary'].value_counts().reset_index()
-        cat_counts.columns = ['Failure Category', 'Alert Volume']
-        fig_cat = px.bar(
-            cat_counts, x='Alert Volume', y='Failure Category', orientation='h',
-            labels={'Alert Volume': 'Alert Count', 'Failure Category': 'Failure Category'},
-            title="Failure Category Breakdown (Harmonized from NSQ Result)",
-            color_discrete_sequence=[_ACCENT],
-        )
-        fig_cat.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
-        st.plotly_chart(fig_cat, use_container_width=True)
+    # Secondary Breakdown split
+    st.markdown("---")
+    st.subheader("Failure Category Distribution")
+    # Failure Category Distribution — replaces the previous "Recall
+    # Class" pie (which was always 100% "Unclassified" because the
+    # CSV doesn't carry recall-class data). Now uses the harmonized
+    # Failure_Category_Primary derived from each row's NSQ Result.
+    # Failure Category Distribution — horizontal bar. The harmonized
+    # Failure_Category_Primary yields ~17 classes, which is well past the
+    # ~7-class pie/donut ceiling (adjacent slices blur and can't be compared).
+    # A sorted horizontal bar is the magnitude-comparison form for many
+    # classes; one accent colour, length carries the value. Full width:
+    # ~17 labels need the horizontal room the other charts don't.
+    cat_counts = df_filtered['Failure_Category_Primary'].value_counts().reset_index()
+    cat_counts.columns = ['Failure Category', 'Alert Volume']
+    fig_cat = px.bar(
+        cat_counts, x='Alert Volume', y='Failure Category', orientation='h',
+        labels={'Alert Volume': 'Alert Count', 'Failure Category': 'Failure Category'},
+        title="Failure Category Breakdown (Harmonized from NSQ Result)",
+        color_discrete_sequence=[_ACCENT],
+        height=max(360, 34 * len(cat_counts)),
+    )
+    fig_cat.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False,
+                          margin=dict(l=8, r=8, t=40, b=8))
+    st.plotly_chart(fig_cat, use_container_width=True)
 
 # -----------------------------------------------------------------------------
 # TAB 2: GEOGRAPHIC & HEATMAPS
@@ -1280,7 +1652,7 @@ with tab3:
     if sankey_data.empty:
         st.warning("Insufficient data to draft a Sankey flow under the current filters.")
     else:
-        mfg = _mfg_label(sankey_data)
+        mfg = _mfg_group_label(sankey_data)
         mol = _molecule_hybrid(sankey_data)
         if flow.startswith("Manufacturer"):
             _render_sankey(

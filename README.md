@@ -1,235 +1,326 @@
-# NSQ Platform — merged local stack
+# NSQ Platform
 
-2 independent Streamlit services, orchestrated with Docker Compose,
-both reading live data from a shared Redis instance.
+A four-part platform built on India's CDSCO **Not-of-Standard-Quality (NSQ)** alert
+data, aimed at both directions of the drug-quality problem:
 
-```
-merged/
-├── analytics/            # real CDSCO NSQ alert dashboard (was nsq-env_copy_2.zip)
-│   ├── app.py
-│   ├── shared/nsq_redis.py   # copy of shared loader (Docker build context needs it locally)
-│   ├── requirements.txt
-│   └── Dockerfile
-├── simulator/             # GMP root-cause / grading simulator (was nsq-agent.zip)
-│   ├── app.py
-│   ├── shared/nsq_redis.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── shared/
-│   └── nsq_redis.py        # source of truth — Redis-to-DataFrame loader, copied into each service
-├── redis-loader/           # scripts that populate Redis (invoked via the root justfile)
-│   ├── fetch_cdsco.py       # pulls the live CDSCO publicNsqDrugTable JSON
-│   ├── load_nsq_redis.py
-│   ├── load_geojson_redis.py
-│   ├── ping_redis.py / verify_nsq_redis.py / clean_nsq_redis.py
-│   └── requirements.txt
-├── data/                   (fetched publicNsqDrugTable.json lands here — gitignored)
-├── justfile                 # single entry point: setup, fetch-cdscoonline, push-geojson, ...
-├── docker-compose.yml
-├── .env.example
-└── README.md
+1. **Analytics** — a public-health dashboard over ~5,600 real NSQ alerts
+   (Jan 2021 – Jul 2026): trends, geography, failure taxonomy, and a
+   product → manufacturer investigation workflow.
+2. **Manufacturer app** — a tenant-scoped "Q-engine" deep dive for a single
+   manufacturer: their own NSQ issues, root-cause analysis, GMP corridor,
+   pharmacopeial methods, and mitigations.
+3. **Off-patent decision engine** — a four-pillar CDMO intelligence engine
+   (patent / regulatory / demand / plant-fit) for off-patent & LOE molecules,
+   plus mechanistic process models for manufacturing-route simulation.
+4. **A rigorous knowledge layer** — curated GMP, pharmacopeia (IP / Ph. Eur. /
+   USP), ICH, and FDA Orange Book data where **every structured claim carries a
+   provenance authority tier**, and parsers refuse to fabricate what they
+   cannot extract.
+
+Everything shares one Redis instance as the data bus.
 
 ```
-
-## What each service does
-
-**analytics** (port 8501) — loads data from Redis, derives missing columns
-(form type, drug category, dissolution-failure flag, state), and renders
-Plotly charts / a state choropleth.
-
-**simulator** (port 8502) — the GMP formulation/root-cause workbench.
-Its 16-drug catalog (excipients, process windows, patent refs) is still
-hardcoded fixture data — that part was never sourced from CDSCO. What
-**is** live: on startup it reads the same Redis data and overlays real
-`total_alerts` counts and top failure reasons onto each matching drug,
-replacing the static numbers. The header shows
-`● LIVE CDSCO DATA (N drugs matched)` when this succeeds, or
-`○ STATIC CATALOG DATA` if Redis is unreachable/empty — it never hard-fails.
-
-## How they interact
-
-Neither service calls the other over the network. Both are independent
-Redis clients reading the same keyspace:
-
-```
-Redis (nsq:record:*, nsq:records, nsq:meta)
-   ├── read by analytics  (dashboard + charts)
-   └── read by simulator  (live alert-count overlay)
+                        ┌──────────────────────────────────────────────┐
+                        │                  Redis                       │
+                        │  nsq:*  (alerts, ontology)                   │
+                        │  cdmo:* (patents, plants, regulatory, demand)│
+                        │  geo:india_states                            │
+                        └──────┬───────────┬───────────┬───────────┬───┘
+                               │           │           │           │
+   redis-loader/ ────────▶ writes        │           │           │
+   (CSV + seeds)                  ┌─────▼────┐ ┌────▼─────┐ ┌───▼───────┐
+                                  │analytics │ │simulator │ │  engine   │
+                                  │ :8501    │ │ :8502    │ │(FastAPI)  │
+                                  └──────────┘ └────┬─────┘ │  :8000    │
+                                                    │ HTTP  └─────▲─────┘
+                                                    └─────────────┘
+                                  ┌──────────┐
+                                  │manufacturer│  (Redis-only; no HTTP
+                                  │  :8503   │   dependency on engine)
+                                  └──────────┘
 ```
 
-`analytics` starts first (compose `depends_on: condition: service_healthy`)
-as a basic startup ordering — there's no runtime dependency between the two
-containers beyond that; if you stop analytics, the simulator keeps working
-off whatever it already cached from Redis (`@st.cache_data(ttl=300)`).
+## Services
 
-## Prerequisite: get data into Redis
+| Service | Port | Stack | What it is |
+|---|---|---|---|
+| `analytics` | 8501 | Streamlit | CDSCO NSQ Alerts Dashboard — public-health view of the full dataset |
+| `simulator` | 8502 | Streamlit | CDMO Off-Patent Intelligence workbench — 17-drug catalog + 7 intelligence pages backed by the engine |
+| `engine` | 8000 | FastAPI | Four-pillar decision engine + portfolio scorer (the simulator's API backend) |
+| `manufacturer` | 8503 | Streamlit | Tenant-scoped manufacturer dashboard + Q-engine diagnostics |
+| process-model API | 8010 | FastAPI | Mechanistic manufacturing-route simulator (host-only; not in compose) |
 
-Both services expect `nsq:*` keys to already exist in Redis. Everything —
-loader setup, data fetch, and running the two services — is driven from
-one `justfile` at the repo root, reading one `.env` at the repo root.
+## Quickstart
 
 ```bash
-cp .env.example .env
-# edit .env: paste your Redis URL (rediss:// for Upstash — TLS is required)
-just setup            # creates redis-loader/.venv and installs its deps
-just ping             # confirm connectivity
-just fetch-cdscoonline  # pulls the live CDSCO publicNsqDrugTable JSON and loads it into Redis
-just verify            # sanity check
-```
+cp .env.example .env        # set REDIS_URL (rediss:// for Upstash — TLS required)
+just setup                  # create redis-loader/.venv + install deps
+just ping                   # verify connectivity
 
-`just fetch-cdscoonline` hits `cdscoonline.gov.in/CDSCO/publicNsqDrugTable`
-directly (it's a plain, unauthenticated GET) and flushes/reloads Redis with
-the result, so Redis always reflects the latest fetch. If you'd rather
-supply your own export (browser network tab, or whatever official export
-mechanism CDSCO provides), save it to `data/publicNsqDrugTable.json` and
-run `just reload` instead.
+# Load the dataset (deterministic CSV pipeline — see below)
+just refresh-csv            # flush + reload NSQ CSV + product ontology + verify
 
-The India-states GeoJSON used by the analytics choropleth also lives in
-Redis rather than as a checked-in file:
+# Load the intelligence seeds
+just load-intelligence      # patents, plant assets, regulatory, demand
 
-```bash
-just push-geojson     # push analytics/india_states_slim.geojson into Redis
-```
-
-## Running the two services locally
-
-```bash
+# Run everything
 docker compose up --build
+#   http://localhost:8501  analytics
+#   http://localhost:8502  simulator
+#   http://localhost:8503  manufacturer
+#   http://localhost:8000  engine API
 ```
 
-- Analytics dashboard: http://localhost:8501
-- Simulator workbench:  http://localhost:8502
+Host-side (no Docker) equivalents: `just run-analytics`, `just run-manufacturer`,
+`just run-api` (engine :8000), `just run-simulator` (process-model API :8010).
+Host loader/engine runs need `redis://localhost:6379`; the `.env`
+`host.docker.internal` URL only resolves inside containers.
 
-To use the simulator's optional live-LLM diagnostics instead of the local
-heuristic engine, set `GEMINI_API_KEY` in the root `.env` before starting.
+Tests: `just test` (see [Tests](#tests)).
 
-## Updating the dataset
+## Data pipeline
 
-Just re-run `just fetch-cdscoonline` for a fresh pull, or `just reload` if
-you're supplying your own export at `data/publicNsqDrugTable.json`. Both
-flush and reload Redis. Both services will pick up the new data
-automatically within their 5-minute cache TTL, or immediately on container
-restart:
+### The deterministic CSV pipeline (primary)
+
+`redis-loader/load_csv_redis.py` loads the cumulative NSQ CSV
+(`data/CDSCO Not of Standard Quality (NSQ) Jan 21-Jul 26.csv`). Its core
+invariants:
+
+- **Deterministic identity** — `record_id()` hashes
+  `(batch_no, product_name, reporting_month, reporting lab, NSQ-result text)`.
+  Batch+product alone collapses legitimately distinct alerts (the same batch
+  re-failing in consecutive months; one notification failing different tests),
+  which the older scheme demonstrably did — it lost 46 alerts on one dataset.
+- **Order-independent ontology** — `prepare_rows()` sorts rows before the
+  ontology build, so Redis state is a pure function of CSV content. Appending
+  new monthly rows cannot perturb manufacturer bins. A non-`--flush` reload is
+  therefore **invalid**: the ontology is insertion-order-dependent under fuzzy
+  matching and must be rebuilt from scratch each time.
+- **Company ontology** — `shared/company_ontology.py` canonicalizes
+  manufacturer strings (legal-form and address-tail stripping, brand-root
+  binning, fuzzy merge gated at `FUZZY_THRESHOLD=0.85`) into
+  `nsq:ontology:companies` + per-record `nsq:prediction:*` enrichment. Six
+  copies of the normalizer exist across services and are kept in lockstep by
+  `tests/test_ontology_lockstep.py`.
+
+**Monthly refresh runbook** (new CDSCO rows arrive):
 
 ```bash
-docker compose restart analytics simulator
+# append new rows to data/CDSCO Not of Standard Quality (NSQ) Jan 21-Jul 26.csv
+just refresh-csv            # reload-csv --flush + build-product-ontology + verify
 ```
 
-No schema migration needed — the Redis loader only requires
-`str_product_name` and, ideally, `str_nsq_result` fields (the CDSCO API's
-own field names — see `redis-loader/load_nsq_redis.py` for the full
-expected shape).
+`--rebuild-ontology` exists only for cleaning legacy-contaminated state (re-key
+every company record with the current normalizer); do **not** run it after a
+fresh deterministic build — it undoes the intentional threshold-gated fuzzy
+merges. Preview with `--rebuild-ontology --dry-run`.
 
-## CDMO Off-Patent Intelligence Engine
+### Legacy JSON path (superseded)
 
-The simulator now includes a four-pillar decision engine (`engine/` service on
-port 8000) and six intelligence pages in the simulator UI:
+`just load` / `just reload` / `just fetch-cdscoonline` drive
+`load_nsq_redis.py` against the CDSCO `publicNsqDrugTable` JSON (a plain
+unauthenticated GET via `fetch_cdsco.py`). Kept for ad-hoc live pulls; the CSV
+pipeline is the real dataset path.
 
-| Pillar | Page | Data keyspace |
-|--------|------|---------------|
-| A. Patent Intelligence | Patent Radar | `cdmo:patent:*` |
-| B. Regulatory Rules | Regulatory Passport | `cdmo:regulatory:*` |
-| C. Demand Trends | Demand Radar | `cdmo:demand:*` |
-| D. Plant Expertise & Shop-Floor AI | Plant Match, Plant Readiness | `cdmo:plant:*` |
-| Plant Profile Builder | Plant Builder | `cdmo:plant:*` |
-| Portfolio Decision Engine | Portfolio | `cdmo:portfolio:*` |
-
-### GMP methodological pillars
-
-Plant Readiness, Plant Match, and Regulatory Passport now surface five
-contextual GMP pillars derived from each molecule's modality, form, and
-potency class:
-
-1. Aseptic Processing & Sterility Assurance
-2. HPAPI Containment & Operator Safety
-3. Cleaning Validation & Cross-Contamination Control
-4. Lifecycle Process & Method Validation
-5. Packaging, CCIT, and Supply Chain Integrity
-
-The engine derives these automatically from the existing patent/regulatory
-seeds. API endpoints:
+### Other Redis data
 
 ```bash
-# Derive and list GMP pillars for any molecule
-curl http://localhost:8000/molecules/{molecule_key}/gmp-pillars
-
-# Full manufacturing complexity, including gmp_pillars
-curl http://localhost:8000/molecules/{molecule_key}/complexity
-
-# Plant fit summary with GMP readiness score
-curl http://localhost:8000/plants/{asset_id}/fit/{molecule_key}
-
-# 7-section capability taxonomy used by the Plant Builder
-curl http://localhost:8000/plants/capability-taxonomy
-
-# Create a custom digital plant profile from selected capability tokens
-curl -X POST http://localhost:8000/plants \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Hyderabad HPAPI + OSD Hub", "capabilities": ["potent_containment", "wet_granulation", "film_coating", "blister_packing"]}'
+just push-geojson           # India-states GeoJSON → geo:india_states (gzip+base64)
+just load-intelligence      # all four cdmo:* seed families at once
+just load-patents | load-plant-assets | load-regulatory | load-demand
+just build-product-ontology # batch pre-fill of nsq:ontology:products (fast cold start)
 ```
 
-### Data-visualization vocabulary
+## Redis keyspace
 
-The intelligence pages share a single scientific chart vocabulary in
-`simulator/intelligence/ui_components.py`, rendered with the Okabe-Ito
-colorblind-safe palette. The goal is to turn every 0–100 score, gap, and
-timeline into a decision-oriented graphic instead of a plain table or metric.
+| Family | Keys | Written by | Read by |
+|---|---|---|---|
+| NSQ alerts | `nsq:record:<id>`, `nsq:records`, `nsq:by_month:*`, `nsq:meta` | `load_csv_redis.py` | all services via `shared/nsq_redis.py` |
+| Ontology predictions | `nsq:prediction:<id>`, `nsq:ontology:companies`, `nsq:ontology:products`, `nsq:ontology:meta` | CSV loader (with `--augment`) | data loader → `Mfg_Ontology_Key`, canonical names |
+| Intelligence seeds | `cdmo:patent:*`, `cdmo:plant:*`, `cdmo:regulatory:*`, `cdmo:demand:*` | seed loaders | engine |
+| Geography | `geo:india_states` (+ `:meta`) | `load_geojson_redis.py` | analytics choropleth |
 
-| Helper | What it shows | Used in |
-|--------|---------------|---------|
-| `scientific_bullet_chart` | 0–100 (or 0–10) score against a target threshold, with color-coded performance bands. | Plant Match, Plant Readiness, Patent Radar, Demand Radar |
-| `scientific_nested_ring` | Concentric completion rings; arc length is proportional to the score. Natural for 4-pillar profiles, customer-fit dimensions, and monograph coverage. | Plant Match, Plant Readiness, Demand Radar, Portfolio decision cards, Regulatory Passport |
-| `scientific_gauge` | Half-ring gauge for a single headline score. | Demand Radar total, Regulatory Passport clarity, Product Catalog oncology overview |
-| `scientific_quadrant_scatter` | 2-D scatter with median reference lines and cluster color; labels each quadrant. | Portfolio demand vs. plant fit |
-| `scientific_stacked_bar` | Additive components of a synthetic score shown as stacked segments. | Demand Radar demand composition |
-| `scientific_bubble_chart` | Encodes LOE horizon × FTO risk × market size, colored by therapeutic area. | Patent Radar attractiveness |
-| `scientific_gap_matrix` | Heat-coded matrix comparing molecule-required capabilities to plant-available capabilities. | Plant Match |
-| `scientific_phase_gantt` | Horizontal phase timeline with cumulative start offsets and milestone annotations. | Plant Readiness roadmap, Portfolio launch calendar |
+## The services
 
-All charts expose a consistent `source` caption and avoid decorative color or
-emoji in functional UI.
+### analytics (:8501) — CDSCO NSQ Alerts Dashboard
 
-### Plant Profile Builder
+Five tabs over the enriched frame (`shared/data_loader.py` derives form type,
+drug category, failure category, state, canonical names, ontology keys):
 
-The simulator includes a **Plant Builder** page where users create digital plant
-profiles by selecting capabilities from the canonical 7-section GMP capability
-catalog (`/plants/capability-taxonomy`). Once saved, the profile is persisted as
-a `PlantAsset` under `cdmo:plant:*` and becomes selectable immediately in
-**Plant Match** and **Plant Readiness** for molecule-to-plant comparison.
+1. **Trend & Distribution** — temporal stacked-area trend by failure category,
+   top defective product matrices, form-factor risk, failure-category mix.
+2. **Geographic & Heatmap** — India choropleth, cross-tabulation risk
+   correlation, manufacturer risk matrices.
+3. **Relational Sankey** — vulnerability-chain topology
+   (product → manufacturer → failure → lab).
+4. **Searchable Audit Ledger** — sortable, exportable full table.
+5. **Product → Manufacturer Investigation** — the analytical depth: from a
+   product's fuzzy search to per-manufacturer drill-downs with a GMP &
+   testing-standards recap, probable causes, and a mitigation plan.
 
-### Loading intelligence seeds
+Tab 5 surfaces the shared knowledge layer (below): provenance-badged claims
+with an authority-tier legend, the cross-pharmacopeia method diff
+(IP 2026 vs Ph. Eur. vs USP) with ICH Q4B harmonisation columns, and an FDA
+Orange Book panel with honest-absence handling.
+
+### manufacturer (:8503) — tenant app & Q-engine diagnostics
+
+Config-driven single-tenant app (`NSQ_TENANT`, registry in
+`manufacturer/tenants.py`). The sign-in gate establishes session context
+(manufacturer + persona: QA / Regulatory / Executive) — it is **context
+establishment, not a security boundary**; SSO/OIDC is future work.
+
+- **Dashboard** — KPI row, issue-by-type donut, issue-over-time line,
+  form × issue heatmap, and the full issue-card list with an
+  "Include issues to analyse" selector and per-card **Deep dive** buttons.
+- **Q-engine diagnostics** — six sections (persona reorders them and chooses
+  which default open): Root-cause analysis, GMP corridor, Pharmacopeial
+  methods, Regulatory provenance, Synthesis route, Suggested mitigations.
+  `manufacturer/diagnostics_core.py` is pure and headless
+  (`build_diagnosis()`), with two evidence modes: **data-informed** (dominant
+  failure modes, form span, geographic concentration, temporal clusters over
+  the tenant frame) and **API-informed** (curated `Drug` from `gmp_knowledge`:
+  common alerts, VigiBase risks, GMP corridor, methods). Anything outside the
+  curated knowledge — e.g. synthesis routes — is surfaced as an explicit gap,
+  never invented.
+
+The tenant scopes on `Mfg_Ontology_Key` (the ontology key), not the raw
+manufacturer string — 7 raw string variants must resolve to one tenant.
+
+### simulator (:8502) — CDMO intelligence workbench
+
+- **Step 0 — Catalog/workbench**: the 17-drug fixture catalog (excipients,
+  process windows, pharmacopeia view, process deck) with live NSQ alert counts
+  overlaid from Redis (`● LIVE CDSCO DATA` / `○ STATIC CATALOG` header).
+  NSQ-failure explanation runs a local deterministic heuristic, or live Gemini
+  when `GEMINI_API_KEY` is set.
+- **Steps 1–7 — intelligence pages** (`simulator/intelligence/pages/`), each
+  rendered from the engine API (`CDMO_ENGINE_URL`, default `:8000`):
+  **Patent Radar**, **Regulatory Passport**, **Demand Radar**, **Plant Match**,
+  **Plant Readiness**, **Plant Profile Builder**, **Portfolio**.
+
+All intelligence pages share one scientific chart vocabulary
+(`intelligence/ui_components.py`, Okabe-Ito colorblind-safe palette): bullet
+charts, nested rings, gauges, quadrant scatters, stacked bars, LOE×FTO×market
+bubble charts, capability gap matrices, and phase Gantts — every chart carries
+a `source` caption.
+
+### engine (:8000) — FastAPI decision engine
+
+Four-pillar scoring over the `cdmo:*` seeds. Patent intelligence is fully
+implemented; **Regulatory and Demand pillars are structured placeholders that
+currently return neutral scores** — the models and API surface exist, the
+signal does not yet.
 
 ```bash
-# One command loads patents, plants, regulatory passports, and demand signals
-just load-intelligence
-
-# Or load each layer individually
-just load-patents
-just load-plant-assets
-just load-regulatory
-just load-demand
+GET  /health
+GET  /molecules                      GET  /molecules/{key}
+GET  /molecules/{key}/geo|regulatory|demand|complexity|gmp-pillars
+GET  /molecules/{key}/roadmap?plant_asset_id=
+GET  /refresh-orange-book/{key}
+GET  /plants                         GET  /plants/{asset_id}
+GET  /plants/capability-taxonomy     POST /plants        # digital plant from capability tokens
+GET  /plants/{asset_id}/fit/{molecule_key}
+POST /score                          # four-pillar candidate score
+POST /portfolio/score                POST /portfolio/{id}   GET /portfolio/{id}
+GET  /portfolio/{id}/export?format=json|csv
 ```
 
-### Oncology molecule table
+Derived intelligence in `engine/shared/intelligence_scorer.py`:
+`derive_gmp_pillars` (5 rule-based GMP pillars — aseptic/sterility assurance,
+HPAPI containment, cleaning validation, lifecycle validation,
+packaging/CCIT), manufacturing-complexity derivation, customer-profile fit,
+modality-specific roadmaps, plant-fit scoring.
 
-The repository ships an 8-molecule oncology table in
-`data/oncology_molecule_table.json` (pembrolizumab, daratumumab, nivolumab,
-osimertinib, durvalumab, abemaciclib, ribociclib, palbociclib). Run
-`redis-loader/enrich_oncology_seeds.py` to merge this table into
-`data/patent_seed.json`, `data/regulatory_seed.json`, and `data/demand_seed.json`.
+### Process-model API (:8010)
 
-The minimum fields needed for GMP pillar derivation are `molecule_key`,
-`brand_name`, `api_name`, `therapeutic_area`, and `dosage_form` in the
-regulatory seed. The engine infers modality, sterility, potency class, and the
-relevant GMP pillars automatically.
+`simulator/api_main.py` is a thin adapter over **framework-agnostic,
+pure-Python mechanistic models** in `simulator/process_models/` — the model is
+the seam; a better model replaces the rules without touching API or UI.
 
-For molecule-specific GMP overrides (e.g., exact OEL, containment class,
-viral-clearance steps), add a `gmp_overrides` object to the regulatory or
-patent seed record; the derivation logic will respect it in a follow-up
-iteration.
+```bash
+GET  /v1/simulate/telmisartan/routes              # stage/CPP/CQA metadata (UI builds sliders from this)
+GET  /v1/simulate/telmisartan/{route_id}/metadata
+POST /v1/simulate/telmisartan/{route_id}          # flat {"cpp": value} body; 422 out-of-range
+```
 
-## Next step
+Two Telmisartan routes ship: a NaOH fluid-bed wet-granulation route and a
+direct-compression route anchored to the curated GMP corridor. Each returns
+per-stage CQAs with severity/failure-mode and an overall verdict. Adding a
+route is a one-line registration in `process_models/__init__.py`.
+`static/simulator.html` (served at `/simulator`) is a standalone route-selector
+page backed by this API.
 
-This local stack is the input to the Terraform module (AWS) — same two
-images, same Redis dependency, translated to ECS/Fargate + either
-continuing with Upstash or moving to ElastiCache. That comes next.
+## The knowledge layer (`shared/`)
+
+`shared/` is the source of truth; each service gets its own synced copy
+(`just sync-shared`, verified by sha256 in
+`tests/test_sync_shared_determinism.py`):
+
+| Module | Purpose |
+|---|---|
+| `company_ontology.py` | Redis-backed company + product ontology; canonical identity, aliases, threshold-gated fuzzy dedupe |
+| `data_loader.py` | Streamlit-cached enriched NSQ frame (failure categories, forms, states, ontology keys) |
+| `nsq_redis.py` | Redis → DataFrame loader; falls back to `$NSQ_CSV` when Redis is empty/unreachable |
+| `gmp_knowledge.py` | Curated GMP core: 17-drug catalog (excipient profiles, critical processing corridors, testing guidelines, VigiBase risks) + mitigation `SOLUTION_BANK` + the provenance gate |
+| `pharmacopeia_methods.py` | Regex parser for pharmacopeial methods (apparatus, RPM, medium, Q limits, HPLC conditions) with a strict no-fabrication contract and `parse_confidence` |
+| `pharmacopeia_diff.py` | Cross-pharmacopeia diff; classifies sections `NSQ_RELEVANT` / `METHOD_EQUIVALENT` / `INCOMPARABLE` and refuses to claim unproven equivalence |
+| `ich_registry.py` | Baked, cited ICH guideline registry (real PDF URLs + retrieval dates) + Q4B harmonisation context |
+| `us_regulatory_data.py` | Baked, cited FDA Orange Book data from openFDA (TE codes, RLD, applicant) — 16/17 molecules, `vildagliptin` honestly absent |
+
+**Provenance rigour** is enforced, not aspirational: every structured claim
+carries an `authority_tier` (monograph / ich_guideline / regulatory_registry /
+patent / empirical_cohort / expert_corridor / uncited), `provenance_audit()`
+must report zero un-provenanced claims, and parsers return `None` (never a
+guessed number) when they cannot extract a value.
+
+## Tests
+
+`just test` runs `tests/` against a live local Redis (`redis://localhost:6379`;
+integration tests skip when unreachable):
+
+| Suite | Guards |
+|---|---|
+| `test_ontology_lockstep` | the 6 normalizer copies stay identical; bins are pure functions of the name |
+| `test_loader_record_keys` | record identity, dedupe, deterministic sort, lab harmonization |
+| `test_sync_shared_determinism` | `shared/` copies match by sha256 across services |
+| `test_gmp_provenance` | zero un-provenanced claims across the catalog; no fabricated monograph numbers |
+| `test_pharmacopeia_diff` | no-fabrication gate; real paracetamol parse; honest INCOMPARABLE |
+| `test_ich_registry` / `test_us_regulatory_data` | real cited sources; no placeholder seeds regress |
+| `test_diagnostics_core` | headless diagnosis: curated API, uncurated fallback, outlier category |
+| `test_tenant_scope` | tenant registry, `NSQ_TENANT` override, row scoping, no cross-tenant contamination |
+| `test_telmisartan_process_model` / `..._direct_compression` | CQA formulas, failure-mode precedence, route registry contract |
+
+Plus render-model tests for the intelligence chart vocabulary in
+`simulator/intelligence/tests/`.
+
+## Deployment
+
+- **Local**: `docker compose up --build` (all four services on `nsq-net`,
+  sharing the root `.env`).
+- **AWS**: `terraform/` deploys the same compose stack to a single EC2 box
+  (t3.micro, default VPC) — Redis/Gemini URLs pass through SSM SecureStrings +
+  KMS; `deploy.sh` (invoked by the `nsq-platform` systemd unit on boot)
+  refreshes env and runs `docker compose up -d --build`.
+- Terraform's security group currently opens 22/8501/8502 only — the engine
+  (8000) and manufacturer (8503) ports are not yet opened for remote access.
+
+## Known gaps & honest limitations
+
+- **Regulatory & Demand pillars are neutral placeholders** in the engine
+  scorer (models and endpoints exist; real signals pending).
+- The 17-drug simulator catalog is **curated fixture data**, not CDSCO-sourced
+  (only the NSQ alert-count overlay is live).
+- The manufacturer sign-in gate is **not authentication**.
+- The process-model API (8010) and `/simulator` static page are host-only —
+  not in docker-compose.
+- `PLAN_ANALYTICS_HOME.md` describes an anime.js animated landing page that is
+  **not implemented**; `PLAN_HISTORY.md` archives the original phased roadmap.
+- `.env.example` is referenced but not yet checked in — copy the shape from
+  `docker-compose.yml` (`REDIS_URL`, optional `GEMINI_API_KEY`, optional
+  `NSQ_TENANT`).
+
+## Planning docs
+
+`PLAN_HISTORY.md` (archived roadmap) · `PLAN_ANALYTICS_HOME.md` (proposed
+analytics landing page) · `PR_DESCRIPTION.md` (prior PR summary).

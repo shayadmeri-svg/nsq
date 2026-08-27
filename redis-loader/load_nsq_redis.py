@@ -54,8 +54,24 @@ MONTH_MAP = {
 
 
 def record_id(row: dict) -> str:
-    """Stable id: batch number + product name are the natural key."""
-    key = f"{row.get('str_batch_no', '')}|{row.get('str_product_name', '')}"
+    """Stable id for one NSQ alert.
+
+    MUST stay in lockstep with record_id() in load_csv_redis.py: one alert
+    = (batch_no, product_name, reporting_month, reporting lab, NSQ-result
+    text). Batch + product alone is not a natural key — the same batch
+    legitimately fails in consecutive months, in different labs, and can be
+    listed twice in one notification having failed different tests; hashing
+    only those two fields collapsed distinct alerts (last-write-wins).
+    """
+    month = normalize_month(row.get("dt_reporting_month_year")) or \
+        (row.get("dt_reporting_month_year") or "").strip()
+    key = "|".join([
+        (row.get("str_batch_no") or "").strip(),
+        (row.get("str_product_name") or "").strip(),
+        month,
+        (row.get("str_reported_by_lab_or_state") or "").strip(),
+        (row.get("str_nsq_result") or "").strip(),
+    ])
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
 

@@ -68,6 +68,16 @@ ONTOLOGY_VERSION = 1
 _TOKEN_NOISE = {
     "ltd", "limited", "pvt", "private", "pvt.", "pvt ltd", "private limited",
     "india", "indian", "pharmaceuticals", "pharma", "pharmaceutical",
+    # Generic industry / sector descriptor tokens that appear as suffixes on
+    # many unrelated manufacturers. Dropping them both prevents a single
+    # generic token (e.g. "healthcare", "biotech", "industries") from
+    # magnetizing unrelated companies via the fuzzy match, and lets genuine
+    # same-brand variants ("Unicure Remedies" / "Unicure") collapse to an
+    # exact normalized-key match instead of relying on fuzzy similarity.
+    "remedies", "industries", "industry", "biotech", "biosciences", "bioscience",
+    "healthcare", "therapeutics", "therapeutic", "enterprises", "enterprise",
+    "nutrition", "nutraceuticals", "nutraceutical", "sciences", "science",
+    "medical", "medicare", "wellness",
     "drug", "drugs", "formulations", "formulation", "labs", "laboratories",
     "laboratory", "mfg", "manufactured", "manufacturing", "company", "co",
     "incorporated", "inc", "corp", "corporation", "llp", "llc",
@@ -79,8 +89,49 @@ _TOKEN_NOISE = {
     "regd", "regd.", "registered", "office", "head", "works",
     "iii", "ii", "iv", "v", "i", "vi",
     "gmbh", "ag", "sa", "plc", "pty", "kg",
-    "u", "s", "u.s.", "u.k.", "uk", "us",
+    "u", "s", "m", "ms", "messrs", "u.s.", "u.k.", "uk", "us",
     "eou", "ehtp", "stp", "sez", "epip", "sidcul",
+}
+
+
+# Legal-form tokens that terminate the company name in normalize: once one
+# of these appears after the brand, the rest of the line is a legal suffix
+# plus an address tail (e.g. "Jackson Laboratories Pvt. Ltd. Majitha
+# Road" -> "jackson") and is dropped, so same-company variants with
+# different address tails don't fragment into separate canonical groups
+# under token_sort_ratio.
+_LEGAL_STOP = {
+    "ltd", "limited", "pvt", "private", "inc", "incorporated", "corp",
+    "corporation", "llp", "llc", "company", "co", "gmbh", "ag", "sa",
+    "plc", "pty", "kg",
+}
+
+
+# Structural address openers: tokens that, once the brand has started,
+# unambiguously begin the address tail (plot/no/door/floor/road/complex/
+# gidc/distt/near/...). Unlike city/state words these can't be enumerated
+# by geography — but they're a small, stable vocabulary of address
+# grammar, so a denylist-of-markers works. MUST stay in lockstep with
+# redis-loader/load_csv_redis.py _ADDRESS_START.
+_ADDRESS_START = {
+    # Plot / door / unit identifiers
+    "plot", "no", "nos", "number", "door", "doorway", "flat", "apartment",
+    "unit", "block", "shed", "shop", "khasra", "khata", "cts", "survey",
+    "sy",
+    # Floor / building structure
+    "floor", "ground", "first", "second", "third", "fourth", "fifth",
+    "basement", "loft", "building", "tower", "wing",
+    # Roads / areas / complexes
+    "road", "marg", "street", "lane", "nagar", "complex", "area",
+    "estate", "zone",
+    # Industrial-corporation estate markers (already in _TOKEN_NOISE, but
+    # listed here too so they terminate the name rather than just skipping
+    # and letting a following area name back in).
+    "gidc", "midc", "sidcul", "epip", "ehtp", "stp", "sez", "sipcot",
+    # District / village / locality
+    "distt", "district", "taluka", "tehsil", "village", "mouza",
+    # Directional / locator words
+    "near", "opposite", "opp", "behind", "beside", "adjacent", "towards",
 }
 
 
@@ -113,8 +164,33 @@ def normalize_company_name(raw: str) -> str:
     s = _strip_accents(str(raw).lower())
     # Replace any non-alphanumeric run with a single space.
     s = re.sub(r"[^a-z0-9]+", " ", s)
-    tokens = s.split()
-    cleaned = [t for t in tokens if t not in _TOKEN_NOISE and not t.isdigit()]
+    cleaned = []
+    for t in s.split():
+        # A legal form (ltd/pvt/...) after the brand ends the name; the
+        # rest of the line is suffix + address and must not leak into the
+        # key, or same-company variants with different address tails
+        # fragment into separate groups under token_sort_ratio.
+        if cleaned and t in _LEGAL_STOP:
+            break
+        # Once the brand has started, the first address marker TERMINATES
+        # the name — we break, not skip. Addresses never contain brand
+        # tokens after they begin, so anything past this point (including
+        # unrecognized area names like "bavia" / "thirumuruga" that no
+        # city list can enumerate) must not re-enter the key. Skipping
+        # individually is the old bug: it left a gap that a later
+        # non-listed area word would slip through, contaminating the key
+        # and binning unrelated manufacturers together.
+        if cleaned and (
+            t in _ADDRESS_START
+            or t in _CITY_HINTS
+            or t in _STATE_TOKENS
+            or any(c.isdigit() for c in t)
+            or len(t) == 1
+        ):
+            break
+        if t in _TOKEN_NOISE or t.isdigit():
+            continue
+        cleaned.append(t)
     return " ".join(cleaned).strip()
 
 
@@ -143,8 +219,15 @@ def _similarity(a: str, b: str) -> float:
     if a == b:
         return 1.0
     if _HAS_RAPIDFUZZ:
-        # token_set_ratio is forgiving of word-order and partial overlap
-        return float(fuzz.token_set_ratio(a, b)) / 100.0
+        # token_sort_ratio is order-insensitive but, unlike token_set_ratio,
+        # it is Levenshtein-based over the full sorted token string — so it
+        # charges for extra/missing tokens instead of returning 1.0 whenever
+        # one name's token set is a subset of the other's. That stops
+        # distinct companies from collapsing together just because one name
+        # is a short subset (e.g. "hindustan" vs "hindustan antibiotics") or
+        # because they share a single generic industry token (e.g. both end
+        # in "industries" / "healthcare").
+        return float(fuzz.token_sort_ratio(a, b)) / 100.0
     # Fallback: Jaccard over token sets.
     sa, sb = set(a.split()), set(b.split())
     if not sa or not sb:
@@ -415,6 +498,9 @@ def resolve_or_create_product(
     raw: str,
     client: redis.Redis | None = None,
     threshold: float | None = None,
+    *,
+    ontology_cache: dict[str, dict[str, Any]] | None = None,
+    flush: bool = True,
 ) -> tuple[str, dict[str, Any], bool]:
     """Return (canonical_key, record, was_created).
 
@@ -422,9 +508,19 @@ def resolve_or_create_product(
     (above the fuzzy threshold), the existing record is reused and the
     raw name is appended to its `aliases`. Otherwise a new record is
     created. Mirrors `resolve_or_create` for companies.
+
+    `ontology_cache` (optional): an in-memory dict of the product
+    ontology. If supplied, the function uses it instead of issuing an
+    `HGETALL` against Redis, and only writes back to Redis when
+    `flush=True`. This is the recommended path for batch callers (e.g.
+    a per-row `.apply()` over the dataset) — one HGETALL on entry,
+    in-memory matches, then a single pipeline `HSET` at the end.
     """
     r = client or get_redis_client()
-    ontology = load_product_ontology(r)
+    if ontology_cache is None:
+        ontology = load_product_ontology(r)
+    else:
+        ontology = ontology_cache
     thr = threshold if threshold is not None else FUZZY_THRESHOLD
 
     raw_clean = (raw or "").strip()
@@ -443,8 +539,9 @@ def resolve_or_create_product(
         if raw_clean and raw_clean not in rec.get("aliases", []):
             rec.setdefault("aliases", []).append(raw_clean)
             rec["sources"] = int(rec.get("sources", 0)) + 1
-            _save_product(r, ontology, key, rec)
-            _write_product_meta(r, len(ontology))
+            if flush:
+                _save_product(r, ontology, key, rec)
+                _write_product_meta(r, len(ontology))
         return key, rec, False
 
     # 2. Fuzzy match against existing entries.
@@ -454,8 +551,9 @@ def resolve_or_create_product(
         if raw_clean and raw_clean not in rec.get("aliases", []):
             rec.setdefault("aliases", []).append(raw_clean)
             rec["sources"] = int(rec.get("sources", 0)) + 1
-            _save_product(r, ontology, best_key, rec)
-            _write_product_meta(r, len(ontology))
+            if flush:
+                _save_product(r, ontology, best_key, rec)
+                _write_product_meta(r, len(ontology))
         return best_key, rec, False
 
     # 3. New entity. canonical_name starts as the most-common-looking
@@ -468,8 +566,11 @@ def resolve_or_create_product(
         "sources":        1,
         "first_seen":     datetime.now(timezone.utc).isoformat(),
     }
-    _save_product(r, ontology, key, new_rec)
-    _write_product_meta(r, len(ontology))
+    if flush:
+        _save_product(r, ontology, key, new_rec)
+        _write_product_meta(r, len(ontology))
+    else:
+        ontology[key] = new_rec
     return key, new_rec, True
 
 
@@ -554,9 +655,17 @@ def resolve_or_create(
             _write_meta(r, len(ontology))
         return norm, rec, False
 
-    # Alias-key hit (first 2/3 tokens of an existing record).
+    # Alias-key hit (first 2/3 tokens of an existing record). Gated by the
+    # SAME similarity threshold as the fuzzy path below: a prefix match
+    # only merges when the normalized names are genuinely similar. Without
+    # this gate the bin depended on insertion order — a later "Jackson
+    # Pharma" (norm "jackson pharma") would merge into an existing
+    # "jackson" key via the 2-token prefix at similarity ~0, binning
+    # unrelated companies together. The gate makes every merge route
+    # require >= thr similarity, so the bin is a function of name
+    # similarity, not which row arrived first.
     for key in _alias_keys(norm):
-        if key in ontology:
+        if key in ontology and _similarity(norm, key) >= thr:
             rec = ontology[key]
             if raw and raw not in rec.get("aliases", []):
                 rec.setdefault("aliases", []).append(raw)

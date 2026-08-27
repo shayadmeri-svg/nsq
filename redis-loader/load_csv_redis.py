@@ -1,4 +1,14 @@
-"""Load the Jan25_May26.csv (or any similarly-shaped CSV) into Redis.
+"""Load the cumulative NSQ CSV (e.g. 'CDSCO Not of Standard Quality (NSQ)
+Jan 21-Jul 26.csv') into Redis.
+
+The CSV is cumulative: new monthly CDSCO notifications are appended to it
+and the whole dataset is reloaded with --flush (just reload-csv). Because
+prepare_rows() sorts before building the ontology, the resulting Redis
+state is a pure function of the CSV content — independent of row order —
+so monthly appends cannot perturb existing manufacturer bins.
+
+Record identity: one alert = (batch_no, product_name, reporting_month,
+reporting lab). See record_id().
 
 Same Redis layout as `load_nsq_redis.py` so analytics and simulator see
 no schema change:
@@ -79,12 +89,104 @@ MONTH_MAP = {
 
 # ---------------------------------------------------------------------------
 # Hash + month helpers — imported-equivalent to load_nsq_redis.py so the
-# same (batch_no, product_name) pair produces the same record_id whether
-# the data came from JSON or CSV.
+# same (batch_no, product_name, reporting_month, lab) tuple produces the
+# same record_id whether the data came from JSON or CSV.
 # ---------------------------------------------------------------------------
 def record_id(row: dict) -> str:
-    key = f"{row.get('str_batch_no', '')}|{row.get('str_product_name', '')}"
+    """Stable id for one NSQ alert.
+
+    (batch_no, product_name) alone is NOT a natural key: the same batch
+    legitimately fails in consecutive months (re-tested samples listed in
+    successive CDSCO notifications), can be tested by different labs in
+    the same month, and can be listed twice in ONE notification having
+    failed DIFFERENT tests (e.g. Sterility vs pH+Related). Hashing only
+    batch+product collapsed those distinct alerts into one record
+    (last-write-wins) — 46 alerts were lost that way on the Jan25-Jun26
+    dataset alone. The reporting month, the (harmonized) reporting lab,
+    and the failing-test text are therefore part of the key; rows that
+    remain identical under it are true duplicates of one alert.
+    """
+    month = normalize_month(row.get('dt_reporting_month_year')) or \
+        (row.get('dt_reporting_month_year') or '').strip()
+    key = "|".join([
+        (row.get('str_batch_no') or '').strip(),
+        (row.get('str_product_name') or '').strip(),
+        month,
+        (row.get('str_reported_by_lab_or_state') or '').strip(),
+        (row.get('str_nsq_result') or '').strip(),
+    ])
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+
+
+# Fields that identify the *content* of an alert, i.e. everything that
+# matters once the record key (batch|product|month|lab) is fixed. Two
+# prepared rows with the same key AND the same content signature are true
+# duplicates (Index differs only); same key but different content means the
+# source listed the same alert twice with slightly different text (typos,
+# trailing spaces) — the first is kept, the rest counted as collapsed.
+_CONTENT_FIELDS = (
+    "str_product_name", "str_batch_no", "dt_manufacturing_date",
+    "dt_expiry_date", "str_manufactured_by", "str_nsq_result",
+    "str_reporting_source", "str_reported_by_lab_or_state",
+    "dt_reporting_month_year", "source",
+)
+
+
+def content_signature(cdsco: dict) -> tuple:
+    return tuple((cdsco.get(f) or "").strip() for f in _CONTENT_FIELDS)
+
+
+def prepare_rows(rows: list[dict]) -> tuple[list[dict], dict]:
+    """Deterministically prepare CSV rows for a Redis load.
+
+    1. Rename CSV columns to CDSCO keys and harmonize labs (_row_to_cdsco).
+    2. Sort by (month, batch, product, lab, mfg, result, source) so the
+       ontology build order — and therefore every binning decision — is a
+       pure function of the CSV *content*, not of the file's row order.
+       Monthly appends to the cumulative CSV can land anywhere in the file
+       without changing the resulting ontology.
+    3. Drop true duplicates (identical content beyond Index).
+    4. Collapse residual same-key rows (the key covers batch|product|month|
+       lab|result, so a residual collision means the same alert listed twice
+       differing only in e.g. Mfg/Exp spelling), keeping the first in
+       sorted order. Logged, counted, and expected to be rare/zero.
+
+    Returns (prepared_rows, stats).
+    """
+    cdsco_rows = [_row_to_cdsco(r) for r in rows]
+    cdsco_rows.sort(key=lambda r: tuple(
+        (r.get(f) or "").strip() for f in (
+            "dt_reporting_month_year", "str_batch_no", "str_product_name",
+            "str_reported_by_lab_or_state", "str_manufactured_by",
+            "str_nsq_result", "str_reporting_source", "source",
+        )
+    ))
+
+    stats = {"rows_in": len(rows), "true_duplicates_removed": 0,
+             "same_key_collapsed": 0, "collapsed_samples": []}
+
+    seen_content: set[tuple] = set()
+    by_id: dict[str, dict] = {}
+    prepared: list[dict] = []
+    for r in cdsco_rows:
+        sig = content_signature(r)
+        if sig in seen_content:
+            stats["true_duplicates_removed"] += 1
+            continue
+        seen_content.add(sig)
+        rid = record_id(r)
+        if rid in by_id:
+            stats["same_key_collapsed"] += 1
+            if len(stats["collapsed_samples"]) < 5:
+                stats["collapsed_samples"].append({
+                    "id": rid,
+                    "kept": (by_id[rid].get("str_nsq_result") or "")[:60],
+                    "dropped": (r.get("str_nsq_result") or "")[:60],
+                })
+            continue
+        by_id[rid] = r
+        prepared.append(r)
+    return prepared, stats
 
 
 def normalize_month(raw: str | None) -> str | None:
@@ -111,12 +213,32 @@ def normalize_month(raw: str | None) -> str | None:
 # known variants to one canonical form per lab before writing to Redis.
 #
 # Important: the canonical name MUST be one of the observed variants
-# (otherwise the original string is lost). The chosen canonicals are
-# the most common spelling for each lab.
+# (otherwise the original string is lost) — with one deliberate exception
+# below: the non-lab placeholder 'Not applicable' is mapped to 'Unknown'.
+# The chosen canonicals are the most common spelling for each lab.
 LAB_CANONICAL = {
+    # CDSCO lists this placeholder (20 rows in the Jan21-Jul26 file) when a
+    # notification does not name a testing lab. It is not a lab; mapping it
+    # to a sentinel keeps it out of the lab cross-tabs while preserving the
+    # rows. Any future placeholder spelling should be added to this list.
+    "Unknown": [
+        "Not applicable",
+        "Not Applicable",
+        "N/A",
+        "NA",
+    ],
     "CDL, Kolkata": [
         "CDL, Kolkata",
         "CDL Kolkata",
+        "CDL,Kolkata",
+    ],
+    "CDL Kasauli": [
+        "CDL Kasauli",
+        "Central Drugs Laboratory, Kasauli",
+    ],
+    "RDTL, Bellary Karnataka": [
+        "RDTL, Bellary Karnataka",
+        "RDTL. Bellary Karnataka",
     ],
     "DTL, Jaipur": [
         "DTL, Jaipur",
@@ -183,6 +305,12 @@ def harmonize_lab(raw: str | None) -> str:
 _TOKEN_NOISE = {
     "ltd", "limited", "pvt", "private", "pvt.", "pvt ltd", "private limited",
     "india", "indian", "pharmaceuticals", "pharma", "pharmaceutical",
+    # Generic industry / sector descriptor suffixes. See the note in
+    # shared/company_ontology.py _TOKEN_NOISE — MUST stay in lockstep.
+    "remedies", "industries", "industry", "biotech", "biosciences", "bioscience",
+    "healthcare", "therapeutics", "therapeutic", "enterprises", "enterprise",
+    "nutrition", "nutraceuticals", "nutraceutical", "sciences", "science",
+    "medical", "medicare", "wellness",
     "drug", "drugs", "formulations", "formulation", "labs", "laboratories",
     "laboratory", "mfg", "manufactured", "manufacturing", "company", "co",
     "incorporated", "inc", "corp", "corporation", "llp", "llc",
@@ -194,8 +322,50 @@ _TOKEN_NOISE = {
     "regd", "regd.", "registered", "office", "head", "works",
     "iii", "ii", "iv", "v", "i", "vi",
     "gmbh", "ag", "sa", "plc", "pty", "kg",
-    "u", "s", "u.s.", "u.k.", "uk", "us",
+    "u", "s", "m", "ms", "messrs", "u.s.", "u.k.", "uk", "us",
     "eou", "ehtp", "stp", "sez", "epip", "sidcul",
+}
+
+
+# Legal-form tokens that terminate the company name in _normalize: once
+# one of these appears after the brand, the rest of the line is a legal
+# suffix plus an address tail (e.g. "Jackson Laboratories Pvt. Ltd.
+# Majitha Road" -> "jackson") and is dropped, so same-company variants
+# with different address tails don't fragment into separate canonical
+# groups under token_sort_ratio. MUST stay in lockstep with
+# shared/company_ontology.py _LEGAL_STOP.
+_LEGAL_STOP = {
+    "ltd", "limited", "pvt", "private", "inc", "incorporated", "corp",
+    "corporation", "llp", "llc", "company", "co", "gmbh", "ag", "sa",
+    "plc", "pty", "kg",
+}
+
+
+# Structural address openers: tokens that, once the brand has started,
+# unambiguously begin the address tail (plot/no/door/floor/road/complex/
+# gidc/distt/near/...). Unlike city/state words these can't be enumerated
+# by geography — but they're a small, stable vocabulary of address
+# grammar, so a denylist-of-markers works. MUST stay in lockstep with
+# shared/company_ontology.py _ADDRESS_START.
+_ADDRESS_START = {
+    # Plot / door / unit identifiers
+    "plot", "no", "nos", "number", "door", "doorway", "flat", "apartment",
+    "unit", "block", "shed", "shop", "khasra", "khata", "cts", "survey",
+    "sy",
+    # Floor / building structure
+    "floor", "ground", "first", "second", "third", "fourth", "fifth",
+    "basement", "loft", "building", "tower", "wing",
+    # Roads / areas / complexes
+    "road", "marg", "street", "lane", "nagar", "complex", "area",
+    "estate", "zone",
+    # Industrial-corporation estate markers (already in _TOKEN_NOISE, but
+    # listed here too so they terminate the name rather than just skipping
+    # and letting a following area name back in).
+    "gidc", "midc", "sidcul", "epip", "ehtp", "stp", "sez", "sipcot",
+    # District / village / locality
+    "distt", "district", "taluka", "tehsil", "village", "mouza",
+    # Directional / locator words
+    "near", "opposite", "opp", "behind", "beside", "adjacent", "towards",
 }
 
 _STATE_TOKENS = {
@@ -255,8 +425,36 @@ def _normalize(raw: str) -> str:
         return ""
     s = _strip_accents(str(raw).lower())
     s = re.sub(r"[^a-z0-9]+", " ", s)
-    tokens = [t for t in s.split() if t not in _TOKEN_NOISE and not t.isdigit()]
-    return " ".join(tokens).strip()
+    cleaned = []
+    for t in s.split():
+        # A legal form (ltd/pvt/...) after the brand ends the name; the
+        # rest of the line is suffix + address and must not leak into the
+        # key, or same-company variants with different address tails
+        # fragment into separate groups under token_sort_ratio.
+        if cleaned and t in _LEGAL_STOP:
+            break
+        # Once the brand has started, the first address marker TERMINATES
+        # the name — we break, not skip. Addresses never contain brand
+        # tokens after they begin, so anything past this point (including
+        # unrecognized area names like "bavia" / "thirumuruga" that no
+        # city list can enumerate) must not re-enter the key. Skipping
+        # individually is the old bug: it left a gap that a later
+        # non-listed area word would slip through, contaminating the key
+        # and binning unrelated manufacturers together. MUST stay in
+        # lockstep with shared/company_ontology.py
+        # normalize_company_name().
+        if cleaned and (
+            t in _ADDRESS_START
+            or t in _CITY_HINTS
+            or t in _STATE_TOKENS
+            or any(c.isdigit() for c in t)
+            or len(t) == 1
+        ):
+            break
+        if t in _TOKEN_NOISE or t.isdigit():
+            continue
+        cleaned.append(t)
+    return " ".join(cleaned).strip()
 
 
 def _alias_keys(name: str) -> list[str]:
@@ -275,7 +473,15 @@ def _similarity(a: str, b: str) -> float:
     if a == b:
         return 1.0
     if _HAS_RAPIDFUZZ:
-        return float(_fuzz.token_set_ratio(a, b)) / 100.0
+        # token_sort_ratio (not token_set_ratio): order-insensitive but
+        # Levenshtein-based over the full sorted token string, so it charges
+        # for extra/missing tokens instead of returning 1.0 whenever one
+        # name's tokens are a subset of the other's. Stops distinct
+        # companies from merging on a short-subset or shared-generic-token
+        # match (e.g. "hindustan" vs "hindustan antibiotics", or two names
+        # both ending in "industries"). MUST stay in lockstep with
+        # shared/company_ontology.py _similarity().
+        return float(_fuzz.token_sort_ratio(a, b)) / 100.0
     sa, sb = set(a.split()), set(b.split())
     if not sa or not sb:
         return 0.0
@@ -358,9 +564,16 @@ def _resolve_or_create(
             new_or_updated[norm] = rec
         return norm, rec, False
 
-    # 2. Alias key (first 2/3 tokens of an existing entry)
+    # 2. Alias key (first 2/3 tokens of an existing entry). Gated by the
+    # same similarity threshold as the fuzzy path (step 3): a prefix match
+    # only merges when the normalized names are genuinely similar. Without
+    # this gate the bin depended on insertion order — a later "Jackson
+    # Pharma" (norm "jackson pharma") would merge into an existing
+    # "jackson" key via the 2-token prefix at similarity ~0, binning
+    # unrelated companies together. MUST stay in lockstep with
+    # shared/company_ontology.py resolve_or_create.
     for key in _alias_keys(norm):
-        if key in ontology_cache:
+        if key in ontology_cache and _similarity(norm, key) >= threshold:
             rec = ontology_cache[key]
             if raw and raw not in rec.get("aliases", []):
                 rec.setdefault("aliases", []).append(raw)
@@ -450,9 +663,18 @@ def load(
 
     print(f"Read {len(rows)} rows from {input_path}")
 
+    prepared, prep_stats = prepare_rows(rows)
+    print(
+        f"Prepared {len(prepared)} records "
+        f"({prep_stats['true_duplicates_removed']} true duplicates removed, "
+        f"{prep_stats['same_key_collapsed']} same-key rows collapsed)."
+    )
+    for s in prep_stats["collapsed_samples"]:
+        print(f"    collapsed {s['id']}: kept {s['kept']!r} / dropped {s['dropped']!r}")
+
     if dry_run:
         # Print the first 3 records' augmented form and exit.
-        for r in rows[:3]:
+        for r in prepared[:3]:
             cdsco = _row_to_cdsco(r)
             rid = record_id(cdsco)
             raw_company = _extract_company(cdsco.get("str_manufactured_by", ""))
@@ -487,6 +709,13 @@ def load(
             pipe.delete(key)
         pipe.delete("nsq:ontology:companies")
         pipe.delete("nsq:ontology:meta")
+        # The product ontology is additive/idempotent by design, but its
+        # 'sources' counts inflate on every re-run over overlapping data.
+        # Flushing it here (with reload-csv followed by
+        # just build-product-ontology) makes the whole nsq:* state a pure
+        # function of the CSV — the deterministic monthly-refresh path.
+        pipe.delete("nsq:ontology:products")
+        pipe.delete("nsq:ontology:products:meta")
         pipe.execute()
         print("Flushed existing nsq:* keys (records, predictions, ontology).")
 
@@ -506,8 +735,8 @@ def load(
                 ontology_cache[k] = json.loads(v)
             except json.JSONDecodeError:
                 continue
-    for i, raw in enumerate(rows):
-        cdsco = _row_to_cdsco(raw)
+    for i, raw in enumerate(prepared):
+        cdsco = raw
         rid = record_id(cdsco)
 
         # 1. Write the raw record.
@@ -566,6 +795,8 @@ def load(
         mapping={
             "total_records":  str(len(rows)),
             "loaded_records": str(loaded),
+            "true_duplicates_removed": str(prep_stats["true_duplicates_removed"]),
+            "same_key_collapsed":      str(prep_stats["same_key_collapsed"]),
             "loaded_at":      datetime.now(timezone.utc).isoformat(),
             "source_file":    str(input_path),
             "augmented":      "1" if augment else "0",
@@ -591,12 +822,177 @@ def load(
     )
 
 
+def rebuild_ontology(r, *, dry_run: bool = False) -> dict:
+    """Re-derive every nsq:ontology:companies record with the CURRENT
+    _normalize, then re-stamp every nsq:prediction:<id> canonical field.
+
+    For each existing company record, every alias is re-normalized:
+
+      * If all aliases share ONE normalized key, the record is re-keyed to
+        that key. This fixes stale keys left by older, looser normalizers
+        (e.g. a record filed under "regent" when the current normalize
+        yields "regent ajanta").
+
+      * If aliases normalize to MORE than one distinct key, the record is
+        SPLIT into one record per distinct key. This retroactively undoes
+        contamination where unrelated manufacturers — e.g. "Regent Ajanta
+        Biotech" and "Jackson Laboratories Pvt. Ltd., ... Amritsar" — had
+        been binned together under a bridging key from a prior run.
+
+      * Re-keyed records that collide (two old keys -> one new key) are
+        merged (aliases unioned, city/state/website kept where non-empty).
+
+    On a split, canonical_name/city/state/website are kept on the sub-record
+    whose norm equals the OLD key (the original canonical owner) and blanked
+    on the others, so a contaminated city is never copied onto an unrelated
+    manufacturer. Every nsq:prediction:<id> is then re-stamped from the
+    rebuilt ontology so the dashboard does not display stale canonicals.
+
+    Returns a stats dict. With dry_run=True, Redis is read but not written.
+    """
+    company_hash = "nsq:ontology:companies"
+    meta_hash = "nsq:ontology:meta"
+    raw_ont = r.hgetall(company_hash)  # {key: json-str}, decode_responses=True
+
+    new_ont: dict[str, dict] = {}
+    stats = {
+        "records_in": 0, "unchanged": 0, "rekeyed": 0,
+        "split": 0, "split_groups": 0, "merged_collisions": 0,
+        "records_out": 0, "predictions_seen": 0, "predictions_restamped": 0,
+        "sample_splits": [],
+    }
+
+    def _add(norm: str, rec: dict) -> None:
+        if norm in new_ont:
+            ex = new_ont[norm]
+            for a in rec.get("aliases", []):
+                if a not in ex["aliases"]:
+                    ex["aliases"].append(a)
+            ex["sources"] = len(ex["aliases"])
+            for fld in ("city", "state", "website"):
+                if not ex.get(fld) and rec.get(fld):
+                    ex[fld] = rec[fld]
+            stats["merged_collisions"] += 1
+        else:
+            new_ont[norm] = {
+                "canonical_name": rec.get("canonical_name", ""),
+                "city": rec.get("city", ""),
+                "state": rec.get("state", ""),
+                "website": rec.get("website", ""),
+                "aliases": list(rec.get("aliases", [])),
+                "sources": int(rec.get("sources", len(rec.get("aliases", [])) or 1)),
+            }
+
+    for old_key, blob in raw_ont.items():
+        stats["records_in"] += 1
+        try:
+            rec = json.loads(blob)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(rec, dict):
+            continue
+        aliases = list(rec.get("aliases") or [])
+        cn = rec.get("canonical_name") or ""
+        if cn and cn not in aliases:
+            aliases.insert(0, cn)
+
+        groups: dict[str, list[str]] = {}
+        for a in aliases:
+            n = _normalize(a)
+            if not n:
+                # Never drop data silently: fall back to the old key's norm.
+                n = _normalize(old_key) or str(old_key)
+            groups.setdefault(n, []).append(a)
+
+        if not groups:
+            stats["unchanged"] += 1
+            _add(str(old_key), rec)
+            continue
+
+        if len(groups) == 1:
+            nk, al = next(iter(groups.items()))
+            _add(nk, {
+                "canonical_name": al[0] if al else (cn or nk),
+                "city": rec.get("city", ""),
+                "state": rec.get("state", ""),
+                "website": rec.get("website", ""),
+                "aliases": al,
+                "sources": len(al),
+            })
+            if nk == old_key:
+                stats["unchanged"] += 1
+            else:
+                stats["rekeyed"] += 1
+        else:
+            stats["split"] += 1
+            if len(stats["sample_splits"]) < 10:
+                stats["sample_splits"].append({
+                    "old_key": str(old_key),
+                    "groups": {k: v for k, v in groups.items()},
+                })
+            for nk, al in groups.items():
+                keep_geo = (nk == old_key)
+                stats["split_groups"] += 1
+                _add(nk, {
+                    "canonical_name": al[0],
+                    "city": rec.get("city", "") if keep_geo else "",
+                    "state": rec.get("state", "") if keep_geo else "",
+                    "website": rec.get("website", "") if keep_geo else "",
+                    "aliases": al,
+                    "sources": len(al),
+                })
+
+    stats["records_out"] = len(new_ont)
+
+    # Re-stamp predictions from the rebuilt ontology so stale canonicals
+    # do not surface in the dashboard.
+    pipe = r.pipeline()
+    restamp: dict = {}
+    for key in r.scan_iter("nsq:prediction:*", count=1000):
+        stats["predictions_seen"] += 1
+        pred = r.hgetall(key)
+        raw_company = pred.get("raw_company", "")
+        norm = _normalize(raw_company)
+        rec = new_ont.get(norm)
+        if not rec:
+            continue
+        restamp[key] = {
+            "canonical": rec.get("canonical_name", ""),
+            "ontology_key": norm,
+            "city": rec.get("city", ""),
+            "state": rec.get("state", ""),
+            "website": rec.get("website", ""),
+            "aliases": json.dumps(rec.get("aliases", []), ensure_ascii=False),
+            "sources": str(rec.get("sources", 1)),
+        }
+        stats["predictions_restamped"] += 1
+
+    if dry_run:
+        return stats
+
+    pipe = r.pipeline()
+    pipe.delete(company_hash)
+    if new_ont:
+        pipe.hset(company_hash, mapping={
+            k: json.dumps(v, ensure_ascii=False) for k, v in new_ont.items()
+        })
+    pipe.hset(meta_hash, mapping={
+        "entry_count": str(len(new_ont)),
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "version": "1",
+    })
+    for key, mapping in restamp.items():
+        pipe.hset(key, mapping=mapping)
+    pipe.execute()
+    return stats
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(
         description="Load data/data Jan25_May26.csv (or similar) into Redis.",
     )
-    parser.add_argument("--input", required=True, type=Path, help="Path to the CSV file.")
+    parser.add_argument("--input", required=False, type=Path, help="Path to the CSV file. Required unless --rebuild-ontology.")
     parser.add_argument(
         "--redis-url",
         default=os.environ.get("REDIS_URL", ""),
@@ -612,9 +1008,43 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Read the first 3 rows, print what would be written, exit.",
+        help="Read the first 3 rows, print what would be written, exit. "
+             "With --rebuild-ontology, read Redis and report stats without writing.",
+    )
+    parser.add_argument(
+        "--rebuild-ontology",
+        action="store_true",
+        help="Re-derive every nsq:ontology:companies record with the current "
+             "normalizer: re-key stale records, split records whose aliases "
+             "normalize to >1 key (undoes bin contamination), re-stamp "
+             "nsq:prediction:<id> canonicals. Operates on Redis only; --input "
+             "not required. Pair with --dry-run to preview.",
     )
     args = parser.parse_args()
+
+    if args.rebuild_ontology:
+        if not args.redis_url:
+            print("No Redis URL given. Set REDIS_URL or pass --redis-url.", file=sys.stderr)
+            sys.exit(1)
+        r = redis.from_url(args.redis_url, decode_responses=True)
+        stats = rebuild_ontology(r, dry_run=args.dry_run)
+        mode = "DRY-RUN" if args.dry_run else "REBUILT"
+        print(f"[{mode}] ontology: {stats['records_in']} in -> "
+              f"{stats['records_out']} out "
+              f"({stats['unchanged']} unchanged, {stats['rekeyed']} re-keyed, "
+              f"{stats['split']} split into {stats['split_groups']} groups, "
+              f"{stats['merged_collisions']} merged collisions).")
+        print(f"[{mode}] predictions: {stats['predictions_seen']} seen, "
+              f"{stats['predictions_restamped']} re-stamped.")
+        if stats["sample_splits"]:
+            print(f"[{mode}] sample splits (up to 10):")
+            for s in stats["sample_splits"]:
+                print(f"    {s['old_key']!r}  ->  {list(s['groups'].keys())}")
+        return
+
+    if not args.input:
+        print("No --input given. Required for a CSV load (or use --rebuild-ontology).", file=sys.stderr)
+        sys.exit(1)
 
     if not args.redis_url and not args.dry_run:
         print("No Redis URL given. Set REDIS_URL or pass --redis-url.", file=sys.stderr)

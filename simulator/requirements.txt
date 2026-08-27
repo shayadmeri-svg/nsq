@@ -4,3 +4,6 @@ requests==2.32.3
 redis==5.0.8
 pydantic==2.9.2
 plotly==5.24.1
+# Process-simulator API (api_main.py) — runs independently of Streamlit.
+fastapi==0.115.0
+uvicorn==0.30.6
