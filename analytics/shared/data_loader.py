@@ -15,7 +15,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import streamlit as st
+
+try:  # Streamlit is only needed for the @st.cache_data wrapper in UI apps.
+    import streamlit as st  # type: ignore
+
+    _HAS_ST = True
+except ImportError:  # pragma: no cover - exercised by the manufacturer_api service
+    st = None  # type: ignore
+    _HAS_ST = False
 
 import nsq_redis
 from company_ontology import (
@@ -277,19 +284,25 @@ def _derive_company_fields(line: str) -> pd.Series:
     })
 
 
-# show_spinner=False is load-bearing: this cached call sits ABOVE the
-# st.tabs(...) declaration in app.py. With the default show_spinner=True a
-# spinner widget is inserted into the element tree on a cache MISS (cold
-# load) and removed on every cache HIT (e.g. a radio/slider change). That
-# appear/disappear above the tab container unmounts Streamlit's React Tab
-# component, which holds the active-tab index only in frontend state — so
-# it resets to the first tab on every widget change (Streamlit #13341).
+# NOTE on show_spinner=False (load-bearing in the Streamlit apps): this cached
+# call sits ABOVE the st.tabs(...) declaration in app.py. With the default
+# show_spinner=True a spinner widget is inserted into the element tree on a
+# cache MISS (cold load) and removed on every cache HIT (e.g. a radio/slider
+# change). That appear/disappear above the tab container unmounts Streamlit's
+# React Tab component, which holds the active-tab index only in frontend state
+# — so it resets to the first tab on every widget change (Streamlit #13341).
 # Suppressing the spinner keeps the element count above st.tabs invariant
-# across reruns. Do not re-enable without also moving st.tabs above this
-# call or backing the tab selection with session_state.
-@st.cache_data(ttl=300, show_spinner=False)
-def load_and_preprocess_data() -> pd.DataFrame:
-    """Fetch NSQ data from Redis or CSV and return an enriched DataFrame."""
+# across reruns. Do not re-enable without also moving st.tabs above this call
+# or backing the tab selection with session_state. The Streamlit wrapper
+# below preserves this exact behaviour; non-Streamlit callers use the pure
+# _load_and_preprocess() directly.
+def _load_and_preprocess() -> pd.DataFrame:
+    """Fetch NSQ data from Redis or CSV and return an enriched DataFrame.
+
+    Pure enrichment pipeline (no Streamlit). This is the body both the
+    Streamlit ``@st.cache_data`` wrapper and non-Streamlit callers (the
+    manufacturer_api FastAPI service) consume.
+    """
     # Load dataset from Redis (populated by redis-loader/load_nsq_redis.py)
     df = nsq_redis.load_dataframe()
 
@@ -548,6 +561,28 @@ def load_and_preprocess_data() -> pd.DataFrame:
         df["Product_Ontology_Key"] = key_col
 
     return df
+
+
+def load_and_preprocess_data() -> pd.DataFrame:
+    """Enriched NSQ DataFrame.
+
+    When Streamlit is available (the analytics/simulator/manufacturer UIs),
+    the result is memoised with ``@st.cache_data(ttl=300,
+    show_spinner=False)`` — see the show_spinner note above (Streamlit
+    #13341). When Streamlit is absent (the manufacturer_api FastAPI service),
+    the enriched frame is recomputed on each call; callers that want caching
+    should wrap :func:`_load_and_preprocess` themselves.
+    """
+    if _HAS_ST:
+        return _st_cached_load()
+    return _load_and_preprocess()
+
+
+if _HAS_ST:
+
+    @st.cache_data(ttl=300, show_spinner=False)
+    def _st_cached_load() -> pd.DataFrame:
+        return _load_and_preprocess()
 
 
 def fuzzy_search_products(df: pd.DataFrame, query: str, threshold: int = 70) -> list[tuple[int, int, str]]:

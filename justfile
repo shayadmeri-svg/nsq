@@ -113,6 +113,27 @@ sync-shared:
     cp shared/us_regulatory_data.py manufacturer/shared/us_regulatory_data.py
     @echo "Synced. Verify with: git diff --stat analytics/shared simulator/shared engine/shared manufacturer/shared"
 
+# Sync the manufacturer_api vendored copies. The API shares the headless
+# cores with the manufacturer Streamlit app; this copies the source-of-truth
+# shared/ cores + the manufacturer app's own headless modules (diagnostics_core,
+# tenant_scope, tenants) + the streamlit-free ui/ chart builders into
+# manufacturer_api/. Run after editing any of them (and after `just sync-shared`).
+sync-manufacturer-api:
+    cp shared/nsq_redis.py manufacturer_api/shared/nsq_redis.py
+    cp shared/company_ontology.py manufacturer_api/shared/company_ontology.py
+    cp shared/data_loader.py manufacturer_api/shared/data_loader.py
+    cp shared/gmp_knowledge.py manufacturer_api/shared/gmp_knowledge.py
+    cp shared/pharmacopeia_methods.py manufacturer_api/shared/pharmacopeia_methods.py
+    cp shared/pharmacopeia_diff.py manufacturer_api/shared/pharmacopeia_diff.py
+    cp shared/ich_registry.py manufacturer_api/shared/ich_registry.py
+    cp shared/us_regulatory_data.py manufacturer_api/shared/us_regulatory_data.py
+    cp manufacturer/diagnostics_core.py manufacturer_api/diagnostics_core.py
+    cp manufacturer/tenant_scope.py manufacturer_api/tenant_scope.py
+    cp manufacturer/tenants.py manufacturer_api/tenants.py
+    cp manufacturer/ui/palette.py manufacturer_api/ui/palette.py
+    cp manufacturer/ui/charts.py manufacturer_api/ui/charts.py
+    @echo "Synced manufacturer_api. Verify with: git diff --stat manufacturer_api"
+
 # Load the CDMO patent intelligence seed into Redis (cdmo:patent:*)
 load-patents:
     cd {{LOADER}} && .venv/bin/python load_patents.py --input ../data/patent_seed.json --redis-url "$REDIS_URL" --flush
@@ -156,6 +177,24 @@ run-api:
 # Run the manufacturing process simulator API + route-selector page on port 8010
 run-simulator:
     cd simulator && .venv/bin/python -m uvicorn api_main:app --host 0.0.0.0 --port 8010 --reload
+
+# Run the manufacturer_api FastAPI service locally on port 8001 — the React web
+# app's backend. Uses the simulator venv (fastapi + pandas + redis + plotly +
+# rapidfuzz installed). Mirrors run-api / run-simulator. Requires REDIS_URL
+# (the .env is auto-loaded) and NSQ_CSV for the offline CSV fallback.
+run-manufacturer-api:
+	cd manufacturer_api && NSQ_CSV="../{{CSV}}" python3 -m uvicorn api_main:app --host 0.0.0.0 --port 8001 --reload
+
+# Run the React web app (Vite dev server) on port 5173. Proxies /api to the
+# manufacturer_api on :8001 (see web/vite.config.ts). Run the API separately:
+# `just run-manufacturer-api`. First install deps: `cd web && npm install`.
+run-web:
+	cd web && npm run dev
+
+# Type-check + production-build the React web app (validates the frontend;
+# also runs inside the web Dockerfile's build stage).
+build-web:
+	cd web && npm run build
 
 # Clean only the CDMO intelligence keys (DESTRUCTIVE, no confirmation)
 clean-intelligence:

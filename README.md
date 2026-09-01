@@ -47,7 +47,10 @@ Everything shares one Redis instance as the data bus.
 | `analytics` | 8501 | Streamlit | CDSCO NSQ Alerts Dashboard — public-health view of the full dataset |
 | `simulator` | 8502 | Streamlit | CDMO Off-Patent Intelligence workbench — 17-drug catalog + 7 intelligence pages backed by the engine |
 | `engine` | 8000 | FastAPI | Four-pillar decision engine + portfolio scorer (the simulator's API backend) |
-| `manufacturer` | 8503 | Streamlit | Tenant-scoped manufacturer dashboard + Q-engine diagnostics |
+| `manufacturer` | 8503 | Streamlit | Tenant-scoped manufacturer dashboard + Q-engine diagnostics (legacy; retained for parity during the React cutover) |
+| `manufacturer-api` | 8001 | FastAPI | Headless backend for the React Q-engine app — wraps `diagnostics_core`, GMP/pharmacopeia cores, and the Plotly chart builders (host-only in compose) |
+| `web` | 80 (internal) | React + Vite + nginx | Client-facing Q-engine SPA (sign-in / dashboard / diagnostics), served behind the gateway |
+| `gateway` | 8080 | nginx | Single origin: serves the SPA and proxies `/api/manufacturer/` to `manufacturer-api` |
 | process-model API | 8010 | FastAPI | Mechanistic manufacturing-route simulator (host-only; not in compose) |
 
 ## Quickstart
@@ -67,12 +70,16 @@ just load-intelligence      # patents, plant assets, regulatory, demand
 docker compose up --build
 #   http://localhost:8501  analytics
 #   http://localhost:8502  simulator
-#   http://localhost:8503  manufacturer
+#   http://localhost:8503  manufacturer  (legacy Streamlit)
+#   http://localhost:8080  Q-engine  (React app via the gateway)
 #   http://localhost:8000  engine API
 ```
 
 Host-side (no Docker) equivalents: `just run-analytics`, `just run-manufacturer`,
 `just run-api` (engine :8000), `just run-simulator` (process-model API :8010).
+The React app runs host-side as two processes: `just run-manufacturer-api`
+(FastAPI on :8001) and `just run-web` (Vite dev on :5173, proxying `/api` to
+:8001). First install the frontend deps: `cd web && npm install`.
 Host loader/engine runs need `redis://localhost:6379`; the `.env`
 `host.docker.internal` URL only resolves inside containers.
 
@@ -187,6 +194,36 @@ establishment, not a security boundary**; SSO/OIDC is future work.
 The tenant scopes on `Mfg_Ontology_Key` (the ontology key), not the raw
 manufacturer string — 7 raw string variants must resolve to one tenant.
 
+### web + manufacturer-api + gateway — the React Q-engine app (:8080)
+
+The client-facing manufacturer app is being rebuilt as a React SPA, replacing
+the Streamlit render layer while the analytics/simulator/engine services stay
+untouched. Three new compose services form it:
+
+- **`manufacturer-api`** (`manufacturer_api/`, FastAPI :8001) — a thin JSON
+  wrapper over the existing **headless** cores: `diagnostics_core.build_diagnosis`,
+  `tenant_scope`, `tenants`, and the pure Plotly figure builders in
+  `ui/charts.py`. No Streamlit dependency. Endpoints: `GET /health`,
+  `GET /api/manufacturer/config` (tenant registry + personas),
+  `GET /api/manufacturer/{tenant}/dashboard` (KPIs + four chart figures + the
+  issue list with **stable `record_id` issue ids**), and
+  `GET /api/manufacturer/{tenant}/diagnostics/{issue_id}?persona=…` (a serialised
+  `Diagnosis`). The vendored cores are copied via `just sync-manufacturer-api`
+  (the codebase's copy-based shared-code convention).
+- **`web`** (`web/`, Vite + React + TypeScript + shadcn/ui + Tailwind) — the
+  SPA: sign-in, dashboard, and the six-section diagnostics deep dive. Charts
+  reuse the backend's Plotly figure JSON via `react-plotly.js` (zero chart
+  rework). The Okabe-Ito scientific palette and the monochrome bioicons are
+  ported from `manufacturer/ui/`; the Figma accent purples/pinks are
+  deliberately not used (split-authority tone rule). Session-only auth
+  replicates the Streamlit `mq_*` model (no token, no server validation).
+- **`gateway`** (`gateway/nginx.conf`, nginx :8080) — single origin in prod:
+  serves the SPA and proxies `/api/manufacturer/` to `manufacturer-api`.
+
+The old Streamlit `manufacturer` (:8503) stays running during parity
+verification; it is removed in the cutover. Host-side: `just run-manufacturer-api`
++ `just run-web` (Vite proxies `/api` → :8001 in dev, so no CORS needed locally).
+
 ### simulator (:8502) — CDMO intelligence workbench
 
 - **Step 0 — Catalog/workbench**: the 17-drug fixture catalog (excipients,
@@ -288,6 +325,8 @@ integration tests skip when unreachable):
 | `test_pharmacopeia_diff` | no-fabrication gate; real paracetamol parse; honest INCOMPARABLE |
 | `test_ich_registry` / `test_us_regulatory_data` | real cited sources; no placeholder seeds regress |
 | `test_diagnostics_core` | headless diagnosis: curated API, uncurated fallback, outlier category |
+| `test_manufacturer_api` | the FastAPI endpoints: config, dashboard (8/6/period + 4 charts + 8 issues), diagnostics payload + errors |
+| `test_data_loader_uncached` | the pure no-Streamlit `_load_and_preprocess()` returns an enriched frame; the Streamlit/uncached branches converge |
 | `test_tenant_scope` | tenant registry, `NSQ_TENANT` override, row scoping, no cross-tenant contamination |
 | `test_telmisartan_process_model` / `..._direct_compression` | CQA formulas, failure-mode precedence, route registry contract |
 
@@ -303,7 +342,8 @@ Plus render-model tests for the intelligence chart vocabulary in
   KMS; `deploy.sh` (invoked by the `nsq-platform` systemd unit on boot)
   refreshes env and runs `docker compose up -d --build`.
 - Terraform's security group currently opens 22/8501/8502 only — the engine
-  (8000) and manufacturer (8503) ports are not yet opened for remote access.
+  (8000), manufacturer (8503), and the React gateway (8080) ports are not yet
+  opened for remote access.
 
 ## Known gaps & honest limitations
 
@@ -318,7 +358,8 @@ Plus render-model tests for the intelligence chart vocabulary in
   **not implemented**; `PLAN_HISTORY.md` archives the original phased roadmap.
 - `.env.example` is referenced but not yet checked in — copy the shape from
   `docker-compose.yml` (`REDIS_URL`, optional `GEMINI_API_KEY`, optional
-  `NSQ_TENANT`).
+  `NSQ_TENANT`, optional `MANUFACTURER_API_CORS_ORIGINS` for the React dev
+  server).
 
 ## Planning docs
 
