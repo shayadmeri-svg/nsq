@@ -18,45 +18,27 @@ chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
 APP_DIR=/opt/nsq-platform
 git clone --branch "${git_ref}" --depth 1 "${github_repo_url}" "$APP_DIR"
 
-# --- refresh-env.sh: pulls secrets from SSM (KMS-decrypted via the
-#     instance's IAM role — see secrets.tf / iam.tf) and writes .env.
-#     Called here for first boot, and by the systemd unit below on every
-#     subsequent boot/restart, so `systemctl restart nsq-platform` is
-#     enough to pick up rotated secrets without re-cloning or re-running
-#     the Docker install. ------------------------------------------------
-cat > "$APP_DIR/refresh-env.sh" << 'REFRESH_EOF'
-#!/bin/bash
-set -euxo pipefail
-cd /opt/nsq-platform
+# --- Deploy config -------------------------------------------------------
+# The only thing user_data writes for the app: which SSM parameters to read
+# and from which region. The refresh script itself lives in the repo
+# (refresh-env.sh) so a `git pull` can never clobber it. No secrets here —
+# user_data is readable by anyone with ec2:DescribeInstanceAttribute.
+cat > /etc/nsq-platform.conf << 'CONF_EOF'
+AWS_REGION=${aws_region}
+REDIS_URL_PARAM=${redis_url_param}
+GEMINI_KEY_PARAM=${gemini_key_param}
+CONF_EOF
+chmod 644 /etc/nsq-platform.conf
 
-REDIS_URL=$(aws ssm get-parameter \
-  --name "${redis_url_param}" --with-decryption \
-  --region "${aws_region}" --query 'Parameter.Value' --output text)
+# --- First deploy --------------------------------------------------------
+# deploy.sh installs a modern buildx, runs refresh-env.sh (SSM -> .env) and
+# brings the compose stack up with a build.
+"$APP_DIR/deploy.sh"
 
-GEMINI_API_KEY=$(aws ssm get-parameter \
-  --name "${gemini_key_param}" --with-decryption \
-  --region "${aws_region}" --query 'Parameter.Value' --output text)
-
-# The "unset" sentinel in secrets.tf is a single space — collapse it back
-# to empty so docker-compose.yml's GEMINI_API_KEY=$${GEMINI_API_KEY:-} still
-# behaves as "offline heuristic engine" when nothing was provided.
-GEMINI_API_KEY="$(echo "$GEMINI_API_KEY" | xargs || true)"
-
-cat > .env << ENV_EOF
-REDIS_URL=$REDIS_URL
-GEMINI_API_KEY=$GEMINI_API_KEY
-ENV_EOF
-chmod 600 .env
-REFRESH_EOF
-chmod +x "$APP_DIR/refresh-env.sh"
-
-"$APP_DIR/refresh-env.sh"
-cd "$APP_DIR"
-docker compose up -d --build
-
-# --- systemd unit: on every future boot (and on `systemctl restart`),
-# re-fetch secrets from SSM and bring the stack up. Does NOT re-pull code
-# — see terraform/README.md "Updating the deployed app" for that. -------
+# --- systemd unit: on every future boot (and on `systemctl restart`), run
+# the same deploy.sh — re-fetch secrets from SSM and rebuild + bring the
+# stack up. Does NOT re-pull code — see terraform/README.md "Updating the
+# deployed app" for that. --------------------------------------------------
 cat > /etc/systemd/system/nsq-platform.service << 'UNIT_EOF'
 [Unit]
 Description=NSQ platform (docker compose)
@@ -68,9 +50,12 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/nsq-platform
-ExecStart=/opt/nsq-platform/refresh-env.sh
-ExecStart=/usr/bin/docker compose up -d
+# deploy.sh = buildx check + refresh-env.sh (SSM -> .env) + compose up --build.
+# `--build` matters: without it a `git pull` of changed service code would
+# keep serving the previously built images.
+ExecStart=/opt/nsq-platform/deploy.sh
 ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=1800
 
 [Install]
 WantedBy=multi-user.target

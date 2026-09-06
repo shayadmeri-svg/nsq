@@ -11,7 +11,9 @@ ElastiCache, no ECS — just a box with Docker on it.
 - 1× EC2 instance (default: `t3.micro`, free-tier eligible) in your
   account's **default VPC** — no new networking resources
 - 1× security group opening 22 (SSH, restrict this), 8501 (analytics),
-  8502 (simulator)
+  8502 (simulator), and — scoped by `var.app_ingress_cidrs`, default open —
+  8080 (Q-engine gateway: React SPA + manufacturer-api), 8503 (legacy
+  Streamlit manufacturer) and 8000 (engine API, **unauthenticated**)
 - 1× KMS key + 2× SSM Parameter Store SecureStrings (`redis_url`,
   `gemini_api_key`) — your Redis URL and Gemini key are encrypted at
   rest and never appear in `user_data` or instance metadata in plaintext
@@ -63,12 +65,34 @@ The box only clones the repo once, on first boot. To push a new version:
 ssh -i nsq-platform.pem ec2-user@$(terraform output -raw public_dns)
 cd /opt/nsq-platform
 git pull
-docker compose up -d --build
+sudo ./deploy.sh          # refresh-env.sh (SSM -> .env) + compose up -d --build
 ```
+
+`deploy.sh` is the one entry point — it is also what the `nsq-platform`
+systemd unit runs on boot, so a plain `sudo systemctl restart
+nsq-platform` does the same thing minus the `git pull`.
 
 (A GitHub Actions workflow that does this over SSH on every push to
 `main` is a natural next step if you want it automated — ask and I'll
 add it.)
+
+## How the env refresh works
+
+`user_data` (first boot only) writes `/etc/nsq-platform.conf` — the SSM
+parameter names and the region, no secrets. Everything else lives in the
+repo:
+
+| File | Role |
+|---|---|
+| `/etc/nsq-platform.conf` | which SSM parameters to read (written by `user_data`) |
+| `refresh-env.sh` | reads that config, pulls the SecureStrings, writes `.env` |
+| `deploy.sh` | buildx check → `refresh-env.sh` → `docker compose up -d --build` |
+| `nsq-platform.service` | runs `deploy.sh` on boot / restart |
+
+Earlier revisions generated `refresh-env.sh` from a heredoc inside
+`user_data`, which meant `git pull` on the box overwrote the working script
+with the repo's copy. Keeping the script in git and the config on the box
+removes that failure mode.
 
 ## Rotating secrets
 
@@ -82,7 +106,7 @@ terraform apply   # updates the SSM SecureString
 
 # then on the box:
 ssh -i nsq-platform.pem ec2-user@$(terraform output -raw public_dns)
-sudo systemctl start nsq-platform.service   # re-runs the fetch-from-SSM + docker compose up
+sudo systemctl restart nsq-platform.service   # re-runs deploy.sh: SSM -> .env, then compose up --build
 ```
 
 Or just `terraform destroy && terraform apply` for a fully clean redeploy
@@ -108,8 +132,11 @@ account is touched (default VPC and your Upstash Redis are unaffected).
   instance metadata, or Terraform's plan output in plaintext.
 - **No load balancer** → no TLS, no custom domain, no health-check-based
   auto-recovery. You get `http://ec2-x-x-x-x.compute-1.amazonaws.com:8501`
-  and `:8502` directly. Fine for a demo; add an ALB + ACM cert + Route 53
-  later if you want `https://` and a real domain.
+  (analytics), `:8502` (simulator) and `:8080` (Q-engine React app) directly
+  — see `terraform output`. Fine for a demo; add an ALB + ACM cert + Route 53
+  later if you want `https://` and a real domain. Note the Q-engine sign-in
+  is a gate, not authentication, and the engine on `:8000` has none at all,
+  so set `app_ingress_cidrs` to your own IP unless the box is disposable.
 - **No auto-scaling / self-healing** — if the instance or Docker crashes,
   nothing brings it back except your `nsq-platform.service` (systemd)
   restarting `docker compose up -d` on instance *boot*, not on crash. If

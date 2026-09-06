@@ -1185,28 +1185,76 @@ def load_india_geojson():
 
     return None
 
-# Map dataset state names to GeoJSON NAME_1 values
-GEOJSON_NAME_MAP = {
-    'Odisha': 'Orissa',
-    'Uttarakhand': 'Uttaranchal',
-    'Andaman and Nicobar': 'Andaman and Nicobar',
-    'Andhra Pradesh': 'Andhra Pradesh',
-    'Arunachal Pradesh': None,  # not in dataset
-    'Chhattisgarh': None,
-    'Delhi': None,
-    'Jharkhand': None,
-    'Lakshadweep': None,
-    'Manipur': None,
-    'Meghalaya': None,
-    'Mizoram': None,
-    'Nagaland': None,
-    'Tripura': None,
+# -----------------------------------------------------------------------------
+# Dataset state name -> GeoJSON NAME_1 resolution
+# -----------------------------------------------------------------------------
+# This used to be a hand-written dict that mapped ten real states to None with
+# the comment "not in dataset" — Arunachal Pradesh, Chhattisgarh, Delhi,
+# Jharkhand, Lakshadweep, Manipur, Meghalaya, Mizoram, Nagaland and Tripura.
+# All ten ARE in the GeoJSON, so any manufacturer in those states was silently
+# deleted from the choropleth the moment the dataset grew to include them.
+#
+# It also compared raw strings, while company_ontology.extract_state() returns
+# a .title()-cased value: "Jammu And Kashmir" (capital A) never equalled the
+# GeoJSON's "Jammu and Kashmir", and neither did "Andaman And Nicobar",
+# "Dadra And Nagar Haveli" or "Daman And Diu".
+#
+# So: match case- and punctuation-insensitively against the GeoJSON's own
+# NAME_1 values, and keep an alias table only for genuine renames. Building
+# the index from the file means swapping in a newer GeoJSON (one with
+# Telangana and Ladakh, say) needs no code change here.
+
+# Dataset spelling -> the spelling used in the GeoJSON. Both sides are
+# normalised by _norm_state() before lookup, so case/punctuation are free.
+_STATE_ALIASES = {
+    # Post-2011 renames the current GeoJSON predates.
+    "odisha": "orissa",
+    "uttarakhand": "uttaranchal",
+    "puducherry": "puducherry",
+    "pondicherry": "puducherry",
+    # Delhi's many official spellings.
+    "nct of delhi": "delhi",
+    "national capital territory of delhi": "delhi",
+    "the government of nct of delhi": "delhi",
+    "new delhi": "delhi",
+    # Common short forms / longer official forms.
+    "j and k": "jammu and kashmir",
+    "andaman and nicobar islands": "andaman and nicobar",
 }
 
-def to_geojson_name(state):
-    if state in GEOJSON_NAME_MAP:
-        return GEOJSON_NAME_MAP[state]
-    return state if state else None
+
+def _norm_state(name) -> str:
+    """Lowercase, expand '&', drop punctuation, collapse whitespace."""
+    if not name:
+        return ""
+    s = str(name).lower().replace("&", " and ")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return " ".join(s.split())
+
+
+def build_state_resolver(geo: dict | None):
+    """Return (resolve, known_names) for a GeoJSON of Indian states.
+
+    ``resolve(state)`` gives the exact NAME_1 string to plot against, or
+    None when that state genuinely has no feature in the file (Telangana
+    and Ladakh, in the current pre-2011 export). Callers should surface the
+    Nones rather than dropping them silently — a state missing from the map
+    is a data-coverage fact the user needs to see.
+    """
+    index: dict[str, str] = {}
+    for feat in (geo or {}).get("features", []):
+        name = (feat.get("properties") or {}).get("NAME_1")
+        if name:
+            index[_norm_state(name)] = name
+
+    def resolve(state):
+        key = _norm_state(state)
+        if not key:
+            return None
+        key = _STATE_ALIASES.get(key, key)
+        return index.get(key)
+
+    return resolve, sorted(index.values())
 
 try:
     df_raw = load_and_preprocess_data()
@@ -1499,28 +1547,44 @@ with tab2:
     st.subheader("Incident Origins — Indian Political Map")
     state_df = df_filtered['Mfg_State'].value_counts().reset_index()
     state_df.columns = ['Indian State / Origin Region', 'Recorded Anomalies']
-    # Map dataset state names to GeoJSON NAME_1 values
-    state_df['Geo_Name'] = state_df['Indian State / Origin Region'].apply(to_geojson_name)
-    state_df = state_df.dropna(subset=['Geo_Name'])
 
     try:
         india_geo = load_india_geojson()
         if india_geo is None:
             raise FileNotFoundError("no geojson available from Redis or local file")
+
+        # Resolve against the GeoJSON's own NAME_1 values (see
+        # build_state_resolver): case-insensitive, alias-aware, and it never
+        # drops a state that the file actually contains.
+        _resolve, _known_states = build_state_resolver(india_geo)
+        state_df['Geo_Name'] = state_df['Indian State / Origin Region'].apply(_resolve)
+
+        # States with alerts that this GeoJSON has no polygon for. The current
+        # export predates Telangana (2014) and Ladakh (2019), so their alerts
+        # would otherwise vanish from the map with no indication. Show them.
+        # NB: state_df itself is left complete — the companion bar chart below
+        # must still show every state, mapped or not.
+        unmapped = state_df[state_df['Geo_Name'].isna()]
+        mapped_df = state_df.dropna(subset=['Geo_Name'])
+
         fig_geo = px.choropleth(
-            state_df,
+            mapped_df,
             geojson=india_geo,
             locations='Geo_Name',
             featureidkey='properties.NAME_1',
             color='Recorded Anomalies',
             color_continuous_scale=_SCIENTIFIC_CONTINUOUS,
-            range_color=(0, state_df['Recorded Anomalies'].max() if len(state_df) else 1),
+            range_color=(0, mapped_df['Recorded Anomalies'].max() if len(mapped_df) else 1),
             labels={'Recorded Anomalies': 'Total Incident Frequency', 'Geo_Name': 'State'},
             title="Manufacturing-Origin Anomalies Mapped to Indian States",
             hover_name='Indian State / Origin Region',
         )
         fig_geo.update_geos(
-            fitbounds="locations",
+            # "geojson", not "locations": frame the whole country, not just
+            # the states that happen to have alerts in the current filter.
+            # With "locations" a filter matching two states zoomed the map to
+            # those two, which is what made it read as "not the India map".
+            fitbounds="geojson",
             visible=False,
             showcountries=False,
             showcoastlines=False,
@@ -1529,6 +1593,19 @@ with tab2:
         )
         fig_geo.update_layout(margin={"r": 0, "t": 50, "l": 0, "b": 0}, height=600)
         st.plotly_chart(fig_geo, use_container_width=True)
+
+        if not unmapped.empty:
+            rows = ", ".join(
+                f"{r['Indian State / Origin Region']} ({int(r['Recorded Anomalies'])})"
+                for _, r in unmapped.iterrows()
+            )
+            st.caption(
+                f"⚠️ Not shown on the map — no polygon for these in the current "
+                f"boundary file: {rows}. The file is a pre-2011 export "
+                f"({len(_known_states)} features), so it predates Telangana "
+                f"(2014) and Ladakh (2019). Their alert counts are included in "
+                f"the bar chart below."
+            )
     except FileNotFoundError:
         st.warning(
             "India GeoJSON not found in Redis (key 'geo:india_states') or locally. "

@@ -1,10 +1,12 @@
 #!/bin/bash
 # deploy.sh — (re)builds and (re)starts the nsq-platform stack.
 # Safe to re-run anytime: `sudo /opt/nsq-platform/deploy.sh`
-# Called automatically by the nsq-platform systemd unit on boot/restart.
+# Called automatically by the nsq-platform systemd unit on boot/restart
+# (ExecStart in terraform/user_data.sh.tpl), and after a `git pull` when
+# deploying new code.
 set -euxo pipefail
 
-APP_DIR=/opt/nsq-platform
+APP_DIR=${APP_DIR:-/opt/nsq-platform}
 cd "$APP_DIR"
 
 # --- buildx: the dnf-packaged docker ships an old buildx (0.12.x) that's
@@ -37,7 +39,14 @@ fi
 # --- build + start ---------------------------------------------------------
 docker compose up -d --build
 
-# --- nginx: reload in case the site config changed underneath it ----------
-if systemctl is-active --quiet nginx; then
+# --- host nginx (optional) -------------------------------------------------
+# Nothing in this repo installs a host-level nginx: the stack's own gateway
+# container terminates on :8080 and the two Streamlit apps publish their own
+# ports. This block only matters if you have hand-installed an nginx in front
+# (e.g. to add TLS); it is a no-op otherwise.
+if command -v nginx >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
   nginx -t && systemctl reload nginx
 fi
+
+echo "deploy: stack is up. docker compose ps:"
+docker compose ps

@@ -10,11 +10,21 @@ export interface Tenant {
   canonical: string;
   city: string;
   ontology_key: string;
+  /** NSQ alerts scoped to this tenant. /config sorts by this, descending. */
+  record_count?: number;
+  /**
+   * The distinct "Manufactured By" spellings the ontology folded into this
+   * key. Normally variants of one name ("Unicure India Ltd" / "Ltd."); when
+   * they are clearly different companies, the normalizer over-collapsed and
+   * the dashboard is showing two firms as one. Surfaced in the picker.
+   */
+  raw_names?: string[];
 }
 
 export interface ConfigPayload {
   tenants: Tenant[];
   personas: Persona[];
+  tenant_count?: number;
 }
 
 export interface Kpi {

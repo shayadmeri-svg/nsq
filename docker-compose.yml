@@ -20,7 +20,7 @@ services:
     environment:
       - REDIS_URL=${REDIS_URL}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8501/analytics/_stcore/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -49,7 +49,7 @@ services:
       engine:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8502/simulator/_stcore/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -63,6 +63,10 @@ services:
       context: ./engine
     image: nsq-engine:local
     container_name: nsq-engine
+    # --root-path /engine: the gateway serves this API under /engine/, and
+    # FastAPI needs to know that to generate correct links and serve
+    # /engine/docs. Harmless when hitting :8000 directly.
+    command: ["uvicorn", "api_main:app", "--host", "0.0.0.0", "--port", "8000", "--root-path", "/engine"]
     ports:
       - "8000:8000"
     environment:
@@ -91,7 +95,7 @@ services:
       - REDIS_URL=${REDIS_URL}
       - NSQ_TENANT=${NSQ_TENANT:-regent-ajanta-biotech}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8503/_stcore/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8503/manufacturer/_stcore/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -113,7 +117,12 @@ services:
       - "8001"
     environment:
       - REDIS_URL=${REDIS_URL}
-      - NSQ_TENANT=${NSQ_TENANT:-regent-ajanta-biotech}
+      # No NSQ_TENANT here, deliberately: unlike the Streamlit `manufacturer`
+      # service (one container = one tenant, resolved from the env var), the
+      # API takes the tenant from the request path
+      # (/api/manufacturer/{tenant_key}/...) and never calls
+      # tenants.get_active_tenant(). An NSQ_TENANT set here would look like a
+      # working knob and do nothing.
       - MANUFACTURER_API_CORS_ORIGINS=${MANUFACTURER_API_CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -144,20 +153,31 @@ services:
     networks:
       - nsq-net
 
-  # gateway — single origin: serves the SPA and proxies /api/manufacturer/
-  # to the manufacturer-api. Host 8080 during the transition (the old
-  # Streamlit manufacturer stays on 8503 for parity).
+  # gateway — THE single entry point. Serves the SPA at / and proxies every
+  # other service under its own path (see gateway/nginx.conf):
+  #   /analytics/  /simulator/  /manufacturer/  /engine/  /api/manufacturer/
+  # Published on host port 80 so the deployed box needs no separate nginx.
+  # Set GATEWAY_PORT in .env if something else already owns 80 on the host
+  # (e.g. an existing system nginx you want to keep in front).
   gateway:
     image: nginx:alpine
     container_name: nsq-gateway
     ports:
-      - "8080:80"
+      - "${GATEWAY_PORT:-80}:80"
     volumes:
       - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       web:
         condition: service_healthy
       manufacturer-api:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+      simulator:
+        condition: service_healthy
+      manufacturer:
+        condition: service_healthy
+      engine:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]

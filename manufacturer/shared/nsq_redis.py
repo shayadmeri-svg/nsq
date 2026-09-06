@@ -10,12 +10,14 @@ them to the column names the existing analytics/simulator code already
 expects (the same names the original CSV export used), so downstream
 logic in both apps is unchanged.
 
-If Redis is unreachable or returns an empty dataset, load_dataframe()
-falls back to reading the CSV specified by NSQ_CSV (default
-'data/data Jan25_May26.csv') directly via pandas. This keeps the
-analytics app usable offline; the simulator doesn't use the fallback
-(simulator reads from the canonical Redis snapshot for its live-data
-overlay).
+Redis (the prod cluster) is the source of truth. If it is unreachable or
+returns an empty dataset, load_dataframe() falls back to reading the CSV
+specified by NSQ_CSV (default the cumulative CDSCO export named in the
+justfile's CSV variable) directly via pandas. That file is gitignored
+(``data/*.csv``) and is NOT copied into the service images, so the fallback
+only ever fires host-side; in a container an unreachable Redis surfaces as
+an empty frame. The simulator doesn't use the fallback (it reads from the
+canonical Redis snapshot for its live-data overlay).
 """
 
 from __future__ import annotations
@@ -109,6 +111,12 @@ def _load_from_csv(path: Path) -> pd.DataFrame:
     return df
 
 
+# The one canonical CSV name in the codebase — kept identical to the
+# justfile's CSV variable so the loader recipes and this offline fallback
+# never point at different files (they used to: three names, one file).
+_DEFAULT_CSV = "data/CDSCO Not of Standard Quality (NSQ) Jan 21-Jul 26.csv"
+
+
 def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
     """Fetch every nsq:record:* hash and return it as a DataFrame.
 
@@ -116,9 +124,13 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
     and simulator logic (which was written against those names) keeps
     working unchanged.
 
-    Falls back to reading the CSV at $NSQ_CSV (default
-    'data/data Jan25_May26.csv') when Redis is unreachable or returns
-    an empty dataset — so the analytics app still works offline.
+    Redis (the prod cluster) is the source of truth. The CSV at $NSQ_CSV is
+    only an offline convenience for host-side development; its default is the
+    same cumulative export the justfile's CSV variable names, so the loader
+    recipes and this fallback can never disagree about which file is
+    canonical. The service images do not ship it (the Dockerfiles copy only
+    app.py + shared/), so in containers this fallback is a no-op and an empty
+    frame is what surfaces.
     """
     try:
         r = client or get_redis_client()
@@ -131,8 +143,9 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
         # through unchanged rather than being dropped.
         return df
 
-    # Empty Redis — try the CSV fallback.
-    csv_path = Path(os.environ.get("NSQ_CSV", "data/data Jan25_May26.csv"))
+    # Empty Redis — try the host-side CSV fallback (see the docstring: this
+    # is a partial slice, and is absent inside the service images).
+    csv_path = Path(os.environ.get("NSQ_CSV", _DEFAULT_CSV))
     if not csv_path.is_file():
         return df
     return _load_from_csv(csv_path)

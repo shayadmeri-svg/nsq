@@ -68,11 +68,20 @@ just load-intelligence      # patents, plant assets, regulatory, demand
 
 # Run everything
 docker compose up --build
-#   http://localhost:8501  analytics
-#   http://localhost:8502  simulator
-#   http://localhost:8503  manufacturer  (legacy Streamlit)
-#   http://localhost:8080  Q-engine  (React app via the gateway)
-#   http://localhost:8000  engine API
+# One origin, every service under a path (the gateway owns port 80):
+#   http://localhost/                 Q-engine React app
+#   http://localhost/analytics/       CDSCO NSQ dashboard
+#   http://localhost/simulator/       CDMO intelligence workbench
+#   http://localhost/manufacturer/    tenant dashboard (legacy Streamlit)
+#   http://localhost/engine/          scoring API   (/engine/docs for OpenAPI)
+#   http://localhost/api/manufacturer/  Q-engine JSON API
+#
+# The container ports stay published for debugging, and use the SAME paths
+# (the Streamlit apps run with --server.baseUrlPath):
+#   http://localhost:8501/analytics/   :8502/simulator/   :8503/manufacturer/
+#   http://localhost:8000/             engine, direct
+#
+# Set GATEWAY_PORT in .env if something else already owns port 80.
 ```
 
 Host-side (no Docker) equivalents: `just run-analytics`, `just run-manufacturer`,
@@ -340,10 +349,19 @@ Plus render-model tests for the intelligence chart vocabulary in
 - **AWS**: `terraform/` deploys the same compose stack to a single EC2 box
   (t3.micro, default VPC) — Redis/Gemini URLs pass through SSM SecureStrings +
   KMS; `deploy.sh` (invoked by the `nsq-platform` systemd unit on boot)
-  refreshes env and runs `docker compose up -d --build`.
-- Terraform's security group currently opens 22/8501/8502 only — the engine
-  (8000), manufacturer (8503), and the React gateway (8080) ports are not yet
-  opened for remote access.
+  installs buildx, runs `refresh-env.sh` (SSM → `.env`) and then
+  `docker compose up -d --build`.
+- `user_data` writes only `/etc/nsq-platform.conf` (SSM parameter names +
+  region). `refresh-env.sh` and `deploy.sh` live in the repo and are the
+  single source of truth, so `git pull` on the box is safe — see
+  `terraform/README.md`, "How the env refresh works".
+- Security group: 22/8501/8502 are open to the world; 8080 (Q-engine
+  gateway), 8503 (legacy Streamlit manufacturer) and 8000 (engine API) are
+  opened to `var.app_ingress_cidrs` (default `0.0.0.0/0`). The engine is
+  unauthenticated and the manufacturer sign-in is a gate rather than auth —
+  narrow that variable to your own IP for anything but a demo box.
+  `manufacturer-api` (8001) and `web` (80) stay internal to the compose
+  network; the gateway is their only entrance.
 
 ## Known gaps & honest limitations
 
@@ -352,14 +370,26 @@ Plus render-model tests for the intelligence chart vocabulary in
 - The 17-drug simulator catalog is **curated fixture data**, not CDSCO-sourced
   (only the NSQ alert-count overlay is live).
 - The manufacturer sign-in gate is **not authentication**.
+- **`persona` is accepted but unused.** The React app sends
+  `?persona=QA|Regulatory|Executive`, and `manufacturer-api` validates it and
+  echoes it back — but `diagnostics_core.build_diagnosis(row, tenant_df)`
+  takes no persona argument, so all three personas return byte-identical
+  diagnoses. The seam exists; the branching does not.
+- **The tenant registry is a one-entry tuple** (`tenants.py`), so the sign-in
+  "Manufacturer" dropdown has a single option. The path-param plumbing
+  (`/api/manufacturer/{tenant_key}/…`, `get_tenant()` → 404 on unknown keys)
+  is genuinely multi-tenant; only the registry is hardcoded. Onboarding a
+  second manufacturer = one `Tenant(...)` entry with its `Mfg_Ontology_Key`.
 - The process-model API (8010) and `/simulator` static page are host-only —
   not in docker-compose.
 - `PLAN_ANALYTICS_HOME.md` describes an anime.js animated landing page that is
   **not implemented**; `PLAN_HISTORY.md` archives the original phased roadmap.
-- `.env.example` is referenced but not yet checked in — copy the shape from
-  `docker-compose.yml` (`REDIS_URL`, optional `GEMINI_API_KEY`, optional
-  `NSQ_TENANT`, optional `MANUFACTURER_API_CORS_ORIGINS` for the React dev
-  server).
+- The three Streamlit services launch through `shared/streamlit_entry.py`
+  rather than the `streamlit` console script. It only installs an asyncio
+  exception handler that drops the `WebSocketClosedError` tracebacks
+  Streamlit emits when a browser tab closes mid-render (upstream sends
+  ForwardMsgs without awaiting tornado's future) — every other exception
+  still surfaces. Edit it in `shared/` and run `just sync-shared`.
 
 ## Planning docs
 
