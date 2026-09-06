@@ -63,10 +63,6 @@ services:
       context: ./engine
     image: nsq-engine:local
     container_name: nsq-engine
-    # --root-path /engine: the gateway serves this API under /engine/, and
-    # FastAPI needs to know that to generate correct links and serve
-    # /engine/docs. Harmless when hitting :8000 directly.
-    command: ["uvicorn", "api_main:app", "--host", "0.0.0.0", "--port", "8000", "--root-path", "/engine"]
     ports:
       - "8000:8000"
     environment:
