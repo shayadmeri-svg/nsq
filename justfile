@@ -73,17 +73,17 @@ _confirm-flush:
       echo "    CONFIRM_FLUSH=yes just <recipe>"; \
       exit 1; }
 
-load: _require-json
+load: _require-json && build-frame
     cd {{LOADER}} && .venv/bin/python load_nsq_redis.py --input "../{{INPUT}}" --redis-url "$REDIS_URL"
 
 # Load {{INPUT}} into Redis, wiping existing nsq:* keys first
-reload: _require-json _confirm-flush
+reload: _require-json _confirm-flush && build-frame
     cd {{LOADER}} && .venv/bin/python load_nsq_redis.py --input "../{{INPUT}}" --redis-url "$REDIS_URL" --flush
 
 # Load {{CSV}} into Redis (additive, augment=ON by default — populates
 # nsq:record:* + nsq:prediction:* + nsq:ontology:companies in one pass).
 # Set NSQ_AUGMENT=0 to skip augmentation (raw records only).
-load-csv: _require-csv
+load-csv: _require-csv && build-product-ontology build-frame
     cd {{LOADER}} && .venv/bin/python load_csv_redis.py --input "../{{CSV}}" --redis-url "$REDIS_URL" --augment {{AUGMENT}}
 
 # Wipe nsq:* keys and reload {{CSV}} with augmentation. The --flush is
@@ -93,14 +93,19 @@ load-csv: _require-csv
 # the result is independent of row order). record_id() is a hash of
 # (batch_no, product_name, reporting_month, lab) — a non-flush reload
 # would leave stale un-harmonized rows and old-key records in Redis.
-reload-csv: _require-csv _confirm-flush
+reload-csv: _require-csv _confirm-flush && build-product-ontology build-frame
     cd {{LOADER}} && .venv/bin/python load_csv_redis.py --input "../{{CSV}}" --redis-url "$REDIS_URL" --flush --augment {{AUGMENT}}
+
+# `just refresh-prod` is an alias for refresh-csv — the full production
+# refresh: wipe + reload records, rebuild both ontologies, rebuild the
+# enriched frame, verify.
+alias refresh-prod := refresh-csv
 
 # Deterministic monthly refresh: when a new CDSCO notification lands,
 # append its rows to the cumulative CSV ({{CSV}}), then run this. Wipes
 # and rebuilds records, predictions, BOTH ontologies, and re-seeds the
 # product ontology — the whole nsq:* state is a pure function of the CSV.
-refresh-csv: reload-csv build-product-ontology build-frame verify
+refresh-csv: reload-csv verify
 
 # Pre-compute the enriched NSQ frame into Redis (nsq:frame:enriched).
 #
@@ -115,10 +120,19 @@ refresh-csv: reload-csv build-product-ontology build-frame verify
 # no wheels yet. Run it after anything that changes nsq:record:* (refresh-csv
 # chains it). Forgetting is safe: the frame carries the record count it was
 # built from, and the apps fall back to computing when that no longer matches.
+# NB: no --redis-url. The analytics service already receives REDIS_URL from
+# .env via compose, and the script defaults to it — so this works on a box
+# where the shell has never exported it (e.g. the EC2 host, where `just`
+# itself is not installed and you run the docker command by hand).
 build-frame:
+    @command -v docker >/dev/null 2>&1 || { \
+      echo "WARNING: docker not found — the enriched frame was NOT rebuilt."; \
+      echo "  The apps will fall back to computing it (~55s per cold cache)"; \
+      echo "  until you run 'just build-frame' somewhere with docker."; \
+      exit 0; }
     docker compose run --rm --no-deps \
       -v "$PWD/redis-loader/build_enriched_frame.py:/app/build_enriched_frame.py:ro" \
-      --entrypoint python3 analytics /app/build_enriched_frame.py --redis-url "$REDIS_URL"
+      --entrypoint python3 analytics /app/build_enriched_frame.py
 
 # Dry-run: parse the CSV and print what would be written for the first 3
 # rows. No Redis connection required.
@@ -270,7 +284,7 @@ clean:
 
 # Fetch the live CDSCO publicNsqDrugTable JSON and load it into Redis
 # (wipes existing nsq:* keys first, so Redis always reflects the latest fetch)
-fetch-cdscoonline:
+fetch-cdscoonline: && build-frame
     cd {{LOADER}} && .venv/bin/python fetch_cdsco.py --url "{{CDSCO_URL}}" --output ../{{INPUT}}
     cd {{LOADER}} && .venv/bin/python load_nsq_redis.py --input "../{{INPUT}}" --redis-url "$REDIS_URL" --flush
 
