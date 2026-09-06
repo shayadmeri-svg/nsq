@@ -1866,16 +1866,54 @@ with tab4:
     if sort_col != "None":
         display_ledger = display_ledger.sort_values(by=sort_col, ascending=(sort_order == "Ascending"))
         
-    st.dataframe(display_ledger, use_container_width=True, hide_index=True)
-    
-    # Download Button utilities
-    csv_bytes = display_ledger.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Export Screened Data Subset to CSV Format",
-        data=csv_bytes,
-        file_name="CDSCO_Screened_Dissolution_Subset.csv",
-        mime="text/csv"
+    # ---- Paged ledger -------------------------------------------------------
+    # This used to be `st.dataframe(display_ledger)` over the whole filtered
+    # frame. Streamlit serialises a dataframe to Arrow and pushes it down the
+    # websocket on EVERY rerun, and st.tabs renders every tab eagerly — so all
+    # 5,619 rows were shipped on each widget click even when the user was
+    # looking at tab 1. Measured on the deployed box: 5.66 MB and 8.4 s per
+    # click, of which this was the overwhelming majority.
+    LEDGER_PAGE_ROWS = 250
+    total_rows = len(display_ledger)
+    page_count = max(1, (total_rows + LEDGER_PAGE_ROWS - 1) // LEDGER_PAGE_ROWS)
+
+    if page_count > 1:
+        page = st.number_input(
+            f"Page (250 rows each, {page_count} pages)",
+            min_value=1, max_value=page_count, value=1, step=1,
+            key="ledger_page",
+        )
+    else:
+        page = 1
+
+    start = (int(page) - 1) * LEDGER_PAGE_ROWS
+    st.dataframe(
+        display_ledger.iloc[start:start + LEDGER_PAGE_ROWS],
+        use_container_width=True,
+        hide_index=True,
     )
+    if total_rows:
+        st.caption(
+            f"Rows {start + 1:,}–{min(start + LEDGER_PAGE_ROWS, total_rows):,} "
+            f"of {total_rows:,} matching the active filters."
+        )
+    else:
+        st.caption("No rows match the active filters.")
+
+    # ---- CSV export, built on demand ---------------------------------------
+    # to_csv() over the full frame ran on every rerun too, and Streamlit then
+    # served the ~1 MB result as a /media file whether or not anyone clicked
+    # it. Building it only when asked keeps it off the hot path.
+    if st.checkbox("Prepare CSV export", key="ledger_prepare_csv"):
+        csv_bytes = display_ledger.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label=f"📥 Download all {total_rows:,} screened rows as CSV",
+            data=csv_bytes,
+            file_name="CDSCO_Screened_Dissolution_Subset.csv",
+            mime="text/csv",
+        )
+    else:
+        st.caption(f"Tick to build a CSV of all {total_rows:,} filtered rows.")
 
 # -----------------------------------------------------------------------------
 # TAB 5: PRODUCT → MANUFACTURER INVESTIGATION
