@@ -563,26 +563,133 @@ def _load_and_preprocess() -> pd.DataFrame:
     return df
 
 
-def load_and_preprocess_data() -> pd.DataFrame:
+# ---------------------------------------------------------------------------
+# Pre-computed enriched frame
+# ---------------------------------------------------------------------------
+# _load_and_preprocess() walks every row through resolve_or_create_product(),
+# fuzzy-matching product names against the ontology with Redis round-trips.
+# On the deployed box that cost ~20 seconds, and because the Streamlit cache
+# carried ttl=300 it was re-paid every five minutes by whichever user clicked
+# first — measured: 33.5s to first paint cold, 13.4s warm.
+#
+# The enrichment is a pure function of the nsq:* keyspace, so it belongs in
+# the loader, not in a page render. `just build-frame` computes it once and
+# stores it here; the apps just read it back.
+ENRICHED_FRAME_KEY = "nsq:frame:enriched"
+ENRICHED_FRAME_META = "nsq:frame:enriched:meta"
+
+
+def _record_count(client) -> int:
+    """How many nsq:record:* ids exist — the staleness check for the frame."""
+    try:
+        return int(client.scard("nsq:records") or 0)
+    except Exception:
+        return -1
+
+
+def save_enriched_frame(df: pd.DataFrame, client=None) -> dict:
+    """Serialise the enriched frame to Redis (gzipped parquet) + write meta.
+
+    Returns the meta dict. Parquet keeps dtypes (notably Parsed_Date), which
+    a CSV round-trip would lose.
+    """
+    import gzip
+    import io
+
+    r = client or nsq_redis.get_redis_client()
+    buf = io.BytesIO()
+    df.to_parquet(buf, index=False, compression="snappy")
+    raw = buf.getvalue()
+    payload = gzip.compress(raw)
+
+    meta = {
+        "rows": str(len(df)),
+        "cols": str(len(df.columns)),
+        "parquet_bytes": str(len(raw)),
+        "stored_bytes": str(len(payload)),
+        "record_count": str(_record_count(r)),
+        "built_at": datetime.now(timezone.utc).isoformat(),
+    }
+    pipe = r.pipeline()
+    # decode_responses=True clients would mangle the binary payload on read,
+    # so it is stored base64-encoded rather than raw.
+    import base64
+
+    pipe.set(ENRICHED_FRAME_KEY, base64.b64encode(payload).decode("ascii"))
+    pipe.delete(ENRICHED_FRAME_META)
+    pipe.hset(ENRICHED_FRAME_META, mapping=meta)
+    pipe.execute()
+    return meta
+
+
+def load_enriched_frame(client=None) -> pd.DataFrame | None:
+    """Read the pre-computed frame back, or None when it is absent or stale.
+
+    Stale = the record count in the meta no longer matches nsq:records, i.e.
+    the CSV was reloaded without rebuilding the frame. Returning None makes
+    the caller fall back to computing, so a forgotten `just build-frame`
+    degrades to "slow" rather than "silently serving last week's data".
+    """
+    import base64
+    import gzip
+    import io
+
+    try:
+        r = client or nsq_redis.get_redis_client()
+        meta = r.hgetall(ENRICHED_FRAME_META) or {}
+        if not meta:
+            return None
+
+        stored = meta.get("record_count")
+        if stored is not None and str(stored) != str(_record_count(r)):
+            return None  # records changed since the frame was built
+
+        blob = r.get(ENRICHED_FRAME_KEY)
+        if not blob:
+            return None
+        if isinstance(blob, str):
+            blob = blob.encode("ascii")
+        raw = gzip.decompress(base64.b64decode(blob))
+        return pd.read_parquet(io.BytesIO(raw))
+    except Exception:
+        # Any problem at all (no Redis, no pyarrow, corrupt payload) falls
+        # back to computing. Never fail a page render over a cache.
+        return None
+
+
+def load_and_preprocess_data(force_recompute: bool = False) -> pd.DataFrame:
     """Enriched NSQ DataFrame.
 
-    When Streamlit is available (the analytics/simulator/manufacturer UIs),
-    the result is memoised with ``@st.cache_data(ttl=300,
-    show_spinner=False)`` — see the show_spinner note above (Streamlit
-    #13341). When Streamlit is absent (the manufacturer_api FastAPI service),
-    the enriched frame is recomputed on each call; callers that want caching
-    should wrap :func:`_load_and_preprocess` themselves.
+    Order of preference:
+      1. the pre-computed frame in Redis (`just build-frame`) — a single GET;
+      2. computing it here, the old path, for local dev or a stale cache.
+
+    When Streamlit is available the result is additionally memoised per
+    process with ``@st.cache_data`` — see the show_spinner note above
+    (Streamlit #13341).
     """
-    if _HAS_ST:
+    if _HAS_ST and not force_recompute:
         return _st_cached_load()
+    return _load_or_compute()
+
+
+def _load_or_compute() -> pd.DataFrame:
+    df = load_enriched_frame()
+    if df is not None and not df.empty:
+        return df
     return _load_and_preprocess()
 
 
 if _HAS_ST:
 
-    @st.cache_data(ttl=300, show_spinner=False)
+    # ttl raised from 300s: the underlying read is now a single Redis GET of a
+    # pre-built frame, so re-reading it often is cheap — but when the frame is
+    # missing and this falls back to computing, a 5-minute expiry meant paying
+    # the full enrichment twelve times an hour. Staleness is handled by the
+    # record-count check in load_enriched_frame(), not by the clock.
+    @st.cache_data(ttl=3600, show_spinner=False)
     def _st_cached_load() -> pd.DataFrame:
-        return _load_and_preprocess()
+        return _load_or_compute()
 
 
 def fuzzy_search_products(df: pd.DataFrame, query: str, threshold: int = 70) -> list[tuple[int, int, str]]:

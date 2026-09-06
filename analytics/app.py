@@ -1567,6 +1567,26 @@ with tab2:
         unmapped = state_df[state_df['Geo_Name'].isna()]
         mapped_df = state_df.dropna(subset=['Geo_Name'])
 
+        # Draw EVERY state and UT, not just the ones with alerts. Plotly's
+        # choropleth only renders features it has a row for, so passing only
+        # the states with data silently cut the rest of the country out of the
+        # map — most visibly the seven north-eastern states, which have few or
+        # no NSQ alerts. A state with no alerts is a real, meaningful result
+        # ("nothing reported here"), not a reason to omit it from a map of
+        # India. Every missing state is added with a count of 0 so it renders
+        # in the palette's lightest step.
+        _all_states = pd.DataFrame({'Geo_Name': _known_states})
+        mapped_df = (
+            _all_states
+            .merge(mapped_df, on='Geo_Name', how='left')
+            .assign(**{
+                'Recorded Anomalies': lambda d: d['Recorded Anomalies'].fillna(0).astype(int),
+                'Indian State / Origin Region': lambda d: (
+                    d['Indian State / Origin Region'].fillna(d['Geo_Name'])
+                ),
+            })
+        )
+
         fig_geo = px.choropleth(
             mapped_df,
             geojson=india_geo,
@@ -1575,6 +1595,7 @@ with tab2:
             color='Recorded Anomalies',
             color_continuous_scale=_SCIENTIFIC_CONTINUOUS,
             range_color=(0, mapped_df['Recorded Anomalies'].max() if len(mapped_df) else 1),
+            hover_data={'Geo_Name': False},
             labels={'Recorded Anomalies': 'Total Incident Frequency', 'Geo_Name': 'State'},
             title="Manufacturing-Origin Anomalies Mapped to Indian States",
             hover_name='Indian State / Origin Region',

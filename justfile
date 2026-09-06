@@ -100,7 +100,25 @@ reload-csv: _require-csv _confirm-flush
 # append its rows to the cumulative CSV ({{CSV}}), then run this. Wipes
 # and rebuilds records, predictions, BOTH ontologies, and re-seeds the
 # product ontology — the whole nsq:* state is a pure function of the CSV.
-refresh-csv: reload-csv build-product-ontology verify
+refresh-csv: reload-csv build-product-ontology build-frame verify
+
+# Pre-compute the enriched NSQ frame into Redis (nsq:frame:enriched).
+#
+# This is the single biggest lever on how the apps feel. The enrichment
+# (ontology joins + per-row fuzzy product resolution over ~5,600 rows) used to
+# run inside the Streamlit render, behind a 5-minute cache: 33.5s to first
+# paint cold, 13.4s warm, on the deployed box. Precomputed, the apps do one
+# Redis GET instead.
+#
+# Runs inside the analytics image so it does not need pandas/pyarrow/rapidfuzz
+# on your machine — which matters on Python 3.14, where several of those have
+# no wheels yet. Run it after anything that changes nsq:record:* (refresh-csv
+# chains it). Forgetting is safe: the frame carries the record count it was
+# built from, and the apps fall back to computing when that no longer matches.
+build-frame:
+    docker compose run --rm --no-deps \
+      -v "$PWD/redis-loader/build_enriched_frame.py:/app/build_enriched_frame.py:ro" \
+      --entrypoint python3 analytics /app/build_enriched_frame.py --redis-url "$REDIS_URL"
 
 # Dry-run: parse the CSV and print what would be written for the first 3
 # rows. No Redis connection required.
