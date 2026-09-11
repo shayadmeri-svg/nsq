@@ -197,24 +197,11 @@ def _load_predictions_from_redis() -> dict:
     predictions back to the DataFrame.
     """
     try:
-        client = nsq_redis.get_redis_client()
-    except Exception:
-        return {}
-    try:
-        ids = client.smembers("nsq:records")
-    except Exception:
-        return {}
-    if not ids:
-        return {}
-    try:
-        pipe = client.pipeline()
-        for rid in ids:
-            pipe.hgetall(f"nsq:prediction:{rid}")
-        rows = pipe.execute()
+        raw = nsq_redis.load_predictions()
     except Exception:
         return {}
     out: dict = {}
-    for rid, row in zip(ids, rows):
+    for rid, row in raw.items():
         if not row:
             continue
         # Join key: the Redis record id (nsq:record:<rid> and

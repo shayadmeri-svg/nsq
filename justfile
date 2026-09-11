@@ -19,6 +19,7 @@ AUGMENT := env_var_or_default("NSQ_AUGMENT", "1")
 CDSCO_URL := env_var_or_default("CDSCO_URL", "https://cdscoonline.gov.in/CDSCO/publicNsqDrugTable")
 GEOJSON := env_var_or_default("GEOJSON_FILE", "analytics/india_states_slim.geojson")
 GEOJSON_KEY := env_var_or_default("GEOJSON_KEY", "geo:india_states")
+SNAPSHOT := env_var_or_default("NSQ_SNAPSHOT_OUT", "data/nsq_snapshot.json.gz")
 
 # Show configured target (without leaking the password)
 info:
@@ -63,6 +64,34 @@ reload-csv:
 # and rebuilds records, predictions, BOTH ontologies, and re-seeds the
 # product ontology — the whole nsq:* state is a pure function of the CSV.
 refresh-csv: reload-csv build-product-ontology verify
+
+# Refresh the PRODUCTION (Upstash) Redis with the latest CSV. deploy.sh only
+# ships code — it does NOT load data — so this is the prod data-refresh step.
+# Requires PROD_REDIS_URL (set it in .env or pass inline); refuses to run
+# against the local REDIS_URL so you can't clobber the wrong Redis.
+# Finishes by dumping a local snapshot ({{SNAPSHOT}}) — commit it with the
+# data refresh so the deployed containers have a fallback when the Upstash
+# monthly command quota runs out mid-month.
+refresh-prod:
+    @test -n "${PROD_REDIS_URL:-}" || { echo "PROD_REDIS_URL not set — refusing to guess the prod Redis."; exit 1; }
+    cd {{LOADER}} && .venv/bin/python load_csv_redis.py --input "../{{CSV}}" --redis-url "$PROD_REDIS_URL" --flush --augment {{AUGMENT}}
+    cd {{LOADER}} && .venv/bin/python build_product_ontology.py --input "../{{CSV}}" --redis-url "$PROD_REDIS_URL"
+    cd {{LOADER}} && REDIS_URL="$PROD_REDIS_URL" .venv/bin/python verify_nsq_redis.py
+    cd {{LOADER}} && .venv/bin/python dump_snapshot.py --redis-url "$PROD_REDIS_URL" --output "../{{SNAPSHOT}}" --source-label prod
+
+# Dump the runtime-needed Redis keyspace to a local snapshot (dev Redis).
+# The snapshot is the fallback tier served when Redis is unavailable —
+# see shared/nsq_redis.py. Git-track the file so deploys carry it.
+snapshot:
+    cd {{LOADER}} && .venv/bin/python dump_snapshot.py --redis-url "$REDIS_URL" --output "../{{SNAPSHOT}}" --source-label dev
+
+# Dump the snapshot from the PRODUCTION Redis (the one the deployed
+# containers read). Refuses the dev URL so the snapshot can't be quietly
+# overwritten with dev data.
+snapshot-prod:
+    @test -n "${PROD_REDIS_URL:-}" || { echo "PROD_REDIS_URL not set — refusing to guess the prod Redis."; exit 1; }
+    @test "$PROD_REDIS_URL" != "${REDIS_URL:-}" || { echo "PROD_REDIS_URL matches REDIS_URL — that is the dev Redis; refusing."; exit 1; }
+    cd {{LOADER}} && .venv/bin/python dump_snapshot.py --redis-url "$PROD_REDIS_URL" --output "../{{SNAPSHOT}}" --source-label prod
 
 # Dry-run: parse the CSV and print what would be written for the first 3
 # rows. No Redis connection required.
@@ -155,13 +184,13 @@ load-intelligence: load-patents load-plant-assets load-regulatory load-demand
 
 # Run the analytics Streamlit app locally on port 8501
 run-analytics:
-    cd analytics && NSQ_CSV="../{{CSV}}" python3 -m streamlit run app.py --server.headless=true --server.port=8501
+    cd analytics && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" python3 -m streamlit run app.py --server.headless=true --server.port=8501
 
 # Run the manufacturer (tenant) Streamlit app locally on port 8503.
 # Uses the simulator venv (streamlit + pandas + redis + plotly installed).
 # Override the tenant with NSQ_TENANT=<key> (default: regent-ajanta-biotech).
 run-manufacturer:
-	cd manufacturer && NSQ_CSV="../{{CSV}}" ../simulator/.venv/bin/python -m streamlit run app.py --server.headless=true --server.port=8503
+	cd manufacturer && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" ../simulator/.venv/bin/python -m streamlit run app.py --server.headless=true --server.port=8503
 
 # Run the test suite. Uses the simulator venv (has pytest + runtime deps).
 # Forces REDIS_URL to the host-local Redis (the dev data lives on
@@ -183,7 +212,7 @@ run-simulator:
 # rapidfuzz installed). Mirrors run-api / run-simulator. Requires REDIS_URL
 # (the .env is auto-loaded) and NSQ_CSV for the offline CSV fallback.
 run-manufacturer-api:
-	cd manufacturer_api && NSQ_CSV="../{{CSV}}" python3 -m uvicorn api_main:app --host 0.0.0.0 --port 8001 --reload
+	cd manufacturer_api && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" python3 -m uvicorn api_main:app --host 0.0.0.0 --port 8001 --reload
 
 # Run the React web app (Vite dev server) on port 5173. Proxies /api to the
 # manufacturer_api on :8001 (see web/vite.config.ts). Run the API separately:

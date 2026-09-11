@@ -19,6 +19,13 @@ services:
       - "8501:8501"
     environment:
       - REDIS_URL=${REDIS_URL}
+      # Local snapshot tier: served when Redis is unavailable (e.g. the
+      # Upstash monthly command quota runs out). Shipped via the
+      # git-tracked data/nsq_snapshot.json.gz — refresh with
+      # `just snapshot-prod` and commit it alongside the data refresh.
+      - NSQ_SNAPSHOT=/app/nsq_snapshot.json.gz
+    volumes:
+      - ./data/nsq_snapshot.json.gz:/app/nsq_snapshot.json.gz:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
@@ -90,6 +97,9 @@ services:
     environment:
       - REDIS_URL=${REDIS_URL}
       - NSQ_TENANT=${NSQ_TENANT:-regent-ajanta-biotech}
+      - NSQ_SNAPSHOT=/app/nsq_snapshot.json.gz
+    volumes:
+      - ./data/nsq_snapshot.json.gz:/app/nsq_snapshot.json.gz:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8503/_stcore/health"]
       interval: 30s
@@ -115,6 +125,9 @@ services:
       - REDIS_URL=${REDIS_URL}
       - NSQ_TENANT=${NSQ_TENANT:-regent-ajanta-biotech}
       - MANUFACTURER_API_CORS_ORIGINS=${MANUFACTURER_API_CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      - NSQ_SNAPSHOT=/app/nsq_snapshot.json.gz
+    volumes:
+      - ./data/nsq_snapshot.json.gz:/app/nsq_snapshot.json.gz:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s

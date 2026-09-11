@@ -345,6 +345,49 @@ Plus render-model tests for the intelligence chart vocabulary in
   (8000), manufacturer (8503), and the React gateway (8080) ports are not yet
   opened for remote access.
 
+### Production data refresh — `deploy.sh` does NOT load data
+
+`deploy.sh` only rebuilds/restarts the containers; it never loads data into
+Redis. The NSQ dataset lives in the **Upstash Redis** (fetched from SSM) and
+is populated by the loader, not by deploy. If the EC2 box shows stale or
+different data than local, the prod Redis was never refreshed with the latest
+CSV — deploy alone won't fix it.
+
+The prod data-refresh step runs from a machine that has the CSV + loader venv
+(i.e. your dev box):
+
+```bash
+# one-time: add the prod Redis URL to .env (gitignored)
+echo 'PROD_REDIS_URL=rediss://default:PASSWORD@your-instance.upstash.io:6379' >> .env
+
+# after appending new CDSCO rows to the cumulative CSV:
+just refresh-prod          # flush + reload + augment + product ontology + verify + snapshot
+git add data/nsq_snapshot.json.gz && git commit  # ship the snapshot with the refresh
+```
+
+Then deploy the code as usual (`deploy.sh` on the box, or `git pull` +
+`docker compose up -d --build`). The two steps are independent: code deploy
+does not touch data, and data refresh does not touch code — except the
+snapshot file, which is data that rides with the code (it's small and
+deterministic from the CSV).
+
+#### Redis monthly-quota fallback — the local snapshot
+
+The Upstash free plan has a monthly command quota. When it runs out
+mid-month, every Redis command fails and the services fall back to
+`data/nsq_snapshot.json.gz` (git-tracked, mounted read-only into the
+analytics / manufacturer / manufacturer-api containers at
+`/app/nsq_snapshot.json.gz`). Production then serves data as of the last
+`refresh-prod` instead of an empty dashboard — the log line
+`Redis unavailable … falling back to the local snapshot` makes the
+staleness visible. To refresh the snapshot on its own:
+`just snapshot-prod` (needs `PROD_REDIS_URL`; refuses the dev Redis).
+
+Note: a data-only snapshot commit changes no image, and a single-file
+bind mount pins the inode — `deploy.sh` restarts the three
+snapshot-mounted services after `up -d --build` so the new file is picked
+up.
+
 ## Known gaps & honest limitations
 
 - **Regulatory & Demand pillars are neutral placeholders** in the engine

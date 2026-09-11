@@ -38,6 +38,7 @@ Threshold is tunable via FUZZY_THRESHOLD (default 0.85).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import unicodedata
@@ -45,6 +46,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import redis
+
+_log = logging.getLogger(__name__)
 
 # Lazy import — rapidfuzz is in analytics/requirements.txt but this
 # module is in shared/ and could be loaded from anywhere. Fall back
@@ -434,9 +437,18 @@ def product_key(raw: str) -> str:
 
 def load_product_ontology(client: redis.Redis | None = None) -> dict[str, dict[str, Any]]:
     """Read every product record out of Redis. Returns
-    {canonical_key: record_dict}."""
-    r = client or get_redis_client()
-    raw = r.hgetall(PRODUCT_HASH_KEY)
+    {canonical_key: record_dict}. Falls back to the local snapshot
+    (dump_snapshot.py) when Redis is unavailable — e.g. the Upstash
+    monthly command quota is exhausted."""
+    try:
+        r = client or get_redis_client()
+        raw = r.hgetall(PRODUCT_HASH_KEY)
+    except (RuntimeError, redis.RedisError) as exc:
+        _log.warning("Redis unavailable (%s: %s) — serving the product "
+                     "ontology from the local snapshot", type(exc).__name__, exc)
+        from nsq_redis import load_snapshot  # lazy: keep the happy path import-free
+        raw = ((load_snapshot() or {}).get("sections", {})
+                   .get("ontology_products")) or {}
     out: dict[str, dict[str, Any]] = {}
     for k, v in raw.items():
         try:
@@ -579,9 +591,18 @@ def resolve_or_create_product(
 # ---------------------------------------------------------------------------
 def load_ontology(client: redis.Redis | None = None) -> dict[str, dict[str, Any]]:
     """Read every company record out of Redis. Returns
-    {normalized_key: record_dict}."""
-    r = client or get_redis_client()
-    raw = r.hgetall(COMPANY_HASH_KEY)
+    {normalized_key: record_dict}. Falls back to the local snapshot
+    (dump_snapshot.py) when Redis is unavailable — e.g. the Upstash
+    monthly command quota is exhausted."""
+    try:
+        r = client or get_redis_client()
+        raw = r.hgetall(COMPANY_HASH_KEY)
+    except (RuntimeError, redis.RedisError) as exc:
+        _log.warning("Redis unavailable (%s: %s) — serving the company "
+                     "ontology from the local snapshot", type(exc).__name__, exc)
+        from nsq_redis import load_snapshot  # lazy: keep the happy path import-free
+        raw = ((load_snapshot() or {}).get("sections", {})
+                   .get("ontology_companies")) or {}
     out: dict[str, dict[str, Any]] = {}
     for k, v in raw.items():
         try:

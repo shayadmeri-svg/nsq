@@ -2,6 +2,11 @@
 # deploy.sh — (re)builds and (re)starts the nsq-platform stack.
 # Safe to re-run anytime: `sudo /opt/nsq-platform/deploy.sh`
 # Called automatically by the nsq-platform systemd unit on boot/restart.
+#
+# NOTE: this script ships CODE only — it does NOT load data into Redis.
+# The NSQ dataset lives in the Upstash Redis and is refreshed separately
+# with `just refresh-prod` (see README "Production data refresh"). If the
+# box shows stale data, run that step; redeploying alone won't fix it.
 set -euxo pipefail
 
 APP_DIR=/opt/nsq-platform
@@ -36,6 +41,13 @@ fi
 
 # --- build + start ---------------------------------------------------------
 docker compose up -d --build
+
+# --- restart the snapshot-mounted services ---------------------------------
+#     A data-only commit (fresh data/nsq_snapshot.json.gz) changes no image,
+#     and a single-file bind mount pins the inode — os.replace on the host
+#     leaves running containers reading the old snapshot bytes. Restarting
+#     picks up the new file. Seconds of downtime; safe to re-run.
+docker compose restart analytics manufacturer manufacturer-api
 
 # --- nginx: reload in case the site config changed underneath it ----------
 if systemctl is-active --quiet nginx; then

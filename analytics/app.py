@@ -1177,6 +1177,9 @@ def load_india_geojson():
             return geo
     except RuntimeError:
         pass  # REDIS_URL not set — fall through to local file
+    except Exception:
+        pass  # Redis down with no snapshot either (load_geojson returns
+              # None in that case, so this is belt-and-braces) — local file
 
     local_path = "india_states_slim.geojson"
     if os.path.exists(local_path):
