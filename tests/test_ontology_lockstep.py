@@ -1,19 +1,26 @@
 """Lockstep + regression tests for the manufacturer ontology normalizer.
 
-The ontology logic is duplicated across 6 files that MUST stay in lockstep:
+The ontology logic is duplicated across 8 files that MUST stay in lockstep:
 
     shared/company_ontology.py
     analytics/shared/company_ontology.py
     engine/shared/company_ontology.py
+    manufacturer/shared/company_ontology.py
+    manufacturer_api/shared/company_ontology.py
     simulator/intelligence/company_ontology.py
     simulator/shared/company_ontology.py
-    redis-loader/load_csv_redis.py        (inlines _normalize/_similarity)
+    redis-loader/load_csv_redis.py        (inlines _normalize/_similarity/_extract_state)
 
 These tests make drift a CI failure rather than a latent bin-contamination
 bug, and lock in the determinism invariant: the canonical bin for a
 manufacturer name is a pure function of the name string (and, for merges,
 of name similarity >= FUZZY_THRESHOLD) — independent of insertion order,
 Redis state, or alias history.
+
+extract_state is lockstep too: the loader's inlined _extract_state writes
+the persisted `state` fields at load time, while the shared copies
+re-derive at read time — drift between them shows up as predictions that
+change value on every refresh.
 
 Runnable both as `python tests/test_ontology_lockstep.py` and via pytest.
 """
@@ -32,6 +39,8 @@ ONT_COPIES = [
     ("shared/company_ontology.py", "normalize_company_name", "_similarity"),
     ("analytics/shared/company_ontology.py", "normalize_company_name", "_similarity"),
     ("engine/shared/company_ontology.py", "normalize_company_name", "_similarity"),
+    ("manufacturer/shared/company_ontology.py", "normalize_company_name", "_similarity"),
+    ("manufacturer_api/shared/company_ontology.py", "normalize_company_name", "_similarity"),
     ("simulator/intelligence/company_ontology.py", "normalize_company_name", "_similarity"),
     ("simulator/shared/company_ontology.py", "normalize_company_name", "_similarity"),
 ]
@@ -325,6 +334,41 @@ def test_rebuild_dry_run_does_not_write():
     rl.rebuild_ontology(r, dry_run=True)
     after = json.dumps(r.data, sort_keys=True)
     assert before == after, "dry_run mutated Redis"
+
+
+# --- extract_state lockstep -------------------------------------------------
+# (line, expected) — the same corpus tests/test_state_attribution.py pins
+# behaviorally; here it only has to be IDENTICAL across every copy, since
+# the loader's _extract_state writes the persisted state the shared
+# extract_state must reproduce at read time.
+STATE_CORPUS = [
+    ("Uttaranchal Pharmaceuticals Pvt Ltd, Roorkee-Uttarakhand", "Uttarakhand"),
+    ("M/s Orchid Bio-Tech Limited, 65, Peerpura-Delhi Highway, Roorkee- 247667 (U.K.)", "Uttarakhand"),
+    ("Goa Antibiotics & Pharmaceuticals Ltd, Solan (H.P.)-173205", "Himachal Pradesh"),
+    ("Alteus Remedies Pvt. Ltd., SIDCUL, Haridwar-249403", "Uttarakhand"),
+    ("Rani & Sons, 12/3 Shankar Road, New Delhi-110060", "Delhi"),
+    ("Mapusa Industrial Estate, Goa 403528", "Goa"),
+    ("M/s ABC Pharma Ltd, Baddi. Mfg. for XYZ Ltd, Chandigarh", "Himachal Pradesh"),
+    ("Orissa Drugs & Chemicals Limited, Kolkata", "Odisha"),
+    ("Kukreja Pharmaceuticals, Mumbai", "Maharashtra"),
+    ("Reyoung (Shanghai) ... China.", ""),
+]
+
+
+def test_extract_state_identical_across_copies():
+    ref = None
+    for rel, _, _, mod in _all_modules():
+        fn = getattr(mod, "extract_state", None) or getattr(mod, "_extract_state")
+        assert fn is not None, f"{rel} exports neither extract_state nor _extract_state"
+        for line, _ in STATE_CORPUS:
+            got = fn(line)
+            if ref is None:
+                ref = {l: fn(l) for l, _ in STATE_CORPUS}
+            assert got == ref[line], (
+                f"extract_state drift in {rel}: {line!r} -> {got!r} "
+                f"(shared/company_ontology.py -> {ref[line]!r})")
+    for line, exp in STATE_CORPUS:
+        assert ref[line] == exp, f"extract_state({line!r}) = {ref[line]!r}, expected {exp!r}"
 
 
 if __name__ == "__main__":

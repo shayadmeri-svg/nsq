@@ -407,6 +407,129 @@ _CITY_HINTS = {
 
 _URL_RE = re.compile(r"\b(?:https?://|www\.)[^\s,;\"'<>]+", re.IGNORECASE)
 
+# ---------------------------------------------------------------------------
+# State canonicalization + attribution layers.
+#
+# _STATE_TOKENS membership above is FROZEN: it also feeds
+# normalize_company_name's address truncation, so adding or removing tokens
+# would shift Mfg_Bin_Key. Everything below canonicalizes on OUTPUT only.
+# ---------------------------------------------------------------------------
+# Legacy spellings collapse into their modern display names; the values are
+# exactly the 36 LGD state/UT names the choropleth geojson carries.
+_STATE_CANONICAL = {
+    "andhra pradesh": "Andhra Pradesh", "arunachal pradesh": "Arunachal Pradesh",
+    "assam": "Assam", "bihar": "Bihar", "chhattisgarh": "Chhattisgarh",
+    "delhi": "Delhi", "goa": "Goa", "gujarat": "Gujarat", "haryana": "Haryana",
+    "himachal pradesh": "Himachal Pradesh",
+    "jammu and kashmir": "Jammu and Kashmir", "jammu & kashmir": "Jammu and Kashmir",
+    "jharkhand": "Jharkhand", "karnataka": "Karnataka", "kerala": "Kerala",
+    "madhya pradesh": "Madhya Pradesh", "maharashtra": "Maharashtra",
+    "manipur": "Manipur", "meghalaya": "Meghalaya", "mizoram": "Mizoram",
+    "nagaland": "Nagaland", "odisha": "Odisha", "orissa": "Odisha",
+    "punjab": "Punjab", "rajasthan": "Rajasthan", "sikkim": "Sikkim",
+    "tamil nadu": "Tamil Nadu", "telangana": "Telangana", "tripura": "Tripura",
+    "uttar pradesh": "Uttar Pradesh", "uttarakhand": "Uttarakhand",
+    "uttaranchal": "Uttarakhand", "west bengal": "West Bengal",
+    "chandigarh": "Chandigarh", "puducherry": "Puducherry",
+    "pondicherry": "Puducherry",
+    "andaman and nicobar": "Andaman and Nicobar",
+    "dadra and nagar haveli": "Dadra and Nagar Haveli and Daman and Diu",
+    "daman and diu": "Dadra and Nagar Haveli and Daman and Diu",
+    "lakshadweep": "Lakshadweep", "ladakh": "Ladakh",
+    "the government of nct of delhi": "Delhi",
+}
+# Ambiguous on their own: 'delhi' shows up inside road names
+# ('Peerpura-Delhi Highway, Roorkee') and 'goa' inside company names
+# ('Goa Antibiotics ... Solan (HP)'), so they only fire once every other
+# layer has missed. Genuine Delhi still resolves via the city map below.
+_WEAK_STATE_TOKENS = ("delhi", "goa")
+# Longest first, alphabetical tie-break — the old len-only sort made the
+# uttaranchal/uttarakhand equal-length tie process-dependent.
+_STRONG_STATE_TOKENS = tuple(
+    sorted(set(_STATE_TOKENS) - set(_WEAK_STATE_TOKENS), key=lambda s: (-len(s), s))
+)
+
+
+def _abbrev_rx(a: str, b: str) -> "re.Pattern[str]":
+    # '(u.k.)' / '(uk)' paren form, or the dotted 'H.P.-173025' tail form.
+    # The non-paren form requires the dot after the first letter, so the
+    # bare word 'uk' never matches — that is the ISO code for the United
+    # Kingdom, and some 'Manufactured By' lines are foreign (China etc.).
+    return re.compile(
+        rf"\(\s*{a}\.?\s*{b}\.?\s*\)"
+        rf"|\b{a}\.\s*{b}\.?(?=[\s\d,;)~-]|$)"
+    )
+
+
+_STATE_ABBREV = (
+    (_abbrev_rx("u", "k"), "uttarakhand"),
+    (_abbrev_rx("h", "p"), "himachal pradesh"),
+    (_abbrev_rx("m", "p"), "madhya pradesh"),
+    (_abbrev_rx("u", "p"), "uttar pradesh"),
+)
+# Lines can carry a second, MARKETER's address ('mfg ... mrk. by X,
+# Chandigarh') whose state must not win. Cut the scan at the first
+# marketed-by / mfg-for marker — never at 'mfg. by', which some lines
+# begin with.
+_MARKETED_BY_RE = re.compile(
+    r"\b(?:(?:mrk|mrkt|mkt)\.?\s*(?:by|:)|marketed\s+by"
+    r"|(?:mfg|manuf[ae]ctured)\.?\s*for)\b"
+)
+# City -> state, independent of _CITY_HINTS (which feeds
+# normalize_company_name — never add cities here expecting bin-key
+# effects, and never feed this map into normalize). Ambiguity calls:
+# aurangabad -> Maharashtra (Chh. Sambhajinagar pharma cluster), una ->
+# Himachal, kota -> Rajasthan, salem -> Tamil Nadu.
+_CITY_STATE = {
+    "Uttarakhand": (
+        "haridwar roorkee roorke dehradun rudrapur kashipur kotdwar haldwani "
+        "pantnagar sitarganj kichha khatima bhimtal selaqui selakui bhagwanpur "
+        "manglour ranipur tanakpur"
+    ).split(),
+    "Himachal Pradesh": (
+        "baddi solan nahan sirmaur kala amb parwanoo kangra una mandi "
+        "subathu nalagarh paonta sahib ponta sahib jharmajri mehatpur barog"
+    ).split(),
+    "Punjab": "mohali ludhiana amritsar jalandhar patiala zirakpur sahnewal dera bassi".split(),
+    "Haryana": "gurugram gurgaon faridabad manesar sonipat karnal ambala".split(),
+    "Rajasthan": "jaipur jodhpur udaipur kota bikaner alwar bhiwadi".split(),
+    "Uttar Pradesh": (
+        "lucknow kanpur agra varanasi prayagraj allahabad meerut saharanpur "
+        "noida greater noida ghaziabad"
+    ).split(),
+    "Delhi": "delhi new delhi".split(),
+    "Maharashtra": (
+        "mumbai pune nashik aurangabad tarapur boisar palghar raigad thane "
+        "mahalunge chakan nagpur"
+    ).split(),
+    "Madhya Pradesh": "indore bhopal dewas mandideep pithampur".split(),
+    "Gujarat": "ahmedabad vadodara baroda surat rajkot bhavnagar mehsana kadi sanand".split(),
+    "Karnataka": "bengaluru bangalore mysore mysuru mangalore hubli belgaum tumkur".split(),
+    "Tamil Nadu": (
+        "chennai coimbatore madurai salem trichy chengalpattu sriperumbudur hosur"
+    ).split(),
+    "Telangana": "hyderabad secunderabad warangal".split(),
+    "Andhra Pradesh": "visakhapatnam vijayawada guntur nellore".split(),
+    "Kerala": "kochi cochin trivandrum thiruvananthapuram kozhikode calicut".split(),
+    "West Bengal": "kolkata howrah siliguri".split(),
+    "Odisha": "bhubaneswar cuttack".split(),
+    "Bihar": "patna gaya".split(),
+    "Assam": "guwahati dispur".split(),
+    "Sikkim": "gangtok".split(),
+    "Goa": "panaji margao".split(),
+    "Chandigarh": "chandigarh".split(),
+    "Jammu and Kashmir": "jammu srinagar kathua".split(),
+}
+_CITY_STATE_OF = {
+    city: state
+    for state, cities in _CITY_STATE.items()
+    for city in cities
+}
+_CITY_STATE_RX = {
+    city: re.compile(r"\b" + re.escape(city) + r"\b")
+    for city in _CITY_STATE_OF
+}
+
 # Optional — only used if rapidfuzz is installed. Falling back to a
 # slower token-Jaccard is fine for a 2,800-row dataset.
 try:
@@ -499,12 +622,51 @@ def _extract_city(line: str) -> str:
 
 
 def _extract_state(line: str) -> str:
+    """Best-effort state extraction from a 'Manufactured By' line.
+
+    Layers, most specific first:
+      1. Truncate at a marketed-by / mfg-for marker — some lines carry a
+         second, marketer's address whose state must not win.
+      2. Strong state tokens, longest first with a deterministic
+         alphabetical tie-break (the old len-only sort made the
+         uttaranchal/uttarakhand tie process-dependent).
+      3. State abbreviations — (u.k.), (hp), H.P.-173025 — never the
+         bare word 'uk' (United Kingdom, seen on imported-drug lines).
+      4. Known city -> state, LATEST position in the line (CDSCO
+         addresses end with the plant city-PIN; road-name cities like
+         'Delhi Road' precede it). Longest city wins ties.
+      5. Weak tokens {delhi, goa} — they appear inside road names and
+         company names, so they only fire when nothing else matched.
+
+    The result is canonicalized through _STATE_CANONICAL, so legacy
+    spellings collapse: 'uttaranchal' -> Uttarakhand, 'orissa' -> Odisha,
+    'jammu & kashmir' -> 'Jammu and Kashmir'.
+    MUST stay in lockstep with shared/company_ontology.py extract_state().
+    """
     if not line:
         return ""
     t = _strip_accents(str(line).lower())
-    for s in sorted(_STATE_TOKENS, key=len, reverse=True):
+    m = _MARKETED_BY_RE.search(t)
+    if m and m.start() > 0:
+        t = t[:m.start()]
+    for s in _STRONG_STATE_TOKENS:
         if s in t:
-            return s.title().replace("&", "and")
+            return _STATE_CANONICAL[s]
+    for rx, token in _STATE_ABBREV:
+        if rx.search(t):
+            return _STATE_CANONICAL[token]
+    best_pos, best_state = -1, ""
+    for city in sorted(_CITY_STATE_RX, key=len, reverse=True):
+        m = None
+        for m in _CITY_STATE_RX[city].finditer(t):
+            pass
+        if m is not None and m.start() > best_pos:
+            best_pos, best_state = m.start(), _CITY_STATE_OF[city]
+    if best_state:
+        return best_state
+    for s in _WEAK_STATE_TOKENS:
+        if s in t:
+            return _STATE_CANONICAL[s]
     return ""
 
 

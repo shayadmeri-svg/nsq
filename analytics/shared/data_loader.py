@@ -417,9 +417,12 @@ def _load_and_preprocess() -> pd.DataFrame:
     df["Parsed_Date"] = pd.to_datetime(df["Reporting Month & Year"], format="%b-%Y", errors="coerce")
 
     # 10. Extract Indian State from "Manufactured By". State extraction is
-    # consolidated in company_ontology.extract_state (state-name match then
-    # city -> state map); it returns "" for no match. Step 11 overrides
-    # this with the ontology state when a Redis prediction is available.
+    # consolidated in company_ontology.extract_state — it layers a
+    # marketed-by truncation, state-name tokens, parenthesized
+    # abbreviations ((U.K.), (H.P.), H.P.-173025) and a city -> state
+    # map, and canonicalizes legacy spellings ('uttaranchal' ->
+    # Uttarakhand); it returns "" for no match. Step 11 overrides this
+    # with the ontology state when a Redis prediction is available.
     df["Mfg_State"] = df["Manufactured By"].apply(extract_state)
 
     # 11. Read pre-computed predictions from Redis if available.

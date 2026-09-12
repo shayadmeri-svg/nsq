@@ -16,6 +16,7 @@ from company_ontology import (  # noqa: E402
     load_ontology,
     load_product_ontology,
     normalize_company_name,
+    canonical_state_name,
 )
 from data_loader import (  # noqa: E402
     load_and_preprocess_data,
@@ -1188,28 +1189,15 @@ def load_india_geojson():
 
     return None
 
-# Map dataset state names to GeoJSON NAME_1 values
-GEOJSON_NAME_MAP = {
-    'Odisha': 'Orissa',
-    'Uttarakhand': 'Uttaranchal',
-    'Andaman and Nicobar': 'Andaman and Nicobar',
-    'Andhra Pradesh': 'Andhra Pradesh',
-    'Arunachal Pradesh': None,  # not in dataset
-    'Chhattisgarh': None,
-    'Delhi': None,
-    'Jharkhand': None,
-    'Lakshadweep': None,
-    'Manipur': None,
-    'Meghalaya': None,
-    'Mizoram': None,
-    'Nagaland': None,
-    'Tripura': None,
-}
-
+# Map dataset state names to GeoJSON NAME_1 values. The geojson carries the
+# modern 36-state LGD names and extract_state() canonicalizes to them, so
+# this is now a legacy-value bridge (e.g. a stale persisted prediction from
+# before the canonical rebuild) rather than an alias table — canonical
+# names pass through unchanged, unknown values drop out via dropna below.
 def to_geojson_name(state):
-    if state in GEOJSON_NAME_MAP:
-        return GEOJSON_NAME_MAP[state]
-    return state if state else None
+    if not state:
+        return None
+    return canonical_state_name(state) or None
 
 try:
     df_raw = load_and_preprocess_data()
@@ -1505,11 +1493,27 @@ with tab2:
     # Map dataset state names to GeoJSON NAME_1 values
     state_df['Geo_Name'] = state_df['Indian State / Origin Region'].apply(to_geojson_name)
     state_df = state_df.dropna(subset=['Geo_Name'])
+    # Legacy raw spellings can map onto one canonical name (Uttaranchal +
+    # Uttarakhand) — collapse them so counts aggregate, not duplicate rows.
+    state_df = (
+        state_df.groupby('Geo_Name', as_index=False)
+        .agg({'Recorded Anomalies': 'sum', 'Indian State / Origin Region': 'first'})
+    )
 
     try:
         india_geo = load_india_geojson()
         if india_geo is None:
             raise FileNotFoundError("no geojson available from Redis or local file")
+        # Render EVERY state/UT: zero-record states (Manipur, Mizoram, ...)
+        # sit at the bottom of the scale instead of vanishing from the map.
+        # NaN counts would DROP features in px.choropleth, so fill with 0.
+        all_states = [f['properties']['NAME_1'] for f in india_geo['features']]
+        counts_by_state = dict(zip(state_df['Geo_Name'], state_df['Recorded Anomalies']))
+        state_df = pd.DataFrame({
+            'Indian State / Origin Region': all_states,
+            'Geo_Name': all_states,
+            'Recorded Anomalies': [int(counts_by_state.get(s, 0)) for s in all_states],
+        })
         fig_geo = px.choropleth(
             state_df,
             geojson=india_geo,

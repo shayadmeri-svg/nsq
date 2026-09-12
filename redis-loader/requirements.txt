@@ -1,2 +1,5 @@
 redis==5.0.8
 pydantic==2.9.2
+# build_states_geojson.py only (LGD parquet read + geometry simplify).
+pyarrow>=14
+shapely>=2.0
