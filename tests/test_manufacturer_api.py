@@ -66,11 +66,25 @@ def test_config(client):
     r = client.get("/api/manufacturer/config")
     assert r.status_code == 200
     body = r.json()
-    assert [t["key"] for t in body["tenants"]] == [TENANT]
-    t = body["tenants"][0]
+    # Registry: every manufacturer in the ontology, ordered by alert count
+    # descending so the ones with something to look at lead a list that is
+    # thousands long. Unique keys; the curated demo tenant is present with
+    # its verified fields; personas unchanged.
+    assert body["tenant_count"] == len(body["tenants"])
+    assert len(body["tenants"]) == len({t["key"] for t in body["tenants"]})
+    by_key = {t["key"]: t for t in body["tenants"]}
+    assert TENANT in by_key
+    t = by_key[TENANT]
     assert t["canonical"] == "Regent Ajanta Biotech"
     assert t["ontology_key"] == "regent ajanta"
     assert body["personas"] == ["QA", "Regulatory", "Executive"]
+    counts = [t["record_count"] for t in body["tenants"]]
+    assert counts == sorted(counts, reverse=True)
+    # With Redis reachable the registry expands to every company in the
+    # ontology (all_tenants: CURATED + ontology tenants — the multi-tenant
+    # contract); without Redis it falls back to CURATED alone.
+    if _redis_reachable():
+        assert len(body["tenants"]) > 1
 
 
 def test_dashboard_unknown_tenant_404(client):
