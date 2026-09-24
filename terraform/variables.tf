@@ -70,3 +70,16 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "app_ingress_cidrs" {
+  description = <<-EOT
+    CIDRs allowed to reach the newer app ports: the Q-engine gateway (8080),
+    the legacy Streamlit manufacturer (8503), and the engine API (8000).
+    Defaults to open, matching the existing 8501/8502 rules — but the engine
+    is unauthenticated and the manufacturer sign-in is a gate, not auth, so
+    narrowing this to your own IP (e.g. ["203.0.113.4/32"]) is strongly
+    recommended for anything but a throwaway demo box.
+  EOT
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}

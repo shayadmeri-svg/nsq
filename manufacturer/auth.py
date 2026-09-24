@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from tenants import REGISTRY, Tenant, get_active_tenant, get_tenant
+from tenants import Tenant, all_tenants, get_active_tenant, get_tenant
 
 # The three Q-engine personas (QA / Regulatory / Executive).
 PERSONAS: tuple[str, ...] = ("QA", "Regulatory", "Executive")
@@ -59,6 +59,10 @@ def sign_out() -> None:
 
 
 def tenant_choices() -> list[tuple[str, str]]:
-    """(tenant_key, display_label) pairs for the sign-in manufacturer
-    select, in registry order."""
-    return [(t.key, f"{t.canonical} — {t.city}") for t in REGISTRY]
+    """(tenant_key, display_label) pairs for the sign-in manufacturer select.
+
+    Every manufacturer in the ontology, not a one-entry tuple — curated
+    tenants first, then alphabetical. Streamlit's selectbox filters as you
+    type, which is what makes a list this long usable.
+    """
+    return [(t.key, f"{t.canonical} — {t.city}") for t in all_tenants()]

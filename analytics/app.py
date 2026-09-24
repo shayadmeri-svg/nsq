@@ -1189,15 +1189,66 @@ def load_india_geojson():
 
     return None
 
-# Map dataset state names to GeoJSON NAME_1 values. The geojson carries the
-# modern 36-state LGD names and extract_state() canonicalizes to them, so
-# this is now a legacy-value bridge (e.g. a stale persisted prediction from
-# before the canonical rebuild) rather than an alias table — canonical
-# names pass through unchanged, unknown values drop out via dropna below.
-def to_geojson_name(state):
-    if not state:
-        return None
-    return canonical_state_name(state) or None
+# -----------------------------------------------------------------------------
+# Dataset state name -> GeoJSON NAME_1 resolution
+# -----------------------------------------------------------------------------
+# extract_state() canonicalizes dataset states to the modern 36-state LGD
+# names, and the committed GeoJSON (built from data/LGD_States.parquet by
+# redis-loader/build_states_geojson.py) carries the same names, so
+# resolution is a lookup against the file's own NAME_1 values.
+# canonical_state_name() bridges legacy spellings still persisted in older
+# predictions ("Orissa", "Uttaranchal", "Jammu And Kashmir"); unknown values
+# pass through it unchanged and drop out of the index below, to be
+# surfaced as unmapped rather than silently deleted.
+#
+# This used to be a hand-written dict that mapped ten real states to None with
+# the comment "not in dataset" — Arunachal Pradesh, Chhattisgarh, Delhi,
+# Jharkhand, Lakshadweep, Manipur, Meghalaya, Mizoram, Nagaland and Tripura.
+# All ten ARE in the GeoJSON, so any manufacturer in those states was silently
+# deleted from the choropleth the moment the dataset grew to include them. It
+# also compared raw strings, while extract_state() returns .title()-cased
+# values ("Jammu And Kashmir" never equalled the GeoJSON's "Jammu and
+# Kashmir"). Building the index from the file itself means swapping in a
+# different boundary export needs no code change here.
+
+
+def _norm_state(name) -> str:
+    """Lowercase, expand '&', drop punctuation, collapse whitespace."""
+    if not name:
+        return ""
+    s = str(name).lower().replace("&", " and ")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return " ".join(s.split())
+
+
+def build_state_resolver(geo: dict | None):
+    """Return (resolve, known_names) for a GeoJSON of Indian states.
+
+    ``resolve(state)`` first canonicalizes to the modern LGD state names
+    (bridging legacy spellings via canonical_state_name), then matches
+    case- and punctuation-insensitively against the GeoJSON's own NAME_1
+    values — so the same code resolves against the committed 36-feature
+    LGD file or an older export. It gives the exact NAME_1 string to plot
+    against, or None when that state genuinely has no feature in the
+    file. Callers should surface the Nones rather than dropping them
+    silently — a state missing from the map is a data-coverage fact the
+    user needs to see.
+    """
+    index: dict[str, str] = {}
+    for feat in (geo or {}).get("features", []):
+        name = (feat.get("properties") or {}).get("NAME_1")
+        if name:
+            index[_norm_state(name)] = name
+
+    def resolve(state):
+        if not state:
+            return None
+        # Legacy spellings -> modern LGD name; unknown values pass through
+        # unchanged and drop out via the index lookup.
+        canon = canonical_state_name(state)
+        return index.get(_norm_state(canon))
+
+    return resolve, sorted(index.values())
 
 try:
     df_raw = load_and_preprocess_data()
@@ -1490,44 +1541,71 @@ with tab2:
     st.subheader("Incident Origins — Indian Political Map")
     state_df = df_filtered['Mfg_State'].value_counts().reset_index()
     state_df.columns = ['Indian State / Origin Region', 'Recorded Anomalies']
-    # Map dataset state names to GeoJSON NAME_1 values
-    state_df['Geo_Name'] = state_df['Indian State / Origin Region'].apply(to_geojson_name)
-    state_df = state_df.dropna(subset=['Geo_Name'])
-    # Legacy raw spellings can map onto one canonical name (Uttaranchal +
-    # Uttarakhand) — collapse them so counts aggregate, not duplicate rows.
-    state_df = (
-        state_df.groupby('Geo_Name', as_index=False)
-        .agg({'Recorded Anomalies': 'sum', 'Indian State / Origin Region': 'first'})
-    )
 
     try:
         india_geo = load_india_geojson()
         if india_geo is None:
             raise FileNotFoundError("no geojson available from Redis or local file")
-        # Render EVERY state/UT: zero-record states (Manipur, Mizoram, ...)
-        # sit at the bottom of the scale instead of vanishing from the map.
-        # NaN counts would DROP features in px.choropleth, so fill with 0.
-        all_states = [f['properties']['NAME_1'] for f in india_geo['features']]
-        counts_by_state = dict(zip(state_df['Geo_Name'], state_df['Recorded Anomalies']))
-        state_df = pd.DataFrame({
-            'Indian State / Origin Region': all_states,
-            'Geo_Name': all_states,
-            'Recorded Anomalies': [int(counts_by_state.get(s, 0)) for s in all_states],
-        })
+        # Resolve against the GeoJSON's own NAME_1 values (see
+        # build_state_resolver): canonical-name bridge, case-insensitive,
+        # and it never drops a state that the file actually contains.
+        _resolve, _known_states = build_state_resolver(india_geo)
+        state_df['Geo_Name'] = state_df['Indian State / Origin Region'].apply(_resolve)
+
+        # States with alerts that this GeoJSON has no polygon for. With the
+        # 36-feature LGD file this should be empty — a non-empty set means a
+        # state name extract_state never canonicalized, which is worth
+        # seeing rather than silently deleting. Show them.
+        # NB: state_df itself is left complete — the companion bar chart below
+        # must still show every state, mapped or not.
+        unmapped = state_df[state_df['Geo_Name'].isna()]
+        mapped_df = state_df.dropna(subset=['Geo_Name'])
+
+        # Legacy raw spellings can map onto one canonical name (Uttaranchal +
+        # Uttarakhand) — collapse them so counts aggregate, not duplicate rows.
+        mapped_df = (
+            mapped_df.groupby('Geo_Name', as_index=False)
+            .agg({'Recorded Anomalies': 'sum', 'Indian State / Origin Region': 'first'})
+        )
+
+        # Draw EVERY state and UT, not just the ones with alerts. Plotly's
+        # choropleth only renders features it has a row for, so passing only
+        # the states with data silently cut the rest of the country out of
+        # the map — most visibly the seven north-eastern states, which have few or
+        # no NSQ alerts. A state with no alerts is a real, meaningful result
+        # ("nothing reported here"), not a reason to omit it from a map of
+        # India. Every missing state is added with a count of 0 so it renders
+        # in the palette's lightest step.
+        _all_states = pd.DataFrame({'Geo_Name': _known_states})
+        mapped_df = (
+            _all_states
+            .merge(mapped_df, on='Geo_Name', how='left')
+            .assign(**{
+                'Recorded Anomalies': lambda d: d['Recorded Anomalies'].fillna(0).astype(int),
+                'Indian State / Origin Region': lambda d: (
+                    d['Indian State / Origin Region'].fillna(d['Geo_Name'])
+                ),
+            })
+        )
         fig_geo = px.choropleth(
-            state_df,
+            mapped_df,
             geojson=india_geo,
             locations='Geo_Name',
             featureidkey='properties.NAME_1',
             color='Recorded Anomalies',
             color_continuous_scale=_SCIENTIFIC_CONTINUOUS,
-            range_color=(0, state_df['Recorded Anomalies'].max() if len(state_df) else 1),
+            range_color=(0, mapped_df['Recorded Anomalies'].max() if len(mapped_df) else 1),
+            hover_data={'Geo_Name': False},
             labels={'Recorded Anomalies': 'Total Incident Frequency', 'Geo_Name': 'State'},
             title="Manufacturing-Origin Anomalies Mapped to Indian States",
             hover_name='Indian State / Origin Region',
         )
         fig_geo.update_geos(
-            fitbounds="locations",
+            # "geojson", not "locations": frame the whole country, not just
+            # the states that happen to have alerts in the current filter.
+            # With "locations" a filter matching two states zoomed the map to
+            # those two, which is what made it read as "not the India map".
+            fitbounds="geojson",
             visible=False,
             showcountries=False,
             showcoastlines=False,
@@ -1536,6 +1614,18 @@ with tab2:
         )
         fig_geo.update_layout(margin={"r": 0, "t": 50, "l": 0, "b": 0}, height=600)
         st.plotly_chart(fig_geo, use_container_width=True)
+
+        if not unmapped.empty:
+            rows = ", ".join(
+                f"{r['Indian State / Origin Region']} ({int(r['Recorded Anomalies'])})"
+                for _, r in unmapped.iterrows()
+            )
+            st.caption(
+                f"⚠️ Not shown on the map — these state values did not resolve "
+                f"to a polygon in the current boundary file "
+                f"({len(_known_states)} LGD features): {rows}. Their alert "
+                f"counts are included in the bar chart below."
+            )
     except FileNotFoundError:
         st.warning(
             "India GeoJSON not found in Redis (key 'geo:india_states') or locally. "
@@ -1796,16 +1886,54 @@ with tab4:
     if sort_col != "None":
         display_ledger = display_ledger.sort_values(by=sort_col, ascending=(sort_order == "Ascending"))
         
-    st.dataframe(display_ledger, use_container_width=True, hide_index=True)
-    
-    # Download Button utilities
-    csv_bytes = display_ledger.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Export Screened Data Subset to CSV Format",
-        data=csv_bytes,
-        file_name="CDSCO_Screened_Dissolution_Subset.csv",
-        mime="text/csv"
+    # ---- Paged ledger -------------------------------------------------------
+    # This used to be `st.dataframe(display_ledger)` over the whole filtered
+    # frame. Streamlit serialises a dataframe to Arrow and pushes it down the
+    # websocket on EVERY rerun, and st.tabs renders every tab eagerly — so all
+    # 5,619 rows were shipped on each widget click even when the user was
+    # looking at tab 1. Measured on the deployed box: 5.66 MB and 8.4 s per
+    # click, of which this was the overwhelming majority.
+    LEDGER_PAGE_ROWS = 250
+    total_rows = len(display_ledger)
+    page_count = max(1, (total_rows + LEDGER_PAGE_ROWS - 1) // LEDGER_PAGE_ROWS)
+
+    if page_count > 1:
+        page = st.number_input(
+            f"Page (250 rows each, {page_count} pages)",
+            min_value=1, max_value=page_count, value=1, step=1,
+            key="ledger_page",
+        )
+    else:
+        page = 1
+
+    start = (int(page) - 1) * LEDGER_PAGE_ROWS
+    st.dataframe(
+        display_ledger.iloc[start:start + LEDGER_PAGE_ROWS],
+        use_container_width=True,
+        hide_index=True,
     )
+    if total_rows:
+        st.caption(
+            f"Rows {start + 1:,}–{min(start + LEDGER_PAGE_ROWS, total_rows):,} "
+            f"of {total_rows:,} matching the active filters."
+        )
+    else:
+        st.caption("No rows match the active filters.")
+
+    # ---- CSV export, built on demand ---------------------------------------
+    # to_csv() over the full frame ran on every rerun too, and Streamlit then
+    # served the ~1 MB result as a /media file whether or not anyone clicked
+    # it. Building it only when asked keeps it off the hot path.
+    if st.checkbox("Prepare CSV export", key="ledger_prepare_csv"):
+        csv_bytes = display_ledger.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label=f"📥 Download all {total_rows:,} screened rows as CSV",
+            data=csv_bytes,
+            file_name="CDSCO_Screened_Dissolution_Subset.csv",
+            mime="text/csv",
+        )
+    else:
+        st.caption(f"Tick to build a CSV of all {total_rows:,} filtered rows.")
 
 # -----------------------------------------------------------------------------
 # TAB 5: PRODUCT → MANUFACTURER INVESTIGATION

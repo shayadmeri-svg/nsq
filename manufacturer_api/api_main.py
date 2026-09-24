@@ -57,7 +57,7 @@ sys.path.insert(0, _HERE)
 import data_loader  # noqa: E402
 from diagnostics_core import Diagnosis, build_diagnosis  # noqa: E402
 from tenant_scope import tenant_display, tenant_period, tenant_product_count  # noqa: E402
-from tenants import REGISTRY, Tenant, get_tenant  # noqa: E402
+from tenants import CURATED, Tenant, all_tenants, get_tenant  # noqa: E402
 from ui.charts import (  # noqa: E402
     bar_by_form,
     donut_issue_by_type,
@@ -98,11 +98,15 @@ def _scoped_frame(tenant: Tenant) -> pd.DataFrame:
 def _tenant_or_404(tenant_key: str) -> Tenant:
     t = get_tenant(tenant_key)
     if t is None:
+        # The registry is ontology-sized now, so don't dump every key into
+        # the error — name the curated ones and point at /config.
         raise HTTPException(
             status_code=404,
             detail=(
-                f"Unknown tenant {tenant_key!r}. Available: "
-                f"{[t.key for t in REGISTRY]}"
+                f"Unknown tenant {tenant_key!r}. Curated keys: "
+                f"{[c.key for c in CURATED]}. The full list "
+                f"({len(all_tenants())} manufacturers) is at "
+                f"GET /api/manufacturer/config."
             ),
         )
     return t
@@ -219,13 +223,42 @@ def health():
 
 @app.get("/api/manufacturer/config")
 def config():
-    """Sign-in choices: the tenant registry + the persona set."""
+    """Sign-in choices: every manufacturer in the ontology + the persona set.
+
+    Ordered by alert count descending so the manufacturers with something to
+    look at are at the top of a list that is thousands long. ``record_count``
+    is the number of NSQ alerts scoped to that tenant; ``raw_names`` are the
+    distinct "Manufactured By" spellings the ontology folded into the key —
+    more than one unrelated name there means the normalizer merged separate
+    companies, which the client is expected to show (see tenants.py).
+    """
+    tenants = all_tenants()
+
+    # One groupby over the already-cached frame, not one filter per tenant.
+    df = _cached_frame()
+    counts = (
+        df["Mfg_Ontology_Key"].value_counts().to_dict()
+        if not df.empty and "Mfg_Ontology_Key" in df.columns
+        else {}
+    )
+
+    payload = [
+        {
+            "key": t.key,
+            "canonical": t.canonical,
+            "city": t.city,
+            "ontology_key": t.ontology_key,
+            "record_count": int(counts.get(t.ontology_key, 0)),
+            "raw_names": list(t.raw_names),
+        }
+        for t in tenants
+    ]
+    payload.sort(key=lambda d: (-d["record_count"], d["canonical"].lower()))
+
     return {
-        "tenants": [
-            {"key": t.key, "canonical": t.canonical, "city": t.city, "ontology_key": t.ontology_key}
-            for t in REGISTRY
-        ],
+        "tenants": payload,
         "personas": list(PERSONAS),
+        "tenant_count": len(payload),
     }
 
 

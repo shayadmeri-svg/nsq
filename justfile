@@ -14,8 +14,17 @@ set dotenv-filename := ".env"
 
 LOADER := "redis-loader"
 INPUT := env_var_or_default("NSQ_JSON", "data/publicNsqDrugTable.json")
+# The cumulative CDSCO export. Redis (the prod cluster) is the source of
+# truth for the running apps; this CSV is the input that *builds* that state.
+# It is gitignored (data/*.csv), so a fresh clone will not have it — the
+# _require-csv guard below fails with the expected path instead of a pandas
+# stack trace. shared/nsq_redis.py's _DEFAULT_CSV must match this.
 CSV := env_var_or_default("NSQ_CSV", "data/CDSCO Not of Standard Quality (NSQ) Jan 21-Jul 26.csv")
 AUGMENT := env_var_or_default("NSQ_AUGMENT", "1")
+# Destructive recipes (anything passing --flush) wipe the nsq:* keyspace in
+# whatever Redis $REDIS_URL points at — which is the prod Upstash cluster in
+# the local .env. They refuse to run unless this is "yes".
+CONFIRM_FLUSH := env_var_or_default("CONFIRM_FLUSH", "no")
 CDSCO_URL := env_var_or_default("CDSCO_URL", "https://cdscoonline.gov.in/CDSCO/publicNsqDrugTable")
 GEOJSON := env_var_or_default("GEOJSON_FILE", "analytics/india_states_slim.geojson")
 GEOJSON_KEY := env_var_or_default("GEOJSON_KEY", "geo:india_states")
@@ -36,17 +45,46 @@ ping:
     cd {{LOADER}} && .venv/bin/python ping_redis.py
 
 # Load {{INPUT}} into Redis (additive — keeps any existing nsq:* keys)
-load:
+# --- guards ---------------------------------------------------------------
+# Private helpers (leading _). Every recipe that reads an input file or wipes
+# Redis depends on one of these, so a missing file or an unintended flush
+# fails with a sentence instead of a stack trace or silent data loss.
+
+_require-csv:
+    @test -f "{{CSV}}" || { \
+      echo "ERROR: CSV not found: {{CSV}}"; \
+      echo "  data/*.csv is gitignored, so a fresh clone will not have it."; \
+      echo "  Redis is the source of truth for the running apps — this file is"; \
+      echo "  only needed to rebuild that state. Point at another file with:"; \
+      echo "    NSQ_CSV='data/your-export.csv' just <recipe>"; \
+      exit 1; }
+
+_require-json:
+    @test -f "{{INPUT}}" || { \
+      echo "ERROR: JSON input not found: {{INPUT}}"; \
+      echo "  Override with: NSQ_JSON='data/your-export.json' just <recipe>"; \
+      exit 1; }
+
+_confirm-flush:
+    @test "{{CONFIRM_FLUSH}}" = "yes" || { \
+      echo "REFUSING: this recipe wipes the nsq:* keyspace in \$REDIS_URL,"; \
+      echo "  which .env points at the prod Redis cluster. The apps read their"; \
+      echo "  data from there, not from the CSV."; \
+      echo "  Re-run with CONFIRM_FLUSH=yes if that is what you mean:"; \
+      echo "    CONFIRM_FLUSH=yes just <recipe>"; \
+      exit 1; }
+
+load: _require-json && build-frame
     cd {{LOADER}} && .venv/bin/python load_nsq_redis.py --input "../{{INPUT}}" --redis-url "$REDIS_URL"
 
 # Load {{INPUT}} into Redis, wiping existing nsq:* keys first
-reload:
+reload: _require-json _confirm-flush && build-frame
     cd {{LOADER}} && .venv/bin/python load_nsq_redis.py --input "../{{INPUT}}" --redis-url "$REDIS_URL" --flush
 
 # Load {{CSV}} into Redis (additive, augment=ON by default — populates
 # nsq:record:* + nsq:prediction:* + nsq:ontology:companies in one pass).
 # Set NSQ_AUGMENT=0 to skip augmentation (raw records only).
-load-csv:
+load-csv: _require-csv && build-product-ontology build-frame
     cd {{LOADER}} && .venv/bin/python load_csv_redis.py --input "../{{CSV}}" --redis-url "$REDIS_URL" --augment {{AUGMENT}}
 
 # Wipe nsq:* keys and reload {{CSV}} with augmentation. The --flush is
@@ -56,14 +94,41 @@ load-csv:
 # the result is independent of row order). record_id() is a hash of
 # (batch_no, product_name, reporting_month, lab) — a non-flush reload
 # would leave stale un-harmonized rows and old-key records in Redis.
-reload-csv:
+reload-csv: _require-csv _confirm-flush && build-product-ontology build-frame
     cd {{LOADER}} && .venv/bin/python load_csv_redis.py --input "../{{CSV}}" --redis-url "$REDIS_URL" --flush --augment {{AUGMENT}}
 
 # Deterministic monthly refresh: when a new CDSCO notification lands,
 # append its rows to the cumulative CSV ({{CSV}}), then run this. Wipes
 # and rebuilds records, predictions, BOTH ontologies, and re-seeds the
 # product ontology — the whole nsq:* state is a pure function of the CSV.
-refresh-csv: reload-csv build-product-ontology verify
+refresh-csv: reload-csv verify
+
+# Pre-compute the enriched NSQ frame into Redis (nsq:frame:enriched).
+#
+# This is the single biggest lever on how the apps feel. The enrichment
+# (ontology joins + per-row fuzzy product resolution over ~5,600 rows) used to
+# run inside the Streamlit render, behind a 5-minute cache: 33.5s to first
+# paint cold, 13.4s warm, on the deployed box. Precomputed, the apps do one
+# Redis GET instead.
+#
+# Runs inside the analytics image so it does not need pandas/pyarrow/rapidfuzz
+# on your machine — which matters on Python 3.14, where several of those have
+# no wheels yet. Run it after anything that changes nsq:record:* (refresh-csv
+# chains it). Forgetting is safe: the frame carries the record count it was
+# built from, and the apps fall back to computing when that no longer matches.
+# NB: no --redis-url. The analytics service already receives REDIS_URL from
+# .env via compose, and the script defaults to it — so this works on a box
+# where the shell has never exported it (e.g. the EC2 host, where `just`
+# itself is not installed and you run the docker command by hand).
+build-frame:
+    @command -v docker >/dev/null 2>&1 || { \
+      echo "WARNING: docker not found — the enriched frame was NOT rebuilt."; \
+      echo "  The apps will fall back to computing it (~55s per cold cache)"; \
+      echo "  until you run 'just build-frame' somewhere with docker."; \
+      exit 0; }
+    docker compose run --rm --no-deps \
+      -v "$PWD/redis-loader/build_enriched_frame.py:/app/build_enriched_frame.py:ro" \
+      --entrypoint python3 analytics /app/build_enriched_frame.py
 
 # Refresh the PRODUCTION (Upstash) Redis with the latest CSV. deploy.sh only
 # ships code — it does NOT load data — so this is the prod data-refresh step.
@@ -95,14 +160,14 @@ snapshot-prod:
 
 # Dry-run: parse the CSV and print what would be written for the first 3
 # rows. No Redis connection required.
-load-csv-dry:
+load-csv-dry: _require-csv
     cd {{LOADER}} && .venv/bin/python load_csv_redis.py --input "../{{CSV}}" --dry-run
 
 # Pre-fill the product ontology (nsq:ontology:products) by ingesting
 # every product name in the CSV. Idempotent. The analytics dashboard
 # otherwise grows the ontology lazily during its first 5-minute cache
 # miss — this is faster for cold starts.
-build-product-ontology:
+build-product-ontology: _require-csv
     cd {{LOADER}} && .venv/bin/python build_product_ontology.py --input "../{{CSV}}" --redis-url "$REDIS_URL"
 
 # Quick sanity check: count loaded records and show one sample
@@ -140,6 +205,12 @@ sync-shared:
     cp shared/ich_registry.py manufacturer/shared/ich_registry.py
     cp shared/us_regulatory_data.py analytics/shared/us_regulatory_data.py
     cp shared/us_regulatory_data.py manufacturer/shared/us_regulatory_data.py
+    # streamlit_entry.py: the container ENTRYPOINT launcher (quiets the
+    # WebSocketClosedError flood). Streamlit services only — engine has no
+    # Streamlit.
+    cp shared/streamlit_entry.py analytics/shared/streamlit_entry.py
+    cp shared/streamlit_entry.py simulator/shared/streamlit_entry.py
+    cp shared/streamlit_entry.py manufacturer/shared/streamlit_entry.py
     @echo "Synced. Verify with: git diff --stat analytics/shared simulator/shared engine/shared manufacturer/shared"
 
 # Sync the manufacturer_api vendored copies. The API shares the headless
@@ -184,13 +255,13 @@ load-intelligence: load-patents load-plant-assets load-regulatory load-demand
 
 # Run the analytics Streamlit app locally on port 8501
 run-analytics:
-    cd analytics && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" python3 -m streamlit run app.py --server.headless=true --server.port=8501
+    cd analytics && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" python3 shared/streamlit_entry.py run app.py --server.headless=true --server.port=8501
 
 # Run the manufacturer (tenant) Streamlit app locally on port 8503.
 # Uses the simulator venv (streamlit + pandas + redis + plotly installed).
 # Override the tenant with NSQ_TENANT=<key> (default: regent-ajanta-biotech).
 run-manufacturer:
-	cd manufacturer && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" ../simulator/.venv/bin/python -m streamlit run app.py --server.headless=true --server.port=8503
+	cd manufacturer && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" ../simulator/.venv/bin/python shared/streamlit_entry.py run app.py --server.headless=true --server.port=8503
 
 # Run the test suite. Uses the simulator venv (has pytest + runtime deps).
 # Forces REDIS_URL to the host-local Redis (the dev data lives on
@@ -237,7 +308,7 @@ clean:
 
 # Fetch the live CDSCO publicNsqDrugTable JSON and load it into Redis
 # (wipes existing nsq:* keys first, so Redis always reflects the latest fetch)
-fetch-cdscoonline:
+fetch-cdscoonline: && build-frame
     cd {{LOADER}} && .venv/bin/python fetch_cdsco.py --url "{{CDSCO_URL}}" --output ../{{INPUT}}
     cd {{LOADER}} && .venv/bin/python load_nsq_redis.py --input "../{{INPUT}}" --redis-url "$REDIS_URL" --flush
 
@@ -245,6 +316,17 @@ fetch-cdscoonline:
 # states file used by analytics/app.py), so it doesn't need to live in git
 push-geojson:
     cd {{LOADER}} && .venv/bin/python load_geojson_redis.py --input ../{{GEOJSON}} --key {{GEOJSON_KEY}} --redis-url "$REDIS_URL"
+
+# Shrink a boundary GeoJSON before pushing it. The choropleth's GeoJSON is
+# embedded in the Plotly figure and re-sent over the websocket on EVERY
+# Streamlit rerun, so its size is a per-interaction cost, not a one-off load.
+# The original 7.2 MB / 525k-point export went to 0.27 MB / 19k points with
+# no visible change at national zoom (docs/map_simplification_check.png).
+# Writes in place by default; run `just push-geojson` afterwards, since the
+# apps read geo:india_states from Redis before falling back to the file.
+simplify-geojson TOLERANCE="0.01":
+    cd {{LOADER}} && python3 simplify_geojson.py \
+        --input "../{{GEOJSON}}" --output "../{{GEOJSON}}" --tolerance {{TOLERANCE}}
 
 # Push the GeoJSON to Redis, then delete the local file and remove it
 # from git tracking — DESTRUCTIVE, asks for confirmation

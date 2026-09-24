@@ -25,6 +25,8 @@ import csv
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -189,10 +191,15 @@ def test_unknown_lab_name_passes_through():
 
 def test_real_file_preparation_numbers():
     """The Jan21-Jul26 file must yield the expected dedupe numbers — this is
-    the regression lock for the data swap. Skipped when the file is absent."""
+    the regression lock for the data swap.
+
+    The CSV is gitignored (data/*.csv), so it is absent on a fresh clone and
+    in CI. This used to `return` on a missing file, which reports as a PASS —
+    a regression lock that silently never ran. pytest.skip makes the absence
+    visible in the summary instead."""
     path = REPO / "data" / "CDSCO Not of Standard Quality (NSQ) Jan 21-Jul 26.csv"
     if not path.exists():
-        return
+        pytest.skip(f"cumulative CSV not present: {path.relative_to(REPO)}")
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     rl = _load_loader()

@@ -96,13 +96,19 @@ def render_signin_card() -> None:
     )
 
     choices = auth.tenant_choices()
+    # Build the label map ONCE. format_func is called per option, so the old
+    # `dict(choices)[k]` rebuilt the whole dict on every call — fine for a
+    # one-entry registry, ~2.2M operations per render now that the registry
+    # is the full ontology.
+    labels = dict(choices)
     keys = [k for k, _ in choices]
     default_idx = 0
     tenant_key = st.selectbox(
         "Manufacturer",
         options=keys,
         index=default_idx,
-        format_func=lambda k: dict(choices)[k],
+        format_func=lambda k: labels.get(k, k),
+        help=f"{len(keys)} manufacturers — type to filter.",
         key="mq_signin_tenant",
     )
     persona = st.selectbox(

@@ -10,21 +10,23 @@ them to the column names the existing analytics/simulator code already
 expects (the same names the original CSV export used), so downstream
 logic in both apps is unchanged.
 
-If Redis is unreachable or returns an empty dataset, load_dataframe()
-falls back to reading the CSV specified by NSQ_CSV (default
-'data/data Jan25_May26.csv') directly via pandas. This keeps the
-analytics app usable offline; the simulator doesn't use the fallback
-(simulator reads from the canonical Redis snapshot for its live-data
-overlay).
+Redis (the prod cluster) is the source of truth. Between Redis and the
+CSV sits a second tier: a local snapshot file (NSQ_SNAPSHOT, default
+'data/nsq_snapshot.json.gz') written by redis-loader/dump_snapshot.py.
+When Redis fails — e.g. the Upstash monthly command quota is exhausted,
+which raises redis.RedisError on every command — the snapshot serves the
+same records, predictions, ontologies and geojson Redis holds, so
+production shows data as of the last refresh instead of an empty
+dashboard.
 
-Between Redis and the CSV sits a second tier: a local snapshot file
-(NSQ_SNAPSHOT, default 'data/nsq_snapshot.json.gz') written by
-redis-loader/dump_snapshot.py. When Redis fails — e.g. the Upstash
-monthly command quota is exhausted, which raises redis.RedisError on
-every command — the snapshot serves the same records, predictions,
-ontologies and geojson Redis holds, so production shows data as of the
-last refresh instead of an empty dashboard. The CSV tier stays as the
-last resort when no snapshot exists (local dev without one).
+If Redis is unreachable or returns an empty dataset and no snapshot
+exists, load_dataframe() falls back to reading the CSV specified by
+NSQ_CSV (default the cumulative CDSCO export named in the justfile's CSV
+variable) directly via pandas. That file is gitignored (``data/*.csv``)
+and is NOT copied into the service images, so the CSV tier only ever
+fires host-side; in a container an unreachable Redis surfaces as an
+empty frame. The simulator doesn't use the CSV fallback (it reads from
+the canonical Redis snapshot for its live-data overlay).
 """
 
 from __future__ import annotations
@@ -203,6 +205,12 @@ def _load_from_snapshot() -> pd.DataFrame:
     return df
 
 
+# The one canonical CSV name in the codebase — kept identical to the
+# justfile's CSV variable so the loader recipes and this offline fallback
+# never point at different files (they used to: three names, one file).
+_DEFAULT_CSV = "data/CDSCO Not of Standard Quality (NSQ) Jan 21-Jul 26.csv"
+
+
 def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
     """Fetch every nsq:record:* hash and return it as a DataFrame.
 
@@ -211,10 +219,13 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
     working unchanged.
 
     Tiered: live Redis first; on RedisError (e.g. the Upstash monthly
-    quota) or an empty dataset, the local snapshot at $NSQ_SNAPSHOT;
-    if no snapshot exists, the CSV at $NSQ_CSV (default
-    'data/data Jan25_May26.csv') — so the analytics app still works
-    offline.
+    quota) or an empty dataset, the local snapshot at $NSQ_SNAPSHOT; if
+    no snapshot exists, the host-side CSV at $NSQ_CSV — an offline
+    convenience whose default is the same cumulative export the justfile's
+    CSV variable names, so the loader recipes and this fallback can never
+    disagree about which file is canonical. The service images do not
+    ship it (the Dockerfiles copy only app.py + shared/), so in containers
+    the CSV tier is a no-op and an empty frame is what surfaces.
     """
     try:
         r = client or get_redis_client()
@@ -228,12 +239,13 @@ def load_dataframe(client: redis.Redis | None = None) -> pd.DataFrame:
         # through unchanged rather than being dropped.
         return df
 
-    # Empty/failing Redis — try the snapshot, then the CSV fallback.
+    # Empty/failing Redis — try the snapshot, then the host-side CSV
+    # fallback (a partial slice, absent inside the service images).
     snap_df = _load_from_snapshot()
     if not snap_df.empty:
         return snap_df
 
-    csv_path = Path(os.environ.get("NSQ_CSV", "data/data Jan25_May26.csv"))
+    csv_path = Path(os.environ.get("NSQ_CSV", _DEFAULT_CSV))
     if not csv_path.is_file():
         return df
     return _load_from_csv(csv_path)
