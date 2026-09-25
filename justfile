@@ -116,8 +116,10 @@ refresh-csv: reload-csv verify
 # no wheels yet. Run it after anything that changes nsq:record:* (refresh-csv
 # chains it). Forgetting is safe: the frame carries the record count it was
 # built from, and the apps fall back to computing when that no longer matches.
-# NB: no --redis-url. The analytics service already receives REDIS_URL from
-# .env via compose, and the script defaults to it — so this works on a box
+# -e REDIS_URL: compose now points the analytics service at the in-server
+# `redis` container, but the frame belongs in the upstream Redis the loaders
+# just wrote ($REDIS_URL from .env) — pull-upstash copies it down from
+# there. NB: no --redis-url; the script defaults to REDIS_URL — so this works on a box
 # where the shell has never exported it (e.g. the EC2 host, where `just`
 # itself is not installed and you run the docker command by hand).
 build-frame:
@@ -127,8 +129,16 @@ build-frame:
       echo "  until you run 'just build-frame' somewhere with docker."; \
       exit 0; }
     docker compose run --rm --no-deps \
+      -e REDIS_URL="$REDIS_URL" \
       -v "$PWD/redis-loader/build_enriched_frame.py:/app/build_enriched_frame.py:ro" \
       --entrypoint python3 analytics /app/build_enriched_frame.py
+
+# Copy the static dataset from Upstash ($REDIS_URL) into the stack's own
+# `redis` container, then restart the services that read it. Run after
+# every data refresh (on the box: ./pull-upstash.sh — `just` isn't there).
+# The services never read Upstash directly; this is the only Upstash read.
+pull-upstash *ARGS:
+    ./pull-upstash.sh {{ARGS}}
 
 # Refresh the PRODUCTION (Upstash) Redis with the latest CSV. deploy.sh only
 # ships code — it does NOT load data — so this is the prod data-refresh step.

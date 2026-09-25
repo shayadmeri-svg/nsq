@@ -5,10 +5,11 @@
 # (ExecStart in terraform/user_data.sh.tpl), and after a `git pull` when
 # deploying new code.
 #
-# NOTE: this script ships CODE only — it does NOT load data into Redis.
-# The NSQ dataset lives in the Upstash Redis and is refreshed separately
-# with `just refresh-prod` (see README "Production data refresh"). If the
-# box shows stale data, run that step; redeploying alone won't fix it.
+# NOTE: this script ships CODE only — it does NOT load new data. The loaders
+# write the NSQ dataset to Upstash (`just refresh-prod` from a dev box), and
+# ./pull-upstash.sh copies it into this box's own `redis` container, which
+# is what the services read. Deploy seeds an EMPTY local Redis only; if the
+# box shows stale data after a refresh, run ./pull-upstash.sh.
 set -euxo pipefail
 
 APP_DIR=${APP_DIR:-/opt/nsq-platform}
@@ -44,12 +45,28 @@ fi
 # --- build + start ---------------------------------------------------------
 docker compose up -d --build
 
+# --- seed the in-server Redis on a fresh box --------------------------------
+#     The services read the stack's own `redis` container, not Upstash. On a
+#     new box (empty redis-data volume) copy the dataset down once; on every
+#     later deploy this is a no-op with zero Upstash commands. Refreshing the
+#     data after a monthly load is a separate, explicit step:
+#     ./pull-upstash.sh (see README "Production data refresh").
+#     A failure here must not fail the deploy: the apps fall back to the
+#     bundled snapshot until the pull succeeds.
+./pull-upstash.sh --only-if-empty || {
+  rc=$?
+  [ "$rc" -eq 10 ] || echo "deploy: WARNING — could not seed local Redis from Upstash (exit $rc); services will serve data/nsq_snapshot.json.gz until ./pull-upstash.sh succeeds." >&2
+}
+
 # --- restart the snapshot-mounted services ---------------------------------
 #     A data-only commit (fresh data/nsq_snapshot.json.gz) changes no image,
 #     and a single-file bind mount pins the inode — os.replace on the host
 #     leaves running containers reading the old snapshot bytes. Restarting
 #     picks up the new file. Seconds of downtime; safe to re-run.
 docker compose restart analytics manufacturer manufacturer-api
+# The gateway resolves upstream containers by name; restart it too so a
+# long-running nginx never proxies to addresses from before the rebuild.
+docker compose restart gateway
 
 # --- host nginx (optional) -------------------------------------------------
 # Nothing in this repo installs a host-level nginx: the stack's own gateway

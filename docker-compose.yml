@@ -1,15 +1,50 @@
 name: nsq-platform
 
-# Both services read live data from Redis (populated by
-# redis-loader/load_nsq_redis.py — see redis-loader/README or the
-# top-level README for that step). Set REDIS_URL in a .env file next to
-# this compose file before running `docker compose up`:
+# The services read live data from the in-server `redis` container below,
+# NOT from Upstash. Upstash (REDIS_URL in .env) is only the upstream copy
+# the loaders write to; ./pull-upstash.sh copies it into this Redis once
+# per data refresh, and deploy.sh seeds a fresh box the same way. That
+# keeps the whole stack off the Upstash monthly command quota.
 #
 #   echo 'REDIS_URL=rediss://default:PASSWORD@your-instance.upstash.io:6379' > .env
 #
-# Never commit .env — it's already gitignored.
+# Escape hatch: set NSQ_REDIS_URL in .env to point the services somewhere
+# else (e.g. straight at Upstash again). Never commit .env — it's gitignored.
 
 services:
+  # redis — the in-server copy of the static NSQ dataset that every service
+  # reads. Seeded/refreshed from Upstash by ./pull-upstash.sh; persisted in
+  # the redis-data volume (AOF), so restarts and redeploys keep the data.
+  # Internal only: no host port is published.
+  redis:
+    image: redis:7-alpine
+    container_name: nsq-redis
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "300 1"
+      # ~15 MB of data today; the cap is a guard for a small instance.
+      # noeviction: this is a datastore, not a cache — never drop keys.
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - nsq-net
+
   analytics:
     build:
       context: ./analytics
@@ -18,7 +53,7 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}
       # Local snapshot tier: served when Redis is unavailable (e.g. the
       # Upstash monthly command quota runs out). Shipped via the
       # git-tracked data/nsq_snapshot.json.gz — refresh with
@@ -26,6 +61,9 @@ services:
       - NSQ_SNAPSHOT=/app/nsq_snapshot.json.gz
     volumes:
       - ./data/nsq_snapshot.json.gz:/app/nsq_snapshot.json.gz:ro
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/analytics/_stcore/health"]
       interval: 30s
@@ -44,13 +82,15 @@ services:
     ports:
       - "8502:8502"
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}
       - CDMO_ENGINE_URL=http://engine:8000
       # Optional — paste a Gemini key to switch D3 diagnostics from the
       # local heuristic engine to live generative output. Leave unset to
       # stay fully offline.
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     depends_on:
+      redis:
+        condition: service_healthy
       analytics:
         condition: service_healthy
       engine:
@@ -73,7 +113,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -95,11 +138,14 @@ services:
     ports:
       - "8503:8503"
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}
       - NSQ_TENANT=${NSQ_TENANT:-regent-ajanta-biotech}
       - NSQ_SNAPSHOT=/app/nsq_snapshot.json.gz
     volumes:
       - ./data/nsq_snapshot.json.gz:/app/nsq_snapshot.json.gz:ro
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8503/manufacturer/_stcore/health"]
       interval: 30s
@@ -122,7 +168,7 @@ services:
     expose:
       - "8001"
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}
       # No NSQ_TENANT here, deliberately: unlike the Streamlit `manufacturer`
       # service (one container = one tenant, resolved from the env var), the
       # API takes the tenant from the request path
@@ -133,6 +179,9 @@ services:
       - NSQ_SNAPSHOT=/app/nsq_snapshot.json.gz
     volumes:
       - ./data/nsq_snapshot.json.gz:/app/nsq_snapshot.json.gz:ro
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -201,3 +250,6 @@ services:
 networks:
   nsq-net:
     driver: bridge
+
+volumes:
+  redis-data:

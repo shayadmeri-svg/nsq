@@ -363,6 +363,44 @@ Plus render-model tests for the intelligence chart vocabulary in
   `manufacturer-api` (8001) and `web` (80) stay internal to the compose
   network; the gateway is their only entrance.
 
+### In-server Redis — the services never read Upstash directly
+
+The compose stack runs its own `redis` container (`nsq-redis`, data in the
+`redis-data` volume, internal to the compose network). Every service reads
+**that**, via `REDIS_URL=redis://redis:6379/0` set in `docker-compose.yml`.
+Upstash — `REDIS_URL` in `.env` / SSM — is only the upstream copy the
+loaders write to. `./pull-upstash.sh` copies it down:
+
+| Key pattern | How it is copied |
+|---|---|
+| `nsq:*`, `geo:*` | mirrored — target made identical, stale keys deleted |
+| `cdmo:patent/regulatory/demand/plant:*` | upserted — seeds overwrite, nothing deleted |
+| `cdmo:portfolio:*`, `cdmo:complexity:*` | never — server-local runtime data |
+
+One pull costs ~23k Upstash commands (one TYPE + one read per key) and
+happens once per data refresh; day-to-day traffic to Upstash is zero.
+`deploy.sh` runs `./pull-upstash.sh --only-if-empty`, which seeds a fresh
+box and is a free no-op otherwise. If Upstash is unreachable the deploy
+still succeeds and the services serve `data/nsq_snapshot.json.gz`.
+
+Monthly refresh, end to end:
+
+```bash
+# dev box, with REDIS_URL in .env = the Upstash instance
+CONFIRM_FLUSH=yes just refresh-csv        # records, ontologies, frame -> Upstash
+just push-geojson && just load-intelligence
+just snapshot                             # bundled fallback for the services
+git add data/nsq_snapshot.json.gz && git commit && git push
+# EC2 box
+git pull && ./deploy.sh                   # code + snapshot
+./pull-upstash.sh                         # Upstash -> local redis, restarts readers
+```
+
+Escape hatch: `NSQ_REDIS_URL=<url>` in `.env` points the services at any
+other Redis (e.g. straight back at Upstash). The local data survives
+restarts and redeploys; `docker compose down -v` deletes it (re-seed with
+`./pull-upstash.sh`).
+
 ### Production data refresh — `deploy.sh` does NOT load data
 
 `deploy.sh` only rebuilds/restarts the containers; it never loads data into
