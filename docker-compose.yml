@@ -31,7 +31,11 @@ services:
     restart: unless-stopped
     networks: [nsq-net]
 
+  # Local Postgres — only when you don't use a managed one (Neon, RDS…).
+  # Start it with:  docker compose --profile local-db up -d
+  # and leave DATABASE_URL unset in .env.
   postgres:
+    profiles: ["local-db"]
     image: postgres:16-alpine
     container_name: nsq-postgres
     environment:
@@ -58,7 +62,7 @@ services:
     environment:
       # Managed Postgres (Neon, RDS, ...): set DATABASE_URL in .env. The
       # plain "postgresql://" URL the provider gives you works as-is.
-      # Unset = the in-server postgres container below.
+      # Unset = the local postgres container (needs --profile local-db).
       - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://nsq:${POSTGRES_PASSWORD:-nsq-local-only}@postgres:5432/nsq}
       # The Redis the app reads. NSQ_REDIS_URL overrides it (escape hatch).
       - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}
@@ -80,7 +84,6 @@ services:
       - ./data:/app/data
     depends_on:
       redis: { condition: service_healthy }
-      postgres: { condition: service_healthy }
     restart: unless-stopped
     networks: [nsq-net]
 

@@ -63,8 +63,10 @@ change. Every sign-in, access change, org/plant edit and job run is audited.
 ## Run it
 
 ```bash
-cp .env.example .env     # REDIS_URL (Upstash), DATABASE_URL (Neon etc.) or POSTGRES_PASSWORD, SUPERADMIN_EMAIL/PASSWORD, APP_BASE_URL
+cp .env.example .env     # REDIS_URL (Upstash), DATABASE_URL (Neon etc.), SUPERADMIN_EMAIL/PASSWORD, APP_BASE_URL
 docker compose up -d --build
+# no managed Postgres? leave DATABASE_URL unset and start the local one too:
+#   docker compose --profile local-db up -d --build
 ./pull-upstash.sh        # first time: copy the dataset into the in-server Redis
 # open http://<host>/  → sign in as the super admin → Admin → Organisations → New
 ```

@@ -14,7 +14,16 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
+def _connect_args(url: str) -> dict:
+    # Connection poolers (Neon "-pooler" hosts, PgBouncer, Supabase :6543) run in
+    # transaction mode: server-side prepared statements must be off.
+    if "pooler" in url or ":6543" in url or "pgbouncer" in url:
+        return {"prepare_threshold": None}
+    return {}
+
+
+engine = create_engine(settings.database_url, pool_pre_ping=True, pool_recycle=300, future=True,
+                       connect_args=_connect_args(settings.database_url))
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

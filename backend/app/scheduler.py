@@ -4,7 +4,7 @@ A daemon thread wakes every 30 s, and for each enabled schedule whose
 next_run_at has passed starts the job (unless a run of it is already in
 progress), then computes the next time. Times are wall-clock in SCHEDULE_TZ
 (default Asia/Kolkata). A Postgres advisory lock makes sure only one API
-process fires schedules even if more than one is started by mistake.
+process fires schedules at a time (a transaction-scoped lock, so it also works\nthrough Neon's / PgBouncer's pooler).
 """
 
 from __future__ import annotations
@@ -104,30 +104,18 @@ def tick(now: Optional[datetime] = None) -> list[str]:
 
 
 def _loop() -> None:
-    conn = None
-    held = False
     while not _stop.is_set():
         try:
             if engine.dialect.name == "postgresql":
-                if conn is None:
-                    conn, held = engine.connect(), False
-                if held:
-                    conn.execute(text("select 1"))  # keep the session (and its lock) alive
-                else:
-                    held = bool(conn.execute(text("select pg_try_advisory_lock(:k)"), {"k": _LOCK_ID}).scalar())
-                conn.commit()
-                if held:
-                    tick()
+                # Transaction-scoped lock: works through connection poolers (Neon,
+                # PgBouncer) and is released automatically, even if the process dies.
+                with engine.begin() as conn:
+                    if conn.execute(text("select pg_try_advisory_xact_lock(:k)"), {"k": _LOCK_ID}).scalar():
+                        tick()
             else:
                 tick()
         except Exception as exc:  # never let the thread die
             log.warning("scheduler tick failed: %s", exc)
-            try:
-                if conn is not None:
-                    conn.close()
-            except Exception:
-                pass
-            conn = None
         _stop.wait(30)
 
 
