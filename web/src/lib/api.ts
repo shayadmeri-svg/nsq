@@ -1,72 +1,42 @@
-// Data-fetching wrappers + react-query hooks for the manufacturer_api.
-// All requests go through the Vite dev proxy (/api -> :8001) or the nginx
-// gateway (same origin in prod), so a relative base is correct.
+// Fetch wrapper: same-origin cookies, the CSRF client header on writes, and
+// errors carrying the API's `detail` message.
 
-import { useQuery } from "@tanstack/react-query";
-import type {
-  ConfigPayload,
-  DashboardPayload,
-  DiagnosticsPayload,
-  Persona,
-} from "./types";
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
 
-const BASE = import.meta.env.VITE_MANUFACTURER_API_URL ?? "";
+const BASE = import.meta.env.VITE_API_URL ?? "";
 
-async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: { Accept: "application/json" } });
+export async function api<T = any>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+  const { json, headers, ...rest } = init;
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: "include",
+    ...rest,
+    headers: {
+      Accept: "application/json",
+      "x-nsq-client": "web",
+      ...(json !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...headers,
+    },
+    body: json !== undefined ? JSON.stringify(json) : (rest.body as BodyInit | undefined),
+  });
   if (!res.ok) {
-    let detail = res.statusText;
+    let msg = res.statusText;
     try {
-      const body = await res.json();
-      detail = body.detail ?? detail;
+      const b = await res.json();
+      msg = typeof b.detail === "string" ? b.detail : Array.isArray(b.detail) ? b.detail.map((d: any) => d.msg).join("; ") : msg;
     } catch {
       /* keep statusText */
     }
-    throw new Error(`${res.status}: ${detail}`);
+    throw new ApiError(res.status, msg);
   }
-  return res.json() as Promise<T>;
+  if (res.status === 204) return undefined as T;
+  return res.json();
 }
 
-export function fetchConfig(): Promise<ConfigPayload> {
-  return getJSON<ConfigPayload>("/api/manufacturer/config");
-}
-
-export function fetchDashboard(tenantKey: string): Promise<DashboardPayload> {
-  return getJSON<DashboardPayload>(`/api/manufacturer/${tenantKey}/dashboard`);
-}
-
-export function fetchDiagnostics(
-  tenantKey: string,
-  issueId: string,
-  persona: Persona,
-): Promise<DiagnosticsPayload> {
-  return getJSON<DiagnosticsPayload>(
-    `/api/manufacturer/${tenantKey}/diagnostics/${encodeURIComponent(issueId)}?persona=${persona}`,
-  );
-}
-
-// --- react-query hooks -----------------------------------------------------
-
-export function useConfig() {
-  return useQuery({ queryKey: ["config"], queryFn: fetchConfig, staleTime: Infinity });
-}
-
-export function useDashboard(tenantKey: string | null) {
-  return useQuery({
-    queryKey: ["dashboard", tenantKey],
-    queryFn: () => fetchDashboard(tenantKey as string),
-    enabled: !!tenantKey,
-  });
-}
-
-export function useDiagnostics(
-  tenantKey: string | null,
-  issueId: string | null,
-  persona: Persona | null,
-) {
-  return useQuery({
-    queryKey: ["diagnostics", tenantKey, issueId, persona],
-    queryFn: () => fetchDiagnostics(tenantKey as string, issueId as string, persona as Persona),
-    enabled: !!tenantKey && !!issueId && !!persona,
-  });
-}
+export const post = <T = any>(path: string, json?: unknown) => api<T>(path, { method: "POST", json: json ?? {} });
+export const patch = <T = any>(path: string, json: unknown) => api<T>(path, { method: "PATCH", json });
+export const put = <T = any>(path: string, json: unknown) => api<T>(path, { method: "PUT", json });
+export const del = <T = any>(path: string) => api<T>(path, { method: "DELETE" });
