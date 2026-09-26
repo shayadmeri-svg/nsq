@@ -11,7 +11,7 @@ RUN git clone --depth 1 --branch Assimulo-3.4.3 https://github.com/modelon-commu
     && cd /tmp/assimulo \
     && LIBDIR=/usr/lib/$(gcc -dumpmachine) \
     && MPI_INC=$(dirname $(find /usr -name mpi.h -path "*include*" | head -1)) \
-    && CFLAGS="-I${MPI_INC}" SETUPTOOLS_USE_DISTUTILS=stdlib python setup.py config_fc --f77flags="-fallow-argument-mismatch" \
+    && CFLAGS="-I${MPI_INC}" C_INCLUDE_PATH="${MPI_INC}" SETUPTOOLS_USE_DISTUTILS=stdlib python setup.py config_fc --f77flags="-fallow-argument-mismatch" \
          --f90flags="-fallow-argument-mismatch" install --sundials-home=/usr \
          --blas-home=${LIBDIR} --lapack-home=${LIBDIR} \
     && cd / && rm -rf /tmp/assimulo
