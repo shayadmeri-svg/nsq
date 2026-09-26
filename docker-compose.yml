@@ -97,6 +97,7 @@ services:
     restart: unless-stopped
     expose:
       - "8010"
+    networks: [nsq-net]
 
   web:
     build:
