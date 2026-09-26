@@ -231,7 +231,7 @@ export function Opportunities() {
                 <div className="mt-2 text-xs text-ink-muted">{u.categories.join(" · ")}{u.last ? ` · last ${u.last}` : ""}</div>
                 <div className="mt-1 truncate text-[11px] text-ink-faint" title={u.products.join(" | ")}>{u.products[0]}</div>
                 {u.variants?.length > 0 && <div className="mt-1 truncate text-[11px] text-amber-700" title={u.variants.join(", ")}>also spelt: {u.variants.join(", ")}</div>}
-                {me?.is_platform && <Link to={`/admin/molecules?add=${encodeURIComponent(u.ingredient)}`} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline">Start tracking <ArrowRight size={11} /></Link>}
+                {me?.permissions.edit_molecules && <Link to={`/admin/molecules?add=${encodeURIComponent(u.ingredient)}`} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline">Start tracking <ArrowRight size={11} /></Link>}
               </motion.div>
             ))}
           </motion.div>

@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import { ChevronLeft, ChevronRight, EyeOff, FlaskConical, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { LogViewer } from "../../components/jobs";
+import { useMe } from "../../lib/session";
 import { MoleculeForm } from "../../components/molecules/MoleculeForm";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -54,7 +55,7 @@ function ProvRow({ field, p }: { field: string; p: any }) {
   );
 }
 
-function MoleculeDrawer({ mkey, onClose, onEdit }: { mkey?: string; onClose: () => void; onEdit: (key: string) => void }) {
+function MoleculeDrawer({ mkey, onClose, onEdit, canEdit }: { mkey?: string; onClose: () => void; onEdit: (key: string) => void; canEdit: boolean }) {
   const { data, error } = useQuery({ queryKey: ["molecule", mkey], queryFn: () => api<any>(`/api/pipelines/molecules/${mkey}`), enabled: !!mkey });
   const p = data?.patent;
   const sig = p?.signals ?? {};
@@ -63,7 +64,7 @@ function MoleculeDrawer({ mkey, onClose, onEdit }: { mkey?: string; onClose: () 
     <Drawer open={!!mkey} onClose={onClose} title={p ? p.api_name : mkey} subtitle={p ? <span className="flex items-center gap-2">{p.brand_name || "—"} · {p.originator || "originator unknown"} <Badge tone={ORIGIN[p.origin]?.tone}>{ORIGIN[p.origin]?.label}</Badge></span> : undefined} width={760}>
       {error ? <ErrorNote error={error} /> : !p ? <div className="text-sm text-ink-muted">Loading…</div> : (
         <div className="space-y-5">
-          <div className="flex justify-end"><Button size="sm" onClick={() => onEdit(p.molecule_key)}><Pencil size={13} /> Edit values</Button></div>
+          {canEdit && <div className="flex justify-end"><Button size="sm" onClick={() => onEdit(p.molecule_key)}><Pencil size={13} /> Edit values</Button></div>}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {[["US LOE", fmtDate(p.estimated_loe_us)], ["EU LOE", fmtDate(p.estimated_loe_eu)], ["India", fmtDate(p.estimated_loe_in)], ["FTO risk", p.fto_risk]].map(([k, v]) => (
               <div key={k} className="rounded-xl bg-slate-50 p-3"><div className="label">{k}</div><div className="mt-1 font-display text-lg font-bold capitalize">{v}</div></div>
@@ -108,7 +109,7 @@ function MoleculeDrawer({ mkey, onClose, onEdit }: { mkey?: string; onClose: () 
   );
 }
 
-function Watchlist({ skipped, onTrack }: { skipped: any[]; onTrack: (name: string) => void }) {
+function Watchlist({ skipped, onTrack, canEdit }: { skipped: any[]; onTrack: (name: string) => void; canEdit: boolean }) {
   const { data } = useQuery({ queryKey: ["watchlist"], queryFn: () => api<any>("/api/pipelines/watchlist") });
   const [name, setName] = useState("");
   const qc = useQueryClient();
@@ -126,29 +127,29 @@ function Watchlist({ skipped, onTrack }: { skipped: any[]; onTrack: (name: strin
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Card delay={0.15}>
-        <CardHeader title="Exclusions & quick adds" subtitle="Keep an auto-discovered molecule out (e.g. an excipient), or add one by name only. Use “Add molecule” to fill in its profile." />
-        <form className="flex gap-2 px-5 pt-4" onSubmit={(e) => { e.preventDefault(); if (name.trim()) add(name.trim()); }}>
+        <CardHeader title="Exclusions & quick adds" subtitle={canEdit ? "Keep an auto-discovered molecule out (e.g. an excipient), or add one by name only. Use “Add molecule” to fill in its profile." : "Only the super admin can add or exclude molecules."} />
+        {canEdit && <form className="flex gap-2 px-5 pt-4" onSubmit={(e) => { e.preventDefault(); if (name.trim()) add(name.trim()); }}>
           <input className="input h-9 flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Menthol" />
           <Button size="sm" variant="secondary" type="button" onClick={() => name.trim() && add(name.trim(), true)}><EyeOff size={14} /> Exclude</Button>
           <Button size="sm" type="submit"><Plus size={14} /> Track</Button>
-        </form>
+        </form>}
         <div className="max-h-72 space-y-1 overflow-auto px-5 py-4 scrollbar-thin">
           {(data?.items ?? []).map((w: any) => (
             <div key={w.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5 text-xs">
               <span className="flex items-center gap-2">{w.exclude ? <EyeOff size={13} className="text-rose-500" /> : <Plus size={13} className="text-brand-600" />}<b>{w.name}</b><span className="font-mono text-ink-faint">{w.key}</span></span>
-              <button onClick={async () => { await del(`/api/pipelines/watchlist/${w.id}`); qc.invalidateQueries({ queryKey: ["watchlist"] }); }} className="text-ink-faint hover:text-rose-600"><Trash2 size={13} /></button>
+              {canEdit && <button onClick={async () => { await del(`/api/pipelines/watchlist/${w.id}`); qc.invalidateQueries({ queryKey: ["watchlist"] }); }} className="text-ink-faint hover:text-rose-600"><Trash2 size={13} /></button>}
             </div>
           ))}
           {!data?.items?.length && <div className="text-xs text-ink-muted">Empty. Changes apply on the next universe build.</div>}
         </div>
       </Card>
       <Card delay={0.2}>
-        <CardHeader title="Not included" subtitle="NSQ ingredients the builder skipped, and why. Track one to include it anyway." />
+        <CardHeader title="Not included" subtitle={canEdit ? "NSQ ingredients the builder skipped, and why. Track one to include it anyway." : "NSQ ingredients the builder skipped, and why."} />
         <div className="max-h-[340px] space-y-1 overflow-auto px-5 py-4 scrollbar-thin">
           {skipped.map((s: any) => (
             <div key={s.key + s.name} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50">
               <div className="min-w-0"><b className="capitalize">{s.name}</b> <span className="text-ink-muted">· {s.alerts} alerts</span><div className="truncate text-ink-faint">{s.reason}</div></div>
-              <Button size="sm" variant="secondary" onClick={() => onTrack(s.name)}><Plus size={12} /> Track</Button>
+              {canEdit && <Button size="sm" variant="secondary" onClick={() => onTrack(s.name)}><Plus size={12} /> Track</Button>}
             </div>
           ))}
           {!skipped.length && <div className="text-xs text-ink-muted">Nothing skipped.</div>}
@@ -169,7 +170,8 @@ export function Molecules() {
   const [form, setForm] = useState<{ name?: string; key?: string } | null>(null);
   const [runId, setRunId] = useState<number | undefined>();
   const [params, setParams] = useSearchParams();
-  useEffect(() => { const a = params.get("add"); if (a) { setForm({ name: a }); params.delete("add"); setParams(params, { replace: true }); } }, [params, setParams]);
+  const canEdit = !!useMe().data?.permissions.edit_molecules;
+  useEffect(() => { const a = params.get("add"); if (a) { if (canEdit) setForm({ name: a }); params.delete("add"); setParams(params, { replace: true }); } }, [params, setParams, canEdit]);
   useEffect(() => { const t = setTimeout(() => { setDq(q); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["universe", dq, origin, source, sort, page],
@@ -184,7 +186,7 @@ export function Molecules() {
   return (
     <>
       <PageHeader eyebrow="Platform · Pipelines" title="Molecule universe" subtitle={<>Curated seeds, molecules discovered from NSQ alerts and confirmed by a public source, and molecules added here. Built {timeAgo(data.built_at)}.</>}
-        actions={<Button onClick={() => setForm({})}><Plus size={15} /> Add molecule</Button>} />
+        actions={canEdit ? <Button onClick={() => setForm({})}><Plus size={15} /> Add molecule</Button> : <Badge tone="slate">View only · super admin edits</Badge>} />
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="Molecules" value={c.molecules ?? 0} icon={<FlaskConical size={18} />} />
         <Stat label="Curated" value={c.curated ?? 0} tone="indigo" delay={0.05} hint="hand-built profiles, overlaid with sources" />
@@ -243,8 +245,8 @@ export function Molecules() {
           <div className="flex gap-1.5"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={14} /></Button><Button size="sm" variant="secondary" disabled={page >= data.pages} onClick={() => setPage(page + 1)}><ChevronRight size={14} /></Button></div>
         </div>
       </Card>
-      <div className="mt-5"><Watchlist skipped={data.skipped ?? []} onTrack={(name) => setForm({ name })} /></div>
-      <MoleculeDrawer mkey={open} onClose={() => setOpen(undefined)} onEdit={(key) => { setOpen(undefined); setForm({ key }); }} />
+      <div className="mt-5"><Watchlist canEdit={canEdit} skipped={data.skipped ?? []} onTrack={(name) => setForm({ name })} /></div>
+      <MoleculeDrawer canEdit={canEdit} mkey={open} onClose={() => setOpen(undefined)} onEdit={(key) => { setOpen(undefined); setForm({ key }); }} />
       <MoleculeForm open={!!form} name={form?.name} mkey={form?.key} onClose={() => setForm(null)} onSaved={(id) => id && setRunId(id)} />
       <LogViewer runId={runId} onClose={() => setRunId(undefined)} />
     </>

@@ -19,7 +19,7 @@ from ..audit import audit
 from ..config import settings
 from ..db import get_db
 from ..models import JobRun, PipelineSchedule, User, WatchMolecule
-from ..security import require_platform
+from ..security import require_platform, require_super
 
 if str(settings.loader_dir) not in sys.path:
     sys.path.insert(0, str(settings.loader_dir))
@@ -197,7 +197,7 @@ def watchlist(user: User = Depends(require_platform), db: Session = Depends(get_
 
 
 @router.post("/watchlist")
-def add_watch(body: WatchBody, request: Request, user: User = Depends(require_platform), db: Session = Depends(get_db)):
+def add_watch(body: WatchBody, request: Request, user: User = Depends(require_super), db: Session = Depends(get_db)):
     import ingredients as ing
 
     name = re.sub(r"\s+", " ", body.name).strip()
@@ -213,7 +213,7 @@ def add_watch(body: WatchBody, request: Request, user: User = Depends(require_pl
 
 
 @router.delete("/watchlist/{wid}")
-def del_watch(wid: int, request: Request, user: User = Depends(require_platform), db: Session = Depends(get_db)):
+def del_watch(wid: int, request: Request, user: User = Depends(require_super), db: Session = Depends(get_db)):
     w = db.get(WatchMolecule, wid)
     if w is None:
         raise HTTPException(404, "Not found.")

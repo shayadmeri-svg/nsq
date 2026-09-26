@@ -70,6 +70,7 @@ def user_payload(user: User) -> dict[str, Any]:
             "manage_users": user.role in PLATFORM_ROLES or user.role == "org_admin",
             "run_jobs": user.role in PLATFORM_ROLES,
             "run_destructive_jobs": user.role == "super_admin",
+            "edit_molecules": user.role == "super_admin",
             "platform_analytics": user.role in PLATFORM_ROLES,
         },
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,

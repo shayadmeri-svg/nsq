@@ -22,7 +22,7 @@ from ..audit import audit
 from ..config import settings
 from ..db import get_db
 from ..models import MoleculeEntry, User
-from ..security import require_platform
+from ..security import require_platform, require_super
 
 if str(settings.loader_dir) not in sys.path:
     sys.path.insert(0, str(settings.loader_dir))
@@ -162,7 +162,7 @@ def _rebuild(user: User) -> Optional[int]:
 
 
 @router.post("")
-def save(body: SaveBody, request: Request, user: User = Depends(require_platform), db: Session = Depends(get_db)):
+def save(body: SaveBody, request: Request, user: User = Depends(require_super), db: Session = Depends(get_db)):
     key = body.key or key_for(body.name)
     if not key:
         raise HTTPException(400, "That name has no usable ingredient in it.")
@@ -206,7 +206,7 @@ def save(body: SaveBody, request: Request, user: User = Depends(require_platform
 
 
 @router.delete("/{key}")
-def remove(key: str, request: Request, user: User = Depends(require_platform), db: Session = Depends(get_db)):
+def remove(key: str, request: Request, user: User = Depends(require_super), db: Session = Depends(get_db)):
     """Drop every typed value. A molecule that was added in the app stops being tracked."""
     entry = db.get(MoleculeEntry, key)
     if entry is None:

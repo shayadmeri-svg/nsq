@@ -58,3 +58,17 @@ def test_export_includes_entries(root, tmp_path, monkeypatch):
     rows = json.loads((tmp_path / "generated" / "molecules.json").read_text())
     assert any(r["name"] == "Qqqexportamab" and r["added"] and r["values"]["modality"] == "biologic" for r in rows)
     assert "entered in the app" in msg
+
+
+def test_only_super_admin_edits_molecules(client, root):
+    import uuid
+    from conftest import login
+    email = f"a{uuid.uuid4().hex[:6]}@example.com"
+    assert root.post("/api/admin/users", json={"email": email, "role": "admin", "password": "admin-pass-1"}, headers=H).status_code == 200
+    client.post("/api/auth/logout", headers=H)
+    login(client, email, "admin-pass-1")
+    assert client.get("/api/auth/me").json()["user"]["permissions"]["edit_molecules"] is False
+    assert client.get("/api/molecules/lookup?name=Paracetamol").status_code == 200
+    assert client.post("/api/molecules", json={"name": "Zzzmadeupinib", "values": {}}, headers=H).status_code == 403
+    assert client.delete("/api/molecules/paracetamol", headers=H).status_code == 403
+    assert client.post("/api/pipelines/watchlist", json={"name": "Menthol", "exclude": True}, headers=H).status_code == 403

@@ -5,7 +5,7 @@ export type Me = {
   id: number; email: string; name: string; role: string; persona: string;
   org: { id: number; slug: string; name: string; city: string; country: string } | null;
   must_change_password: boolean; is_platform: boolean;
-  permissions: { admin: boolean; manage_users: boolean; run_jobs: boolean; run_destructive_jobs: boolean; platform_analytics: boolean };
+  permissions: { admin: boolean; manage_users: boolean; run_jobs: boolean; run_destructive_jobs: boolean; edit_molecules: boolean; platform_analytics: boolean };
   last_login_at: string | null;
 };
 
