@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 from sources import SOURCES, Ctx  # noqa: E402
-from sources.common import (EXIT_ERROR, EXIT_OK, EXIT_UNCHANGED, EXIT_UNREACHABLE, NotModified,  # noqa: E402
+from sources.common import (EXIT_ERROR, EXIT_OK, EXIT_UNCHANGED, EXIT_UNREACHABLE, NotFound, NotModified,  # noqa: E402
                             Unreachable, now_iso, update_manifest)
 
 
@@ -39,6 +39,11 @@ def run_one(name: str, args) -> int:
         print("  unchanged since the last download", flush=True)
         update_manifest(name, status="unchanged", last_checked=now_iso(), error="")
         return EXIT_UNCHANGED
+    except NotFound as exc:
+        print(f"  NOT FOUND — the publisher moved or renamed the file: {exc}", file=sys.stderr, flush=True)
+        print("  Download it by hand and run this source with the uploaded file (Admin → Pipelines).", file=sys.stderr, flush=True)
+        update_manifest(name, status="error", error=f"Not found: {exc}"[:500])
+        return EXIT_ERROR
     except Unreachable as exc:
         print(f"  UNREACHABLE: {exc}", file=sys.stderr, flush=True)
         update_manifest(name, status="unreachable", error=str(exc)[:500])

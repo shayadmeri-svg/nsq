@@ -9,7 +9,7 @@ build_universe.py) it asks four counts:
   india        with a site in India
 
 Incremental: molecules refreshed within --max-age-days (default 7) are kept
-from the previous run, and at most --limit molecules (default 120) are queried
+from the previous run, and at most --limit molecules (default 60) are queried
 per run, oldest first, so a daily schedule walks the whole universe weekly.
 """
 
@@ -68,7 +68,7 @@ def run(ctx: Ctx) -> int:
         return len(data)
 
     max_age = timedelta(days=int(ctx.options.get("max_age_days", 7)))
-    limit = ctx.limit or int(ctx.options.get("limit", 120))
+    limit = ctx.limit or int(ctx.options.get("limit", 60))
     now = datetime.now(timezone.utc)
     cands = _candidates()
 
@@ -81,13 +81,16 @@ def run(ctx: Ctx) -> int:
     due = [c for c in cands if ctx.force or age(c["key"]) > max_age.total_seconds()]
     due.sort(key=lambda c: -age(c["key"]))
     todo = due[:limit]
-    ctx.log(f"{len(cands)} molecules, {len(due)} due, querying {len(todo)} this run")
+    ctx.log(f"{len(cands)} molecules, {len(due)} due, querying {len(todo)} this run (4 requests each; the rest follow on later runs)")
     data = dict(prev)
     done = 0
-    for c in todo:
+    for i, c in enumerate(todo, 1):
         try:
-            data[c["key"]] = query_molecule(c.get("names") or [c["key"]])
+            t0 = time.time()
+            q = query_molecule(c.get("names") or [c["key"]])
+            data[c["key"]] = q
             done += 1
+            ctx.log(f"  [{i}/{len(todo)}] {c['key']}: {q['total']} trials, {q['phase3plus']} phase 3+, {q['india']} in India ({time.time() - t0:.1f}s)")
         except Unreachable:
             if done == 0:
                 raise
@@ -95,8 +98,6 @@ def run(ctx: Ctx) -> int:
             break
         except Exception as exc:  # one bad term should not sink the run
             ctx.log(f"  {c['key']}: {exc}")
-        if done % 20 == 0 and done:
-            ctx.log(f"  {done}/{len(todo)}")
         time.sleep(float(ctx.options.get("sleep", 0.6)))
     keep = {c["key"] for c in cands}
     data = {k: v for k, v in data.items() if k in keep}

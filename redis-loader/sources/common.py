@@ -54,6 +54,41 @@ class NotModified(Exception):
     """The remote file has not changed since the last download."""
 
 
+class NotFound(Exception):
+    """The URL answered 404/410 (the publisher moved or renamed the file)."""
+
+
+def download_first(ctx: "Ctx", urls: list[str], filename: str, *, timeout: int = 300) -> "Path":
+    """Try candidate URLs in order; the first that downloads (or is unchanged) wins."""
+    errors = []
+    seen = set()
+    for u in urls:
+        if not u or u in seen:
+            continue
+        seen.add(u)
+        try:
+            return download(ctx, u, filename, timeout=timeout)
+        except NotFound as exc:
+            errors.append(str(exc))
+            ctx.log(f"  not found: {exc}")
+    raise NotFound("; ".join(errors[-3:]) or "no candidate URLs")
+
+
+def page_links(url: str, pattern: str) -> list[str]:
+    """hrefs on an HTML page matching a regex (absolute URLs). Empty on any error."""
+    import re as _re
+    from urllib.parse import urljoin
+    try:
+        html = http_get(url, timeout=60, retries=0).decode("utf-8", errors="replace")
+    except Exception:
+        return []
+    out = []
+    for h in _re.findall(r'href=["\']([^"\']+)["\']', html, flags=_re.I):
+        if _re.search(pattern, h, flags=_re.I):
+            out.append(urljoin(url, h))
+    return out
+
+
 @dataclass
 class Ctx:
     name: str
@@ -142,9 +177,11 @@ def download(ctx: Ctx, url: str, filename: str, *, timeout: int = 300) -> Path:
     except HTTPError as exc:
         if exc.code == 304:
             raise NotModified(url) from exc
+        final = exc.geturl() if hasattr(exc, "geturl") else url
+        where = url if final in (None, url) else f"{url} (redirected to {final})"
         if exc.code >= 500 or exc.code in (403, 407, 429):
-            raise Unreachable(f"HTTP {exc.code} from {url}") from exc
-        raise
+            raise Unreachable(f"HTTP {exc.code} from {where}") from exc
+        raise NotFound(f"HTTP {exc.code} from {where}") from exc
     except (URLError, TimeoutError, OSError) as exc:
         raise Unreachable(f"{url}: {exc}") from exc
 

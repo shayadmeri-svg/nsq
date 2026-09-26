@@ -218,7 +218,7 @@ _SOURCE_JOB_DESC = {
     "orange_book": "US patents, exclusivity, RLD/TE codes and ANDA competitors per ingredient. Rebuilds the molecule universe after.",
     "purple_book": "Licensed biologics, reference-product exclusivity and biosimilar counts. Rebuilds the molecule universe after.",
     "ema": "EU central authorisations, generics/biosimilars and therapeutic areas. Rebuilds the molecule universe after.",
-    "clinical_trials": "Trial totals, phase 3+, recent starts and India sites per molecule (120 molecules per run, oldest first).",
+    "clinical_trials": "Trial totals, phase 3+, recent starts and India sites per molecule (60 molecules per run, oldest first; each is re-checked weekly).",
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "fda_import_alerts": "Indian firms on the drug-GMP red list — feeds the site directory.",
     "fda_recalls": "US recalls of drugs made by Indian firms — feeds the site directory.",

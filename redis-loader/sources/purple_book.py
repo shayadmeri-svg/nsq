@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Any
 
-from .common import Ctx, NotModified, Unreachable, download, write_normalized
+from .common import Ctx, NotFound, download, page_links, write_normalized
 
 BASE = "https://www.accessdata.fda.gov/drugsatfda_docs/PurpleBook/{year}/purplebook-search-{month}-data-download.csv"
 META = {
@@ -132,34 +132,41 @@ def parse_csv(text: str) -> dict[str, dict[str, Any]]:
     return out
 
 
+def candidate_urls(today: date, months_back: int = 5) -> list[tuple[str, str]]:
+    """(url, local name) for the latest monthly files, newest first. FDA
+    capitalises the month in most file names ('August') but not all ('january')."""
+    out = []
+    for back in range(0, months_back + 1):
+        y, m = today.year, today.month - back
+        while m <= 0:
+            m += 12
+            y -= 1
+        name = _MONTHS[m - 1]
+        for variant in (name.capitalize(), name):
+            out.append((BASE.format(year=y, month=variant), f"purplebook-{y}-{m:02d}.csv"))
+    return out
+
+
 def run(ctx: Ctx) -> int:
     if ctx.from_file:
         text = ctx.from_file.read_text(encoding="utf-8-sig", errors="replace")
     else:
-        # Latest available monthly file: this month, else walk back up to 4 months.
-        today = date.today()
-        text, last_exc = None, None
-        for back in range(0, 5):
-            y, m = today.year, today.month - back
-            while m <= 0:
-                m += 12
-                y -= 1
-            url = BASE.format(year=y, month=_MONTHS[m - 1])
+        text = None
+        # Links published on the downloads page first (if it is server-rendered), then the pattern.
+        listed = [u for u in page_links(META["page"], r"purplebook-search-.*\.csv$")]
+        cands = [(u, "purplebook-listed.csv") for u in listed[:2]] + candidate_urls(date.today())
+        tried = []
+        for url, local in cands:
             try:
-                path = download(ctx, url, f"purplebook-{y}-{m:02d}.csv")
-            except NotModified:
-                raise
-            except Unreachable as exc:
-                last_exc = exc
-                break
-            except Exception as exc:  # 404 for months not yet published
-                ctx.log(f"  {url}: {exc}")
-                last_exc = exc
+                path = download(ctx, url, local)
+            except NotFound as exc:
+                tried.append(url.rsplit("/", 1)[-1])
                 continue
             text = path.read_text(encoding="utf-8-sig", errors="replace")
+            ctx.log(f"using {url}")
             break
         if text is None:
-            raise Unreachable(str(last_exc)) if isinstance(last_exc, Unreachable) else RuntimeError(f"No Purple Book file found: {last_exc}")
+            raise NotFound(f"No Purple Book file found (tried {len(tried)}: {', '.join(tried[:4])} …)")
     data = parse_csv(text)
     if not data:
         raise RuntimeError("Purple Book file parsed to 0 products — the column layout may have changed.")

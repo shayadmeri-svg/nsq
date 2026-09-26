@@ -24,7 +24,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Optional
 
-from .common import Ctx, Unreachable, download, http_get, write_normalized
+from .common import Ctx, Unreachable, download, download_first, http_get, page_links, write_normalized
 
 DECRS = {
     "title": "FDA establishment registrations (DECRS)",
@@ -37,8 +37,8 @@ DECRS = {
 IMPORT_ALERT = {
     "title": "FDA Import Alert 66-40",
     "publisher": "U.S. Food and Drug Administration",
-    "url": "https://www.accessdata.fda.gov/cms_ia/importalert_189.html",
-    "page": "https://www.accessdata.fda.gov/cms_ia/importalert_189.html",
+    "url": "https://www.accessdata.fda.gov/CMS_IA/importalert_189.html",
+    "page": "https://www.accessdata.fda.gov/CMS_IA/importalert_189.html",
     "cadence": "daily",
     "feeds": ["Indian firms on the drug-GMP red list"],
 }
@@ -162,7 +162,15 @@ def parse_decrs(path: Path, log=print) -> dict[str, dict[str, Any]]:
 
 
 def run_establishments(ctx: Ctx) -> int:
-    path = ctx.from_file or download(ctx, DECRS["url"], "drls_reg.zip")
+    if ctx.from_file:
+        path = ctx.from_file
+    else:
+        # FDA moves this file now and then: take the link from its page first.
+        listed = page_links(DECRS["page"], r"drls_reg[^/]*\.(zip|txt|xlsx?)$")
+        cands = listed + [DECRS["url"], "https://www.accessdata.fda.gov/cder/DRLS_REG.zip",
+                          "https://www.accessdata.fda.gov/cder/drls_reg.txt"]
+        ctx.log(f"candidate URLs: {', '.join(dict.fromkeys(cands))}")
+        path = download_first(ctx, cands, "drls_reg.zip")
     data = parse_decrs(path, ctx.log)
     if not data:
         raise RuntimeError("No Indian establishments found in the DECRS file — check the logged header.")
@@ -261,7 +269,8 @@ def run_import_alerts(ctx: Ctx) -> int:
     if ctx.from_file:
         text = ctx.from_file.read_text(encoding="utf-8", errors="replace")
     else:
-        path = download(ctx, IMPORT_ALERT["url"], "importalert_66-40.html")
+        path = download_first(ctx, [IMPORT_ALERT["url"], "https://www.accessdata.fda.gov/cms_ia/importalert_189.html"],
+                              "importalert_66-40.html")
         text = path.read_text(encoding="utf-8", errors="replace")
     data = parse_import_alert(text)
     if not data:
