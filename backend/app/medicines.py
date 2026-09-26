@@ -232,7 +232,11 @@ def enrich_ingredient(a: dict[str, Any]) -> dict[str, Any]:
            "atc": (c or {}).get("atc") or [], "mechanisms": (c or {}).get("mechanisms") or [],
            "molecule_type": (c or {}).get("molecule_type"), "sources": src,
            "links": {k: v for k, v in (("pubchem", (p or {}).get("url")), ("chembl", (c or {}).get("url"))) if v}}
-    out["molecule_key"] = a.get("molecule_key") or ing.molecule_key_for(a["name"]) or ""
+    try:
+        from .routers.molecules import key_for
+        out["molecule_key"] = key_for(a["name"]) or a.get("molecule_key") or ""
+    except Exception:
+        out["molecule_key"] = a.get("molecule_key") or ing.molecule_key_for(a["name"]) or ""
     if not out["smiles"] and out["molecule_key"]:
         # Offline or unknown to both databases: use a structure the platform already has
         try:

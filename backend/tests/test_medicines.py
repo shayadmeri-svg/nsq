@@ -81,3 +81,29 @@ def test_save_list_and_lab_structures(root):
     assert root.post("/api/lab/structure", json={"smiles": "nonsense("}, headers=H).status_code == 422
     assert root.post("/api/medicines", json={**body, "ingredients": []}, headers=H).status_code == 422
     assert root.delete(f"/api/medicines/{mid}", headers=H).json()["ok"]
+
+
+def test_salt_forms_share_parent_structure_and_medicines_align(root):
+    from app import lab
+    lab._cache.clear()
+    mols = {m["key"]: m for m in root.get("/api/lab/molecules").json()["molecules"]}
+    assert mols["amlodipine_besylate"]["has_structure"] and "amlodipine" not in mols  # folded, no duplicate
+    assert root.get("/api/lab/molecule/amlodipine").json()["key"] == "amlodipine_besylate"
+    body = {"name": "Amlodipine 5 mg Tablets", "dosage_form": "Tablet", "track": True,
+            "ingredients": [{"name": "Amlodipine", "role": "active", "strength": {"value": 5, "unit": "mg"}}]}
+    r = root.post("/api/medicines", json=body, headers=H).json()
+    assert r["ingredients"][0]["molecule_key"] == "amlodipine_besylate" and r["tracked"] == []
+    root.delete(f"/api/medicines/{r['id']}", headers=H)
+
+
+def test_medicine_tracks_new_active(root, monkeypatch):
+    from app.routers import molecules
+    monkeypatch.setattr(molecules, "_rebuild", lambda user: 77)
+    body = {"name": "Zzqtrackinib 10 mg Tablets", "dosage_form": "Tablet",
+            "ingredients": [{"name": "Zzqtrackinib", "role": "active", "strength": {"value": 10, "unit": "mg"}}]}
+    r = root.post("/api/medicines", json=body, headers=H).json()
+    assert r["tracked"] == ["zzqtrackinib"] and r["run_id"] == 77
+    e = root.get("/api/molecules/lookup?key=zzqtrackinib").json()
+    assert e["entered"]["strength"] == "10 mg" and e["entry"]["added"]
+    root.delete(f"/api/medicines/{r['id']}", headers=H)
+    root.delete("/api/molecules/zzqtrackinib", headers=H)

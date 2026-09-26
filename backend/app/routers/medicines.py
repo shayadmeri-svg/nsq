@@ -28,6 +28,7 @@ class MedicineBody(BaseModel):
     identifiers: dict[str, Any] = {}
     sources: dict[str, Any] = {}
     notes: str = ""
+    track: bool = True  # add actives that aren't in the molecule universe yet
 
 
 @router.get("")
@@ -68,9 +69,9 @@ def _clean(body: MedicineBody) -> dict[str, Any]:
         x = {k: a.get(k) for k in keep if a.get(k) not in (None, "", [])}
         x["name"] = a["name"].strip()
         x.setdefault("role", "active")
-        if not x.get("molecule_key"):
-            import ingredients as ing
-            x["molecule_key"] = ing.molecule_key_for(x["name"]) or ""
+        # Same key the molecule universe uses (salt forms, INN/USAN spellings resolved)
+        from .molecules import key_for
+        x["molecule_key"] = key_for(x["name"]) or x.get("molecule_key") or ""
         ings.append(x)
     if not any(a["role"] == "active" for a in ings):
         raise HTTPException(422, "Add at least one active ingredient.")
@@ -79,15 +80,41 @@ def _clean(body: MedicineBody) -> dict[str, Any]:
             "identifiers": body.identifiers, "sources": body.sources, "notes": body.notes[:4000]}
 
 
+def _track(body: MedicineBody, clean: dict[str, Any], user: User, db: Session) -> dict[str, Any]:
+    """Put every active ingredient into the molecule universe, like the Add molecule form does."""
+    from .. import data
+    from ..models import MoleculeEntry
+    from .molecules import _rebuild, _seed
+    if not body.track:
+        return {"tracked": [], "run_id": None}
+    universe = set(data.cdmo()["patents"]) | set(_seed("patent_seed", "molecules"))
+    added = []
+    for a in clean["ingredients"]:
+        k = a.get("molecule_key")
+        if a.get("role") != "active" or not k or k in universe or db.get(MoleculeEntry, k):
+            continue
+        values = {"api_name": a["name"]}
+        if clean["dosage_form"]:
+            values["dosage_form"] = clean["dosage_form"]
+        s = a.get("strength") or {}
+        if s.get("value"):
+            values["strength"] = f"{s['value']:g} {s.get('unit') or 'mg'}" + (f"/{s['per']}" if s.get("per") else "")
+        db.add(MoleculeEntry(key=k, name=a["name"], added=True, values=values, created_by=user.email, updated_by=user.email))
+        added.append(k)
+    db.commit()
+    return {"tracked": added, "run_id": _rebuild(user) if added else None}
+
+
 @router.post("")
 def create(body: MedicineBody, request: Request, user: User = Depends(require_super), db: Session = Depends(get_db)):
-    m = Medicine(**_clean(body), created_by=user.email, updated_by=user.email)
+    clean = _clean(body)
+    m = Medicine(**clean, created_by=user.email, updated_by=user.email)
     db.add(m)
     audit(db, "medicine.added", actor=user, target_type="medicine", target_id=body.name, request=request)
     db.commit()
     db.refresh(m)
     med.VERSION["n"] += 1
-    return med.to_dict(m)
+    return {**med.to_dict(m), **_track(body, clean, user, db)}
 
 
 @router.put("/{mid}")
@@ -95,14 +122,15 @@ def update(mid: int, body: MedicineBody, request: Request, user: User = Depends(
     m = db.get(Medicine, mid)
     if m is None:
         raise HTTPException(404, "Medicine not found.")
-    for k, v in _clean(body).items():
+    clean = _clean(body)
+    for k, v in clean.items():
         setattr(m, k, v)
     m.updated_by = user.email
     audit(db, "medicine.updated", actor=user, target_type="medicine", target_id=str(mid), request=request)
     db.commit()
     db.refresh(m)
     med.VERSION["n"] += 1
-    return med.to_dict(m)
+    return {**med.to_dict(m), **_track(body, clean, user, db)}
 
 
 @router.delete("/{mid}")

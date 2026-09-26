@@ -97,8 +97,35 @@ def structures() -> dict[str, dict[str, Any]]:
                               "xlogp": a.get("xlogp"), "mp_c": a.get("mp_c"), "pka_acid": a.get("pka_acid"), "pka_base": a.get("pka_base")}
     except Exception:  # database unavailable: structures from files still work
         pass
+    _fold_onto_universe(out, uni_p)
     _cache["structures"] = (key, out)
     return out
+
+
+def _fold_onto_universe(out: dict[str, dict[str, Any]], uni_p) -> None:
+    """Universe keys are often salt forms (amlodipine_besylate) while structures are keyed by
+    the parent molecule (amlodipine). Give the universe key the parent's structure and hide the
+    duplicate parent entry from the picker (it still resolves for links and medicines)."""
+    import ingredients as ing
+    if not uni_p.exists():
+        return
+    try:
+        u = json.loads(uni_p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    for m in (u.get("molecules") if isinstance(u, dict) else u) or []:
+        k = m.get("key")
+        if not k:
+            continue
+        parent = ing.molecule_key_for(m.get("name") or k) or ing.molecule_key_for(k)
+        if not parent or parent == k or parent not in out:
+            continue
+        src = out[parent]
+        if src.get("smiles") and not (out.get(k) or {}).get("smiles"):
+            out[k] = {**src, "key": k, "name": m.get("name") or src["name"],
+                      "aliases": sorted({*(src.get("aliases") or []), parent}), "folded_from": parent}
+        if (out.get(k) or {}).get("smiles"):
+            out[parent] = {**src, "hidden": True, "canonical": k}
 
 
 # --- NSQ per ingredient ---------------------------------------------------------------------------------
@@ -159,6 +186,8 @@ def _nsq_for(rec: dict[str, Any]) -> dict[str, Any]:
 
 def profile(key: str) -> Optional[dict[str, Any]]:
     rec = structures().get(key)
+    if rec and rec.get("hidden") and rec.get("canonical"):
+        key, rec = rec["canonical"], structures().get(rec["canonical"])
     if rec is None or not rec.get("smiles"):
         return None
     nsq = _nsq_for(rec)
@@ -204,6 +233,8 @@ def molecules() -> dict[str, Any]:
 def _molecules() -> dict[str, Any]:
     rows = []
     for k, rec in structures().items():
+        if rec.get("hidden"):
+            continue
         nsq = _nsq_for(rec)
         row = {"key": k, "name": rec["name"], "source": rec["source"], "has_structure": bool(rec.get("smiles")), "alerts": nsq["alerts"],
                "dissolution_pct": nsq["dissolution_pct"]}

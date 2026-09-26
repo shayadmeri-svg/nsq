@@ -109,7 +109,7 @@ function Editor({ m, setM, canEdit, onSaved }: { m: Med; setM: (m: Med) => void;
       const body = { ...m, excipients: exText.split(",").map((s) => s.trim()).filter(Boolean) };
       const r = m.id ? await put<any>(`/api/medicines/${m.id}`, body) : await post<any>("/api/medicines", body);
       setM({ ...m, ...r });
-      toast(`${r.name} saved. Its ingredients are now in the Lab.`);
+      toast(r.tracked?.length ? `${r.name} saved. Added ${r.tracked.join(", ")} to the molecule universe; rebuilding (job #${r.run_id ?? "queued"}).` : `${r.name} saved. Its ingredients are in the Lab.`);
       onSaved();
     } catch (e) { toast((e as Error).message, "error"); } finally { setBusy(false); }
   };
