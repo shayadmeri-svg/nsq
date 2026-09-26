@@ -58,3 +58,15 @@ def compaction(body: dict[str, Any] = Body(default={}), user: User = Depends(cur
 @router.post("/fluid-bed")
 def fluid_bed(body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
     return _run(lab.fluid_bed, body)
+
+
+@router.post("/structure")
+def structure(body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    """Render any SMILES with RDKit and return its descriptors."""
+    from chem import molecule
+    smiles = (body.get("smiles") or "").strip()
+    mol = molecule.parse(smiles)
+    if mol is None:
+        raise HTTPException(422, "Not a valid SMILES.")
+    return {"smiles": smiles, "svg": molecule.svg(mol, int(body.get("width", 260)), int(body.get("height", 180))),
+            "descriptors": molecule.descriptors(mol)}

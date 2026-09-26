@@ -1,4 +1,4 @@
-import { Compass, Cpu, FlaskConical, Globe2, Lightbulb, Map, Table2 } from "lucide-react";
+import { Compass, Cpu, FlaskConical, Globe2, Lightbulb, Map, Pill, Table2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -7,6 +7,7 @@ import { cn } from "../../lib/cn";
 import { EMPTY, Explorer, FilterBar, Ledger, type Filters } from "./Explorer";
 import { InsightsTab } from "./Insights";
 import { Lab } from "./Lab";
+import { Medicines } from "./Medicines";
 import { RegulatoryMap } from "./RegulatoryMap";
 import { Workbench } from "./Workbench";
 
@@ -16,6 +17,7 @@ const TABS = [
   { id: "insights", label: "Insights", icon: Lightbulb, hint: "Patterns the raw alerts don't show" },
   { id: "world", label: "Regulation map", icon: Globe2, hint: "India vs US vs EU vs Africa…" },
   { id: "molecule", label: "Molecule workbench", icon: FlaskConical, hint: "Passport, demand, scores, monographs" },
+  { id: "medicines", label: "Medicines", icon: Pill, hint: "Add a medicine: composition from open databases, gaps" },
   { id: "process", label: "Lab", icon: Cpu, hint: "Structure-based molecule and process models" },
 ] as const;
 
@@ -46,6 +48,7 @@ export function Playground() {
         {tab === "insights" && <InsightsTab />}
         {tab === "world" && <RegulatoryMap />}
         {tab === "molecule" && <Workbench />}
+        {tab === "medicines" && <Medicines />}
         {tab === "process" && <Lab />}
       </motion.div>
     </>

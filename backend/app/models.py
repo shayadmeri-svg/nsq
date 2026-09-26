@@ -184,3 +184,29 @@ class MoleculeEntry(Base):
     updated_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())
+
+
+class Medicine(Base):
+    """A finished medicine (product) with its composition, added in the Playground.
+
+    `ingredients` is a list of {name, strength, unit, role: active|inactive,
+    molecule_key, smiles, source, pka_acid, pka_base, ...}; `sources` records
+    which public database supplied each part so gaps can be shown honestly.
+    """
+
+    __tablename__ = "medicines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(240), index=True)
+    brand: Mapped[str] = mapped_column(String(160), default="")
+    dosage_form: Mapped[str] = mapped_column(String(80), default="")
+    route: Mapped[str] = mapped_column(String(80), default="")
+    ingredients: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    excipients: Mapped[list[str]] = mapped_column(JSON, default=list)
+    identifiers: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    sources: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(254), default="")
+    updated_by: Mapped[str] = mapped_column(String(254), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())

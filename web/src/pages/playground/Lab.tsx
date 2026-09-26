@@ -82,8 +82,9 @@ function MoleculeTab({ p, list }: { p: any; list: any }) {
 }
 
 function Dissolution({ mkey, p }: { mkey: string; p: any }) {
-  const [f, setF] = useState({ dose_mg: p.derived.dose_mg ?? 100, d50_um: 20, gsd: 1.8, lag_min: 2, volume_ml: 900, q_pct: 75, q_time_min: 45, ionization: "none", pka: 4.5, ph: 6.8 });
-  useEffect(() => setF((x) => ({ ...x, dose_mg: p.derived.dose_mg ?? 100 })), [mkey]); // eslint-disable-line
+  const ion = () => (p.derived.pka_acid != null ? { ionization: "acid", pka: p.derived.pka_acid } : p.derived.pka_base != null ? { ionization: "base", pka: p.derived.pka_base } : { ionization: "none", pka: 4.5 });
+  const [f, setF] = useState({ dose_mg: p.derived.dose_mg ?? 100, d50_um: 20, gsd: 1.8, lag_min: 2, volume_ml: 900, q_pct: 75, q_time_min: 45, ph: 6.8, ...ion() });
+  useEffect(() => setF((x) => ({ ...x, dose_mg: p.derived.dose_mg ?? 100, ...ion() })), [mkey]); // eslint-disable-line
   const df = useDebounced(f);
   const q = useQuery({ queryKey: ["lab-diss", mkey, df], queryFn: () => post<any>(`/api/lab/molecule/${mkey}/dissolution`, df), placeholderData: keepPreviousData });
   const r = q.data;
@@ -244,7 +245,7 @@ function FluidBed() {
 
 export function Lab() {
   const list = useQuery({ queryKey: ["lab-molecules"], queryFn: () => api<any>("/api/lab/molecules"), staleTime: 300_000 });
-  const [key, setKey] = useState("");
+  const [key, setKey] = useState(() => new URLSearchParams(window.location.search).get("m") ?? "");
   const [tab, setTab] = useState<Tab>("molecule");
   const mols = useMemo(() => (list.data?.molecules ?? []).filter((m: any) => m.has_structure), [list.data]);
   useEffect(() => { if (!key && mols.length) setKey(mols[0].key); }, [mols, key]);

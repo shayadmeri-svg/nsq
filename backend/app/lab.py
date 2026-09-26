@@ -39,7 +39,8 @@ def structures() -> dict[str, dict[str, Any]]:
     """molecule key -> structure record (PubChem wins over the seed)."""
     seed_p = settings.data_dir / "structures_seed.json"
     pc_p = settings.data_dir / "sources" / "pubchem.json"
-    key = (_mtime(seed_p), _mtime(pc_p))
+    from . import medicines as med_mod
+    key = (_mtime(seed_p), _mtime(pc_p), med_mod.VERSION["n"])
     hit = _cache.get("structures")
     if hit and hit[0] == key:
         return hit[1]
@@ -58,6 +59,28 @@ def structures() -> dict[str, dict[str, Any]]:
             out[k] = {"key": k, "name": (v.get("query") or k).title() if not prev else prev["name"], "smiles": v["smiles"],
                       "aliases": prev.get("aliases", []), "source": "PubChem", "cid": v.get("cid"), "url": v.get("url"),
                       "xlogp": v.get("xlogp"), "mp_c": v.get("mp_c"), "mp_values": v.get("mp_values"), "iupac": v.get("iupac")}
+    # Ingredients of medicines added in the Playground (PubChem / ChEMBL at save time)
+    try:
+        from sqlalchemy import select
+        from .db import SessionLocal
+        from .models import Medicine
+        with SessionLocal() as db:
+            for m in db.scalars(select(Medicine)):
+                for a in m.ingredients or []:
+                    k = a.get("molecule_key") or ""
+                    if not k or not a.get("smiles"):
+                        continue
+                    prev = out.get(k)
+                    if prev and prev.get("smiles") and prev["source"] == "PubChem":
+                        prev.setdefault("pka_acid", a.get("pka_acid"))
+                        prev.setdefault("pka_base", a.get("pka_base"))
+                        continue
+                    out[k] = {"key": k, "name": a["name"], "smiles": a["smiles"], "aliases": (prev or {}).get("aliases", []),
+                              "source": f"medicine ({a.get('structure_source') or 'typed'})", "cid": a.get("cid"),
+                              "url": (a.get("links") or {}).get("pubchem") or (a.get("links") or {}).get("chembl"),
+                              "xlogp": a.get("xlogp"), "mp_c": a.get("mp_c"), "pka_acid": a.get("pka_acid"), "pka_base": a.get("pka_base")}
+    except Exception:  # database unavailable: structures from files still work
+        pass
     _cache["structures"] = (key, out)
     return out
 
@@ -138,7 +161,8 @@ def profile(key: str) -> Optional[dict[str, Any]]:
     return {
         "key": key, "name": rec["name"], "source": rec["source"], "cid": rec.get("cid"), "url": rec.get("url"),
         "iupac": rec.get("iupac"), **prof, "thermal": fus,
-        "derived": {"solubility_37_mg_ml": float(f"{s37:.4g}"), "diffusivity_cm2_s": float(f"{diff:.3g}"), "dose_mg": dose},
+        "derived": {"solubility_37_mg_ml": float(f"{s37:.4g}"), "diffusivity_cm2_s": float(f"{diff:.3g}"), "dose_mg": dose,
+                    "pka_acid": rec.get("pka_acid"), "pka_base": rec.get("pka_base")},
         "nsq": nsq,
         "provenance": {
             "structure": "PubChem" if rec["source"] == "PubChem" else "hand-entered seed (checked against formula); run the PubChem job to replace",
