@@ -19,6 +19,7 @@ import { Explorer } from "./pages/admin/Explorer";
 import { Molecules } from "./pages/admin/Molecules";
 import { Pipelines } from "./pages/admin/Pipelines";
 import { Sites } from "./pages/admin/Sites";
+import { DataMap } from "./pages/admin/DataMap";
 import { Playground } from "./pages/playground/Playground";
 
 function Splash() {
@@ -83,6 +84,7 @@ export default function App() {
         <Route path="/admin/molecules" element={<Molecules />} />
         <Route path="/admin/sites" element={<Sites />} />
         <Route path="/admin/audit" element={<Audit />} />
+        <Route path="/admin/data-map" element={<DataMap />} />
         <Route path="/admin/explorer" element={<Explorer />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

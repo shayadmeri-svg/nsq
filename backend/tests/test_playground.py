@@ -51,3 +51,18 @@ def test_spurious_kept_out_of_rankings(root):
     ins = root.get("/api/playground/insights").json()
     assert ins["spurious"]["alerts"] == int(frame["_spurious"].sum())
     assert root.get("/api/playground/cube?authenticity=bogus").status_code == 422
+
+
+def test_datamap(client, root):
+    from app import datamap
+    assert datamap.validate() == []
+    g = root.get("/api/platform/datamap").json()
+    assert {c["key"] for c in g["columns"]} >= {"origin", "stores", "pages"}
+    assert g["stats"]["r_nsq"]["ok"] and "pg_audit" in g["stats"]
+    stores = {m["store"] for m in g["mutations"]}
+    assert {"pg_mol", "r_cdmo", "r_nsq", "pg_auth", "r_plant"} <= stores
+    org = _org(root)
+    email, pw = _user(root, org["slug"])
+    client.post("/api/auth/logout", headers=H)
+    login(client, email, pw)
+    assert client.get("/api/platform/datamap").status_code == 403

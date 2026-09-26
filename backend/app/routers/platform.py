@@ -11,7 +11,10 @@ import capability_catalog
 import field_provenance
 from process_models import ROUTES, route_metadata
 
-from .. import data, insights
+from sqlalchemy.orm import Session
+
+from .. import data, datamap, insights
+from ..db import get_db
 from ..models import User
 from ..security import current_user, require_platform
 
@@ -110,3 +113,9 @@ def data_status(user: User = Depends(current_user)):
 def meta_provenance(user: User = Depends(current_user)):
     """Where each displayed number comes from and what is missing (for the UI's disclaimer icons)."""
     return {"fields": field_provenance.provenance()}
+
+
+@router.get("/platform/datamap")
+def datamap_view(user: User = Depends(require_platform), db: Session = Depends(get_db)):
+    """Where every dataset comes from, where it lives, who changes it, and which screens read it."""
+    return datamap.graph(db)

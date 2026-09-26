@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
+import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, Network, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -170,6 +170,7 @@ export function AppShell({ me }: { me: Me }) {
           <NavItem to="/admin/orgs" icon={<Building2 size={17} />}>Organisations</NavItem>
           <NavItem to="/admin/users" icon={<ShieldCheck size={17} />}>Users & access</NavItem>
           <NavItem to="/admin/pipelines" icon={<Workflow size={17} />}>Data pipelines</NavItem>
+          <NavItem to="/admin/data-map" icon={<Network size={17} />}>Data map</NavItem>
           <NavItem to="/admin/molecules" icon={<FlaskRound size={17} />}>Molecule universe</NavItem>
           <NavItem to="/admin/sites" icon={<Factory size={17} />}>Site directory</NavItem>
           <NavItem to="/admin/jobs" icon={<PlayCircle size={17} />}>Data jobs</NavItem>
