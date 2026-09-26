@@ -360,3 +360,45 @@ def fetch_structure(key: str) -> dict[str, Any]:
     _cache.pop("structures", None)
     _cache.pop("molecules", None)
     return cur[key]
+
+
+# --- bioequivalence risk and safety signals -------------------------------------------------------
+
+def bioequivalence(key: str, p: dict[str, Any]) -> dict[str, Any]:
+    """Test dissolution vs a fast-dissolving reference, each pushed through a one-compartment PK model."""
+    from chem import pk
+    prof = profile(key)
+    if prof is None:
+        raise KeyError(key)
+    d = prof["derived"]
+    window_h = float(p.get("window_h", 4.0))
+    base = {"dose_mg": float(p.get("dose_mg") or d["dose_mg"] or 100.0), "solubility_mg_ml": p.get("solubility_mg_ml"),
+            "ionization": p.get("ionization"), "pka": p.get("pka"), "ph": p.get("ph", 6.8), "volume_ml": p.get("volume_ml", 900),
+            "t_end_min": max(60.0, window_h * 60 + 30)}
+    test = dissolution(key, {**base, "d50_um": p.get("d50_um", 20), "gsd": p.get("gsd", 1.8), "lag_min": p.get("lag_min", 2)})
+    ref = dissolution(key, {**base, "d50_um": p.get("ref_d50_um", 5), "gsd": 1.5, "lag_min": p.get("ref_lag_min", 1)})
+    kw = dict(dose_mg=base["dose_mg"], cl_l_h=float(p.get("cl_l_h", 10)), v_l=float(p.get("v_l", 50)), ka_h=float(p.get("ka_h", 1.0)),
+              f_abs=float(p.get("f_abs", 1.0)), window_h=window_h, in_vivo_scale=float(p.get("in_vivo_scale", 1.0)))
+    pt, pr = pk.simulate(test["times_min"], test["pct"], **kw), pk.simulate(ref["times_min"], ref["pct"], **kw)
+    return {"test": {"dissolution": {k: test[k] for k in ("times_min", "pct", "at_q", "t85", "sink_index")}, "pk": pt},
+            "reference": {"dissolution": {k: ref[k] for k in ("times_min", "pct", "at_q", "t85")}, "pk": pr},
+            "compare": pk.compare(pt, pr), "inputs": {**kw, "ref_d50_um": p.get("ref_d50_um", 5)},
+            "assumptions": [
+                "One-compartment PK with first-order absorption of dissolved drug; absorption stops after the absorption window (small-intestine transit)",
+                "In-vivo dissolution = the in-vitro profile (time-scaling factor adjustable); no permeability, gut-wall or first-pass effects beyond F",
+                "Reference = the same molecule with fine particles (d50 %g µm) dissolving fast; ratios are point estimates, a real BE study needs 90%% CIs" % float(p.get("ref_d50_um", 5)),
+                "Clearance, volume, absorption rate and F are inputs: no open database lists them in bulk; enter literature values for the molecule",
+            ]}
+
+
+def safety(key: str) -> dict[str, Any]:
+    from . import safety as faers
+    rec = structures().get(key) or {}
+    name = rec.get("name") or key.replace("_", " ")
+    import ingredients as ing
+    parent = ing.ingredient_key(name) or name  # FAERS uses the parent generic name (no salt)
+    try:
+        out = faers.signals(ing.us_name(parent) if hasattr(ing, "us_name") else parent)
+    except requests.RequestException as exc:
+        raise ValueError(f"openFDA is unreachable from the server ({exc.__class__.__name__}). Try again later.")
+    return {**out, "query_name": parent}

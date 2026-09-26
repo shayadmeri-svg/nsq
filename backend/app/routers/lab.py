@@ -76,3 +76,13 @@ def structure(body: dict[str, Any] = Body(default={}), user: User = Depends(curr
 def fetch_structure(key: str, user: User = Depends(current_user)):
     """Fetch this molecule's structure from PubChem / ChEMBL now (no need to wait for the nightly job)."""
     return _run(lab.fetch_structure, key)
+
+
+@router.post("/molecule/{key}/bioequivalence")
+def bioequivalence(key: str, body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    return _run(lab.bioequivalence, key, body)
+
+
+@router.get("/molecule/{key}/safety")
+def safety(key: str, user: User = Depends(current_user)):
+    return _run(lab.safety, key)

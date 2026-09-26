@@ -8,7 +8,7 @@ import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { ProcessLab } from "./ProcessLab";
 
-type Tab = "molecule" | "dissolution" | "crystal" | "compaction" | "fluidbed" | "legacy";
+type Tab = "molecule" | "dissolution" | "be" | "safety" | "crystal" | "compaction" | "fluidbed" | "legacy";
 const tip = { contentStyle: { borderRadius: 10, fontSize: 12 } };
 
 function useDebounced<T>(v: T, ms = 300) {
@@ -118,6 +118,98 @@ function Dissolution({ mkey, p }: { mkey: string; p: any }) {
         </div>
       </div>
       <Assumptions items={r?.assumptions} />
+    </Card>
+  );
+}
+
+function Bioequivalence({ mkey, p }: { mkey: string; p: any }) {
+  const ion = () => (p.derived.pka_acid != null ? { ionization: "acid", pka: p.derived.pka_acid } : p.derived.pka_base != null ? { ionization: "base", pka: p.derived.pka_base } : { ionization: "none", pka: 4.5 });
+  const [f, setF] = useState({ dose_mg: p.derived.dose_mg ?? 100, d50_um: 60, lag_min: 5, ref_d50_um: 5, cl_l_h: 10, v_l: 50, ka_h: 1, f_abs: 1, window_h: 4, in_vivo_scale: 1, ph: 6.8, ...ion() });
+  useEffect(() => setF((x) => ({ ...x, dose_mg: p.derived.dose_mg ?? 100, ...ion() })), [mkey]); // eslint-disable-line
+  const df = useDebounced(f, 400);
+  const q = useQuery({ queryKey: ["lab-be", mkey, df], queryFn: () => post<any>(`/api/lab/molecule/${mkey}/bioequivalence`, df), placeholderData: keepPreviousData, retry: false });
+  const r = q.data;
+  const set = (k: string) => (v: any) => setF({ ...f, [k]: v });
+  const tone = r?.compare.risk === "low" ? "brand" : r?.compare.risk === "moderate" ? "amber" : "rose";
+  const conc = r ? r.test.pk.t_h.map((t: number, i: number) => ({ t, test: r.test.pk.conc_mg_l[i], ref: r.reference.pk.conc_mg_l[i] })) : [];
+  const diss = r ? r.test.dissolution.times_min.map((t: number, i: number) => ({ t, test: r.test.dissolution.pct[i], ref: r.reference.dissolution.pct[Math.min(i, r.reference.dissolution.pct.length - 1)] })) : [];
+  return (
+    <Card>
+      <CardHeader title="Dissolution → plasma exposure → bioequivalence risk" subtitle="The test dissolution profile and a fast-dissolving reference, each pushed through a one-compartment oral PK model" />
+      <div className="grid gap-5 p-5 xl:grid-cols-[300px_1fr]">
+        <div className="space-y-3">
+          <div className="label">Test product</div>
+          <Num label="Dose" unit="mg" value={f.dose_mg} onChange={set("dose_mg")} step={5} />
+          <Num label="Particle d50" unit="µm" value={f.d50_um} min={1} max={250} onChange={set("d50_um")} />
+          <Num label="Disintegration lag" unit="min" value={f.lag_min} min={0} max={60} onChange={set("lag_min")} />
+          <Num label="Reference d50" unit="µm" value={f.ref_d50_um} min={1} max={50} onChange={set("ref_d50_um")} />
+          <div className="label pt-2">Pharmacokinetics (enter literature values)</div>
+          <div className="grid grid-cols-2 gap-2">
+            <Num label="Clearance" unit="L/h" value={f.cl_l_h} step={0.5} onChange={set("cl_l_h")} />
+            <Num label="Volume" unit="L" value={f.v_l} step={5} onChange={set("v_l")} />
+            <Num label="ka" unit="1/h" value={f.ka_h} step={0.1} onChange={set("ka_h")} />
+            <Num label="F (fraction)" value={f.f_abs} step={0.05} onChange={set("f_abs")} />
+          </div>
+          <Num label="Absorption window" unit="h" value={f.window_h} min={1} max={12} step={0.5} onChange={set("window_h")} hint="Small-intestine transit; drug dissolving after this is not absorbed" />
+          {f.ionization !== "none" && <Num label="Medium pH" value={f.ph} min={1} max={8} step={0.1} onChange={set("ph")} />}
+        </div>
+        <div>
+          {q.error ? <ErrorNote error={q.error} /> : !r ? <Skeleton className="h-72" /> : (
+            <>
+              <div className={cn("mb-3 rounded-xl p-3 text-sm ring-1 ring-inset", tone === "brand" ? "bg-emerald-50 ring-emerald-200" : tone === "amber" ? "bg-amber-50 ring-amber-200" : "bg-rose-50 ring-rose-200")}>
+                <Badge tone={tone as any}>{r.compare.risk} risk</Badge> <span className="ml-1">{r.compare.message}</span></div>
+              <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Kv k="Cmax ratio" v={`${r.compare.cmax_ratio}%`} sub="test / reference (80–125%)" />
+                <Kv k="AUC ratio" v={`${r.compare.auc_ratio}%`} sub="test / reference (80–125%)" />
+                <Kv k="Tmax" v={`${r.test.pk.tmax_h} h`} sub={`reference ${r.reference.pk.tmax_h} h`} />
+                <Kv k="Absorbed" v={`${r.test.pk.absorbed_pct}%`} sub={`reference ${r.reference.pk.absorbed_pct}% · t½ ${r.test.pk.half_life_h} h`} />
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div><div className="label mb-1">Plasma concentration (mg/L)</div>
+                  <ResponsiveContainer width="100%" height={220}><LineChart data={conc}><CartesianGrid stroke="#eef2f7" /><XAxis dataKey="t" type="number" unit=" h" fontSize={11} /><YAxis fontSize={11} width={44} /><Tooltip {...tip} />
+                    <Line dataKey="ref" name="reference" stroke="#94a3b8" strokeDasharray="4 3" dot={false} /><Line dataKey="test" name="test" stroke="#0a9a7d" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div>
+                <div><div className="label mb-1">Dissolution (%)</div>
+                  <ResponsiveContainer width="100%" height={220}><LineChart data={diss}><CartesianGrid stroke="#eef2f7" /><XAxis dataKey="t" type="number" unit=" min" fontSize={11} /><YAxis domain={[0, 100]} fontSize={11} width={36} /><Tooltip {...tip} />
+                    <Line dataKey="ref" name="reference" stroke="#94a3b8" strokeDasharray="4 3" dot={false} /><Line dataKey="test" name="test" stroke="#6366f1" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <Assumptions items={r?.assumptions} />
+    </Card>
+  );
+}
+
+function Safety({ mkey }: { mkey: string }) {
+  const q = useQuery({ queryKey: ["lab-safety", mkey], queryFn: () => api<any>(`/api/lab/molecule/${mkey}/safety`), retry: false, staleTime: 3600_000 });
+  const r = q.data;
+  if (q.error) return <ErrorNote error={q.error} />;
+  if (!r) return <Skeleton className="h-72" />;
+  if (!r.found) return <Card className="p-6 text-sm text-ink-muted">{r.note} (searched “{r.query_name}”)</Card>;
+  return (
+    <Card>
+      <CardHeader title="Adverse-event signals (FDA FAERS)" subtitle={r.method} />
+      <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-4">
+        <Kv k="Reports" v={r.reports.toLocaleString("en-IN")} sub={`of ${r.all_reports.toLocaleString("en-IN")} in FAERS`} />
+        <Kv k="Serious" v={`${r.serious_pct}%`} sub={`${r.serious.toLocaleString("en-IN")} reports`} />
+        <Kv k="Signals" v={r.signals} sub={`of the ${r.reactions.length} most-reported reactions`} />
+        <Kv k="Fatal outcome" v={r.fatal.toLocaleString("en-IN")} sub="reaction outcome = death" />
+      </div>
+      <div className="grid gap-5 px-5 pb-5 xl:grid-cols-[1.5fr_1fr]">
+        <div className="max-h-[420px] overflow-auto scrollbar-thin">
+          <table className="w-full text-xs"><thead><tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wider text-ink-muted"><th className="py-2">Reaction</th><th className="text-right">Reports</th><th className="text-right">PRR</th><th className="text-right">ROR (95% CI)</th><th className="text-right">χ²</th><th /></tr></thead>
+            <tbody>{r.reactions.map((x: any) => (
+              <tr key={x.reaction} className="border-b border-line/60"><td className="py-1.5 font-medium">{x.reaction}</td><td className="text-right tabular-nums">{x.reports}</td><td className="text-right tabular-nums">{x.prr ?? "—"}</td>
+                <td className="text-right tabular-nums">{x.ror != null ? `${x.ror} (${x.ror_low}–${x.ror_high})` : "—"}</td><td className="text-right tabular-nums">{x.chi2 ?? "—"}</td>
+                <td className="pl-2">{x.signal && <Badge tone="rose">signal</Badge>}</td></tr>
+            ))}</tbody></table>
+        </div>
+        <div><div className="label mb-2">Manufacturers named in reports</div>
+          <div className="space-y-1">{r.manufacturers.map((m: any) => <div key={m.name} className="flex justify-between gap-3 text-xs"><span className="truncate">{m.name}</span><span className="tabular-nums text-ink-muted">{m.count}</span></div>)}</div>
+        </div>
+      </div>
+      <Assumptions items={[r.caveat, `Searched FAERS by generic name “${r.query_name}”; results cached for 24 h.`]} />
     </Card>
   );
 }
@@ -267,7 +359,7 @@ export function Lab() {
   };
   if (list.error) return <ErrorNote error={list.error} />;
   if (!list.data) return <Skeleton className="h-96" />;
-  const needsMol = ["molecule", "dissolution", "crystal"].includes(tab);
+  const needsMol = ["molecule", "dissolution", "be", "safety", "crystal"].includes(tab);
   return (
     <div className="space-y-5">
       <Card className="flex flex-wrap items-center gap-3 p-4">
@@ -275,7 +367,7 @@ export function Lab() {
         <select className="input h-9 w-72 text-sm" value={key} onChange={(e) => setKey(e.target.value)}>
           {mols.map((m: any) => <option key={m.key} value={m.key}>{m.name}{m.alerts ? ` · ${m.alerts} NSQ alerts` : ""}{m.bcs ? ` · BCS ${m.bcs}` : ""}{m.has_structure ? "" : " · no structure yet"}</option>)}
         </select>
-        <Segmented value={tab} onChange={setTab} options={[{ value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "crystal", label: "Crystallisation" }, { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" }, { value: "legacy", label: "Telmisartan demo (rule-based)" }]} />
+        <Segmented value={tab} onChange={setTab} options={[{ value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "be", label: "Bioequivalence" }, { value: "safety", label: "Safety" }, { value: "crystal", label: "Crystallisation" }, { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" }, { value: "legacy", label: "Telmisartan demo (rule-based)" }]} />
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-ink-muted"><Beaker size={13} />{withStructure} of {mols.length} molecules have structures</span>
       </Card>
       {needsMol && current && !current.has_structure && (
@@ -289,6 +381,8 @@ export function Lab() {
         <>
           {tab === "molecule" && <MoleculeTab p={prof.data} list={list.data} />}
           {tab === "dissolution" && <Dissolution mkey={key} p={prof.data} />}
+          {tab === "be" && <Bioequivalence mkey={key} p={prof.data} />}
+          {tab === "safety" && <Safety mkey={key} />}
           {tab === "crystal" && <Crystal mkey={key} solvents={list.data.solvents} engines={list.data.engines} />}
         </>
       ))}

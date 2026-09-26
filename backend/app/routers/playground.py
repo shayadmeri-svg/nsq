@@ -96,3 +96,9 @@ def molecule(key: str, plant_id: str = "", w_patent: Optional[float] = None, w_r
     if out is None:
         raise HTTPException(404, "Molecule not tracked.")
     return out
+
+
+@router.get("/survival")
+def survival(group: str = Query("form", pattern="^(form|category|drug_type|source|state)$"), measure: str = Query("months", pattern="^(months|shelf)$"),
+             f: dict = Depends(_filters), user: User = Depends(current_user)):
+    return playground.survival(group, measure, f)

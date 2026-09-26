@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Lightbulb } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { RankBars } from "../../components/charts";
-import { Badge, Card, CardHeader, ErrorNote, PageSkeleton } from "../../components/ui";
+import { Badge, Card, CardHeader, ErrorNote, PageSkeleton, Segmented, Skeleton } from "../../components/ui";
 import { api } from "../../lib/api";
 
 const LIFE_COLORS = ["#10b996", "#6366f1", "#f59e0b", "#e11d48", "#0f172a"];
@@ -12,6 +13,45 @@ function Takeaway({ children }: { children: React.ReactNode }) {
   return <div className="mx-5 mb-4 flex gap-2 rounded-xl bg-amber-50 p-3 text-[12.5px] leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-200"><Lightbulb size={15} className="mt-0.5 shrink-0" /><div>{children}</div></div>;
 }
 const tip = { contentStyle: { borderRadius: 10, fontSize: 12 } };
+
+const SURV_COLORS = ["#0a9a7d", "#6366f1", "#e11d48", "#f59e0b", "#0ea5e9", "#7c3aed"];
+
+function Survival() {
+  const [group, setGroup] = useState("form");
+  const [measure, setMeasure] = useState<"months" | "shelf">("months");
+  const q = useQuery({ queryKey: ["pg-surv", group, measure], queryFn: () => api<any>(`/api/playground/survival?group=${group}&measure=${measure}`), placeholderData: keepPreviousData });
+  const d = q.data;
+  const rows = d ? d.grid.map((x: number, i: number) => Object.fromEntries([["x", x], ...d.curves.map((c: any) => [c.group, Math.round(c.sf[i] * 1000) / 10])])) : [];
+  const fastest = d?.curves.filter((c: any) => c.median != null).sort((a: any, b: any) => a.median - b.median)[0];
+  const slowest = d?.curves.filter((c: any) => c.median != null).sort((a: any, b: any) => b.median - a.median)[0];
+  return (
+    <Card>
+      <CardHeader title="Shelf-life survival: how long until a failing batch is caught?" subtitle="Kaplan-Meier curves (lifelines) of time from manufacture to the NSQ report, with a log-rank test between groups"
+        action={<div className="flex flex-wrap gap-2">
+          <select className="input h-9 w-44 text-xs" value={group} onChange={(e) => setGroup(e.target.value)}>{(d?.groups ?? [{ key: "form", label: "Dosage form" }]).map((g: any) => <option key={g.key} value={g.key}>{g.label}</option>)}</select>
+          <Segmented value={measure} onChange={setMeasure} options={[{ value: "months", label: "Months" }, { value: "shelf", label: "% of shelf life" }]} />
+        </div>} />
+      {q.error ? <div className="p-5"><ErrorNote error={q.error} /></div> : !d ? <Skeleton className="m-5 h-64" /> : (
+        <div className="grid gap-4 p-4 lg:grid-cols-[1.5fr_1fr]">
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={rows}><CartesianGrid stroke="#eef2f7" /><XAxis dataKey="x" type="number" fontSize={11} unit={measure === "months" ? " m" : "%"} /><YAxis fontSize={11} width={40} unit="%" domain={[0, 100]} />
+              <Tooltip {...tip} formatter={(v: any) => `${v}% not yet detected`} labelFormatter={(l: any) => `${l} ${d.unit}`} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {d.curves.map((c: any, i: number) => <Line key={c.group} type="stepAfter" dataKey={c.group} stroke={SURV_COLORS[i % SURV_COLORS.length]} dot={false} strokeWidth={2} />)}
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="text-xs">
+            <table className="w-full"><thead><tr className="text-left text-[10.5px] uppercase tracking-wider text-ink-muted"><th className="py-1">{d.group_label}</th><th className="text-right">n</th><th className="text-right">Median (95% CI)</th><th className="text-right">25%</th></tr></thead>
+              <tbody>{d.curves.map((c: any, i: number) => <tr key={c.group} className="border-t border-line/60"><td className="py-1.5"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: SURV_COLORS[i % SURV_COLORS.length] }} />{c.group}</td>
+                <td className="text-right tabular-nums">{c.n}</td><td className="text-right tabular-nums">{c.median ?? "—"} {c.median_low != null && <span className="text-ink-faint">({c.median_low}–{c.median_high})</span>}</td><td className="text-right tabular-nums">{c.p25}</td></tr>)}</tbody></table>
+            {d.logrank && <p className="mt-3">Log-rank test across groups: χ² {d.logrank.statistic} on {d.logrank.df} df, <b>p = {d.logrank.p}</b> {d.logrank.p < 0.05 ? "(the groups differ)" : "(no clear difference)"}.</p>}
+          </div>
+        </div>
+      )}
+      {d && fastest && slowest && fastest.group !== slowest.group && <Takeaway>Half of <b>{fastest.group}</b> failures are caught by {fastest.median} {d.unit}, against {slowest.median} for <b>{slowest.group}</b>. {d.note}</Takeaway>}
+    </Card>
+  );
+}
 
 export function InsightsTab() {
   const { data: d, isLoading, error } = useQuery({ queryKey: ["pg-insights"], queryFn: () => api<any>("/api/playground/insights"), staleTime: 300_000 });
@@ -35,6 +75,7 @@ export function InsightsTab() {
 
   return (
     <div className="space-y-5">
+      <Survival />
       <Card>
         <CardHeader title="When in its shelf life does a batch fail?" subtitle={`Months from manufacture to the NSQ report, as a share of the labelled shelf life — ${sl.with_dates.toLocaleString("en-IN")} alerts with both dates`} />
         <div className="grid gap-4 p-4 lg:grid-cols-[1.4fr_1fr]">

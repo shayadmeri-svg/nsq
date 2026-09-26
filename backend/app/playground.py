@@ -23,6 +23,7 @@ from collections import Counter, defaultdict
 from datetime import date
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
 
 from . import data, insights, sites
@@ -549,3 +550,70 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
         "pharmacopeia": pharma,
         "nsq": nsq,
     })
+
+
+# --- shelf-life survival (lifelines) --------------------------------------------------------------
+
+SURV_GROUPS = {"form": ("Form type", "Dosage form"), "category": ("Failure_Category_Primary", "Failure category"),
+               "drug_type": ("Drug type", "Therapeutic class"), "source": ("_src", "Lab type"), "state": ("_state", "Manufacturing state")}
+_surv_cache: dict[tuple, dict[str, Any]] = {}
+
+
+def survival(group: str = "form", measure: str = "months", f: Optional[dict[str, Any]] = None, top: int = 6) -> dict[str, Any]:
+    """Kaplan-Meier curves of time from manufacture to the NSQ report, by group, with a log-rank test.
+
+    Every row is a failing batch (NSQ lists only failures), so the curve reads as
+    "share of failures not yet detected by month m". Batches past expiry at testing
+    are kept; rows without both dates are dropped.
+    """
+    from lifelines import KaplanMeierFitter
+    from lifelines.statistics import multivariate_logrank_test
+
+    col, label = SURV_GROUPS.get(group, SURV_GROUPS["form"])
+    fkey = tuple(sorted((k, tuple(v) if isinstance(v, list) else v) for k, v in (f or {}).items()))
+    ck = (id(data.frame()), group, measure, fkey, top)
+    if ck in _surv_cache:
+        return _surv_cache[ck]
+    df = apply_filters(base_frame(), f or {})
+    if "_spurious" in df.columns:
+        df = df[~df["_spurious"]]
+    rep = df["Reporting Month & Year"].map(_ym)
+    mfg = df["Manufacturing Date"].map(_ym)
+    exp = df["Expiry Date"].map(_ym)
+    age = (rep - mfg).astype("float")
+    life = (exp - mfg).astype("float")
+    if measure == "shelf":
+        dur = (100 * age / life).where(life > 0)
+        cap, unit = 150.0, "% of shelf life"
+    else:
+        dur, cap, unit = age, 48.0, "months"
+    d = pd.DataFrame({"dur": dur, "g": df[col].fillna("Unknown").astype(str)}).dropna()
+    d = d[(d["dur"] >= 0) & (d["dur"] <= cap)]
+    groups = d["g"].value_counts()
+    groups = [g for g in groups.index if g not in ("Unknown", "Other", "Uncategorized") and groups[g] >= 20][:top]
+    grid = np.linspace(0, cap, 49)
+    curves = []
+    kmf = KaplanMeierFitter()
+    for g in groups:
+        sub = d[d["g"] == g]["dur"]
+        kmf.fit(sub, event_observed=np.ones(len(sub)), label=g)
+        sf = kmf.survival_function_at_times(grid).values
+        ci = kmf.confidence_interval_survival_function_
+        med = kmf.median_survival_time_
+        from lifelines.utils import median_survival_times
+        mci = median_survival_times(kmf.confidence_interval_)
+        curves.append({"group": g, "n": int(len(sub)), "median": round(float(med), 1) if np.isfinite(med) else None,
+                       "median_low": round(float(mci.iloc[0, 0]), 1) if np.isfinite(mci.iloc[0, 0]) else None,
+                       "median_high": round(float(mci.iloc[0, 1]), 1) if np.isfinite(mci.iloc[0, 1]) else None,
+                       "p25": round(float(sub.quantile(0.25)), 1), "sf": [round(float(x), 4) for x in sf]})
+    test = None
+    sel = d[d["g"].isin(groups)]
+    if len(groups) >= 2:
+        t = multivariate_logrank_test(sel["dur"], sel["g"], np.ones(len(sel)))
+        test = {"statistic": round(float(t.test_statistic), 1), "p": float(f"{t.p_value:.3g}"), "df": len(groups) - 1}
+    out = {"group": group, "group_label": label, "measure": measure, "unit": unit, "grid": grid.round(1).tolist(), "curves": curves,
+           "logrank": test, "n": int(len(sel)), "groups": [{"key": k, "label": v[1]} for k, v in SURV_GROUPS.items()],
+           "note": "NSQ lists only failing batches, so this is the time until a failure was detected, not the failure rate of all batches. Spurious batches excluded."}
+    _surv_cache.clear() if len(_surv_cache) > 50 else None
+    _surv_cache[ck] = out
+    return out
