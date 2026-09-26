@@ -1,0 +1,149 @@
+{
+ "_note": "Hand-entered structures so the lab works before the PubChem job has run. Each SMILES was checked against its molecular formula with RDKit. The PubChem source replaces these when it has a record.",
+ "molecules": {
+  "paracetamol": {
+   "name": "Paracetamol",
+   "smiles": "CC(=O)Nc1ccc(O)cc1",
+   "formula": "C8H9NO2",
+   "aliases": [
+    "acetaminophen"
+   ]
+  },
+  "ibuprofen": {
+   "name": "Ibuprofen",
+   "smiles": "CC(C)Cc1ccc(C(C)C(=O)O)cc1",
+   "formula": "C13H18O2",
+   "aliases": []
+  },
+  "metformin": {
+   "name": "Metformin",
+   "smiles": "CN(C)C(=N)NC(=N)N",
+   "formula": "C4H11N5",
+   "aliases": []
+  },
+  "aspirin": {
+   "name": "Aspirin",
+   "smiles": "CC(=O)Oc1ccccc1C(=O)O",
+   "formula": "C9H8O4",
+   "aliases": [
+    "acetylsalicylic acid"
+   ]
+  },
+  "telmisartan": {
+   "name": "Telmisartan",
+   "smiles": "CCCc1nc2c(C)cc(-c3nc4ccccc4n3C)cc2n1Cc1ccc(-c2ccccc2C(=O)O)cc1",
+   "formula": "C33H30N4O2",
+   "aliases": []
+  },
+  "carbamazepine": {
+   "name": "Carbamazepine",
+   "smiles": "NC(=O)N1c2ccccc2C=Cc2ccccc21",
+   "formula": "C15H12N2O",
+   "aliases": []
+  },
+  "metronidazole": {
+   "name": "Metronidazole",
+   "smiles": "Cc1ncc([N+](=O)[O-])n1CCO",
+   "formula": "C6H9N3O3",
+   "aliases": []
+  },
+  "amlodipine": {
+   "name": "Amlodipine",
+   "smiles": "CCOC(=O)C1=C(COCCN)NC(C)=C(C(=O)OC)C1c1ccccc1Cl",
+   "formula": "C20H25ClN2O5",
+   "aliases": []
+  },
+  "ciprofloxacin": {
+   "name": "Ciprofloxacin",
+   "smiles": "O=C(O)c1cn(C2CC2)c2cc(N3CCNCC3)c(F)cc2c1=O",
+   "formula": "C17H18FN3O3",
+   "aliases": []
+  },
+  "diclofenac": {
+   "name": "Diclofenac",
+   "smiles": "O=C(O)Cc1ccccc1Nc1c(Cl)cccc1Cl",
+   "formula": "C14H11Cl2NO2",
+   "aliases": []
+  },
+  "omeprazole": {
+   "name": "Omeprazole",
+   "smiles": "COc1ccc2[nH]c(S(=O)Cc3ncc(C)c(OC)c3C)nc2c1",
+   "formula": "C17H19N3O3S",
+   "aliases": []
+  },
+  "cetirizine": {
+   "name": "Cetirizine",
+   "smiles": "O=C(O)COCCN1CCN(C(c2ccccc2)c2ccc(Cl)cc2)CC1",
+   "formula": "C21H25ClN2O3",
+   "aliases": [
+    "levocetirizine"
+   ]
+  },
+  "atenolol": {
+   "name": "Atenolol",
+   "smiles": "CC(C)NCC(O)COc1ccc(CC(N)=O)cc1",
+   "formula": "C14H22N2O3",
+   "aliases": []
+  },
+  "amoxicillin": {
+   "name": "Amoxicillin",
+   "smiles": "CC1(C)S[C@@H]2[C@H](NC(=O)[C@@H](N)c3ccc(O)cc3)C(=O)N2[C@H]1C(=O)O",
+   "formula": "C16H19N3O5S",
+   "aliases": [
+    "amoxycillin"
+   ]
+  },
+  "pantoprazole": {
+   "name": "Pantoprazole",
+   "smiles": "COc1ccnc(CS(=O)c2nc3cc(OC(F)F)ccc3[nH]2)c1OC",
+   "formula": "C16H15F2N3O4S",
+   "aliases": []
+  },
+  "ondansetron": {
+   "name": "Ondansetron",
+   "smiles": "Cc1nccn1CC1CCc2c(c3ccccc3n2C)C1=O",
+   "formula": "C18H19N3O",
+   "aliases": []
+  },
+  "guaifenesin": {
+   "name": "Guaifenesin",
+   "smiles": "COc1ccccc1OCC(O)CO",
+   "formula": "C10H14O4",
+   "aliases": []
+  },
+  "chlorpheniramine": {
+   "name": "Chlorpheniramine",
+   "smiles": "CN(C)CCC(c1ccc(Cl)cc1)c1ccccn1",
+   "formula": "C16H19ClN2",
+   "aliases": [
+    "chlorphenamine"
+   ]
+  },
+  "ofloxacin": {
+   "name": "Ofloxacin",
+   "smiles": "CC1COc2c(N3CCN(C)CC3)c(F)cc3c(=O)c(C(=O)O)cn1c23",
+   "formula": "C18H20FN3O4",
+   "aliases": [
+    "levofloxacin"
+   ]
+  },
+  "metoprolol": {
+   "name": "Metoprolol",
+   "smiles": "COCCc1ccc(OCC(O)CNC(C)C)cc1",
+   "formula": "C15H25NO3",
+   "aliases": []
+  },
+  "ambroxol": {
+   "name": "Ambroxol",
+   "smiles": "Nc1c(Br)cc(Br)cc1CN[C@H]1CC[C@H](O)CC1",
+   "formula": "C13H18Br2N2O",
+   "aliases": []
+  },
+  "nimesulide": {
+   "name": "Nimesulide",
+   "smiles": "CS(=O)(=O)Nc1ccc([N+](=O)[O-])cc1Oc1ccccc1",
+   "formula": "C13H12N2O5S",
+   "aliases": []
+  }
+ }
+}

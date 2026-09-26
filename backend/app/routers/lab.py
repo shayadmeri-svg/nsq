@@ -1,0 +1,60 @@
+"""The lab: structure-based molecule profiles and process / product models."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+
+from .. import lab
+from ..models import User
+from ..security import current_user
+
+router = APIRouter(prefix="/api/lab", tags=["lab"])
+
+
+def _run(fn, *args):
+    try:
+        return fn(*args)
+    except KeyError:
+        raise HTTPException(404, "No structure for this molecule yet.")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.get("/molecules")
+def molecules(user: User = Depends(current_user)):
+    return lab.molecules()
+
+
+@router.get("/molecule/{key}")
+def molecule(key: str, user: User = Depends(current_user)):
+    p = lab.profile(key)
+    if p is None:
+        raise HTTPException(404, "No structure for this molecule yet.")
+    return p
+
+
+@router.get("/engines")
+def engines(user: User = Depends(current_user)):
+    return lab.engines()
+
+
+@router.post("/molecule/{key}/dissolution")
+def dissolution(key: str, body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    return _run(lab.dissolution, key, body)
+
+
+@router.post("/molecule/{key}/crystallization")
+def crystallization(key: str, body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    return _run(lab.crystallize, key, body)
+
+
+@router.post("/compaction")
+def compaction(body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    return _run(lab.compaction, body)
+
+
+@router.post("/fluid-bed")
+def fluid_bed(body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    return _run(lab.fluid_bed, body)

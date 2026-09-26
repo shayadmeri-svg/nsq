@@ -75,6 +75,7 @@ services:
       - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-12}
       - CORS_ORIGINS=
       - SCHEDULER=${SCHEDULER:-on}
+      - SIM_URL=${SIM_URL:-http://sim:8010}
       - SCHEDULE_TZ=${SCHEDULE_TZ:-Asia/Kolkata}
       - UNIVERSE_MIN_ALERTS=${UNIVERSE_MIN_ALERTS:-5}
       - UNIVERSE_MAX_AUTO=${UNIVERSE_MAX_AUTO:-250}
@@ -86,6 +87,16 @@ services:
       redis: { condition: service_healthy }
     restart: unless-stopped
     networks: [nsq-net]
+
+  sim:
+    # PharmaPy crystallisation engine for the lab. Optional: the API falls back to its
+    # built-in engine when this is down.
+    build:
+      context: .
+      dockerfile: sim/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8010"
 
   web:
     build:

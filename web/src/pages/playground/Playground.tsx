@@ -6,7 +6,7 @@ import { PageHeader } from "../../components/ui";
 import { cn } from "../../lib/cn";
 import { EMPTY, Explorer, FilterBar, Ledger, type Filters } from "./Explorer";
 import { InsightsTab } from "./Insights";
-import { ProcessLab } from "./ProcessLab";
+import { Lab } from "./Lab";
 import { RegulatoryMap } from "./RegulatoryMap";
 import { Workbench } from "./Workbench";
 
@@ -16,7 +16,7 @@ const TABS = [
   { id: "insights", label: "Insights", icon: Lightbulb, hint: "Patterns the raw alerts don't show" },
   { id: "world", label: "Regulation map", icon: Globe2, hint: "India vs US vs EU vs Africa…" },
   { id: "molecule", label: "Molecule workbench", icon: FlaskConical, hint: "Passport, demand, scores, monographs" },
-  { id: "process", label: "Process lab", icon: Cpu, hint: "Telmisartan CPP simulator" },
+  { id: "process", label: "Lab", icon: Cpu, hint: "Structure-based molecule and process models" },
 ] as const;
 
 export function Playground() {
@@ -46,7 +46,7 @@ export function Playground() {
         {tab === "insights" && <InsightsTab />}
         {tab === "world" && <RegulatoryMap />}
         {tab === "molecule" && <Workbench />}
-        {tab === "process" && <ProcessLab />}
+        {tab === "process" && <Lab />}
       </motion.div>
     </>
   );

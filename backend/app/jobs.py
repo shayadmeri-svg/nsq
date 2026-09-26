@@ -193,11 +193,11 @@ def _source_steps(keys: list[str], p: dict[str, Any]):
 
 
 def _sync_all_steps(p: dict[str, Any]):
-    first = [k for k in SOURCE_TITLES if k != "clinical_trials"]
+    first = [k for k in SOURCE_TITLES if k not in ("clinical_trials", "pubchem")]
     steps = _source_steps(first, p)
     # candidates.json must exist before ClinicalTrials.gov is queried
     steps.append(Step("Build molecule universe (candidates for trial lookups)", [PY, "build_universe.py", "--redis-url", _local()]))
-    steps += _source_steps(["clinical_trials"], p)
+    steps += _source_steps(["clinical_trials", "pubchem"], p)
     steps += _universe_steps(p)
     if p.get("backup") and _upstash():
         steps.append(Step("Back up to Upstash", [PY, "pull_upstash.py", "--source", _local(), "--target", _upstash()]))
@@ -221,12 +221,14 @@ SOURCE_TITLES = {
     "fda_import_alerts": "FDA Import Alert 66-40 (India)",
     "fda_recalls": "openFDA recalls (India)",
     "clinical_trials": "ClinicalTrials.gov trial counts",
+    "pubchem": "PubChem structures & melting points",
 }
 _SOURCE_JOB_DESC = {
     "orange_book": "US patents, exclusivity, RLD/TE codes and ANDA competitors per ingredient. Rebuilds the molecule universe after.",
     "purple_book": "Licensed biologics, reference-product exclusivity and biosimilar counts. Rebuilds the molecule universe after.",
     "ema": "EU central authorisations, generics/biosimilars and therapeutic areas. Rebuilds the molecule universe after.",
     "clinical_trials": "Trial totals, phase 3+, recent starts and India sites per molecule (60 molecules per run, oldest first; each is re-checked weekly).",
+    "pubchem": "SMILES, XLogP3 and experimental melting points per molecule for the lab (80 per run; each re-checked monthly).",
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "fda_import_alerts": "Indian firms on the drug-GMP red list — feeds the site directory.",
     "fda_recalls": "US recalls of drugs made by Indian firms — feeds the site directory.",
@@ -241,7 +243,7 @@ def _one_source(k: str):
         if (p.get("file") or "").strip():
             s[0].cmd += ["--from-file", str(upload_path(p["file"]))]
             s[0].label += " (from uploaded file)"
-        if k == "clinical_trials":
+        if k in ("clinical_trials", "pubchem"):
             s.insert(0, Step("Refresh molecule candidates", [PY, "build_universe.py", "--redis-url", _local()]))
         if k in _MOLECULE_SOURCES:
             s += _universe_steps(p)
@@ -307,6 +309,7 @@ SCHEDULABLE: dict[str, dict[str, Any]] = {
     "src-ema": {"enabled": False, "frequency": "daily", "hour": 3, "minute": 15},
     "src-purple-book": {"enabled": False, "frequency": "monthly", "hour": 3, "minute": 30, "day": 5},
     "src-clinical-trials": {"enabled": False, "frequency": "daily", "hour": 4, "minute": 0},
+    "src-pubchem": {"enabled": False, "frequency": "daily", "hour": 4, "minute": 10},
     "src-fda-establishments": {"enabled": False, "frequency": "weekly", "hour": 4, "minute": 30, "weekday": 6},
     "src-fda-import-alerts": {"enabled": False, "frequency": "daily", "hour": 4, "minute": 45},
     "src-fda-recalls": {"enabled": False, "frequency": "weekly", "hour": 5, "minute": 0, "weekday": 6},
