@@ -19,6 +19,7 @@ import { Explorer } from "./pages/admin/Explorer";
 import { Molecules } from "./pages/admin/Molecules";
 import { Pipelines } from "./pages/admin/Pipelines";
 import { Sites } from "./pages/admin/Sites";
+import { Playground } from "./pages/playground/Playground";
 
 function Splash() {
   return (
@@ -50,10 +51,19 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Old app URLs */}
+      <Route path="/sign-in" element={<Navigate to="/login" replace />} />
+      <Route path="/signin" element={<Navigate to="/login" replace />} />
+      <Route path="/dashboard" element={<Navigate to="/" replace />} />
+      <Route path="/diagnostics/*" element={<Navigate to="/" replace />} />
+      <Route path="/simulator/*" element={<Navigate to="/playground/molecule" replace />} />
+      <Route path="/manufacturer/*" element={<Navigate to="/" replace />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
       <Route element={<Protected />}>
         <Route path="/" element={<Home />} />
         <Route path="/account" element={<Account />} />
+        <Route path="/playground" element={<Playground />} />
+        <Route path="/playground/:tab" element={<Playground />} />
         <Route path="/o/:slug" element={<OrgOverview />} />
         <Route path="/o/:slug/quality" element={<Quality />} />
         <Route path="/o/:slug/quality/:issueId" element={<Quality />} />

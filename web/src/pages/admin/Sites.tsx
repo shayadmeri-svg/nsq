@@ -14,7 +14,7 @@ export function FdaBadges({ fda }: { fda: any }) {
   return (
     <div className="flex flex-wrap gap-1">
       {fda.registered && <Badge tone={fda.match === "site" ? "brand" : "sky"}><BadgeCheck size={11} /> FDA reg.{fda.match === "company" ? " (co.)" : ""}</Badge>}
-      {fda.import_alert?.length > 0 && <Badge tone="rose"><AlertOctagon size={11} /> Import alert</Badge>}
+      {fda.import_alert?.length > 0 && <span title="Company-name match with FDA Import Alert 66-40; the listed facility may be another plant"><Badge tone="rose"><AlertOctagon size={11} /> Import alert (co.)</Badge></span>}
       {fda.recalls && <Badge tone="amber"><PackageX size={11} /> {fda.recalls.recalls} US recalls</Badge>}
     </div>
   );

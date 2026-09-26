@@ -8,13 +8,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select, text
 
 from . import data, scheduler
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .models import JobRun, Plant, User, utcnow
-from .routers import admin, auth, jobs as jobs_router, molecules, orgs, pipelines, platform
+from .routers import admin, auth, jobs as jobs_router, molecules, orgs, pipelines, platform, playground
 from .security import csrf_guard, hash_password
 
 log = logging.getLogger("nsq")
@@ -65,11 +66,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="NSQ Platform API", version="2.0.0", lifespan=lifespan,
               dependencies=[Depends(csrf_guard)], docs_url="/api/docs", openapi_url="/api/openapi.json")
 
+app.add_middleware(GZipMiddleware, minimum_size=2048)
+
 if settings.cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
                        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["content-type", "x-nsq-client"])
 
-for r in (auth.router, orgs.router, admin.router, jobs_router.router, pipelines.router, molecules.router, platform.router):
+for r in (auth.router, orgs.router, admin.router, jobs_router.router, pipelines.router, molecules.router, playground.router, platform.router):
     app.include_router(r)
 
 

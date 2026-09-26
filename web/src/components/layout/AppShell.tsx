@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Building2, ChevronDown, ClipboardList, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
+import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -160,6 +160,9 @@ export function AppShell({ me }: { me: Me }) {
           {(me.is_platform || me.role === "org_admin") && <NavItem to={`/o/${slug}/team`} icon={<Users size={17} />}>Team</NavItem>}
         </Section>
       )}
+      <Section title="Explore">
+        <NavItem to="/playground" icon={<Compass size={17} />}>Playground</NavItem>
+      </Section>
       {me.is_platform && (
         <Section title="Platform">
           <NavItem to="/admin" end icon={<Gauge size={17} />}>Admin overview</NavItem>
