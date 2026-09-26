@@ -30,8 +30,9 @@ if [ -x "$DOCKER_CONFIG/cli-plugins/docker-buildx" ]; then
   fi
 fi
 if [ "$NEED_BUILDX" = "1" ]; then
+  case "$(uname -m)" in aarch64|arm64) BUILDX_ARCH=arm64 ;; *) BUILDX_ARCH=amd64 ;; esac
   BUILDX_URL=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest \
-    | grep "browser_download_url.*linux-amd64" \
+    | grep "browser_download_url.*linux-${BUILDX_ARCH}\"" \
     | grep -v '\.sig\|\.sbom\|\.provenance' \
     | cut -d '"' -f 4)
   curl -SL "$BUILDX_URL" -o "$DOCKER_CONFIG/cli-plugins/docker-buildx"
@@ -42,8 +43,31 @@ fi
 #     instance's IAM role) and writes .env. -------------------------------
 "$APP_DIR/refresh-env.sh"
 
+# --- swap: image builds (RDKit, the Vite bundle, and the sim service's
+#     Fortran/SUNDIALS compile) need more than a 1 GB t3.micro has. A 2 GB
+#     swapfile is created once and kept across reboots. ------------------------
+MEM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+if [ "$MEM_MB" -lt 3500 ] && ! swapon --show | grep -q /swapfile; then
+  if [ ! -f /swapfile ]; then
+    fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+    chmod 600 /swapfile
+    mkswap /swapfile
+  fi
+  swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 # --- build + start ---------------------------------------------------------
-docker compose up -d --build
+#     Everything except the PharmaPy `sim` service must come up. `sim` is
+#     built separately and allowed to fail: the lab falls back to its built-in
+#     crystallisation engine while it is down. Set DEPLOY_SIM=0 to skip it.
+CORE_SERVICES=$(docker compose config --services | grep -vx sim | tr '\n' ' ')
+# shellcheck disable=SC2086
+docker compose up -d --build $CORE_SERVICES
+if [ "${DEPLOY_SIM:-1}" = "1" ]; then
+  docker compose up -d --build sim \
+    || echo "deploy: WARNING — sim (PharmaPy) failed to build/start; the lab uses its built-in engine." >&2
+fi
 
 # --- seed the in-server Redis on a fresh box --------------------------------
 #     The services read the stack's own `redis` container, not Upstash. On a
