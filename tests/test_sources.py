@@ -140,3 +140,35 @@ def test_purple_book_utf16():
     d = purple_book.parse_csv(decode_text(raw))
     assert d["rituximab"]["reference"]["proprietary_name"] == "Rituxan"
     assert decode_text("abc".encode("utf-16-le")) == "abc"
+
+
+def test_decrs_real_layout_excludes_indiana(tmp_path):
+    p = tmp_path / "drls_reg.txt"
+    p.write_text(
+        " FEI_NUMBER\tDUNS_NUMBER\tFIRM_NAME\tADDRESS\tEXPIRATION_DATE\tOPERATIONS\tEXCLUSION_FLAG\n"
+        "0001827089 \t 021738554 \t Tyson Foods, Inc \t 495 Highway 64 NW, Ramsey, Indiana (IN) 47166, United States (USA) \t 12/31/2026 \t MANUFACTURE \t N \n"
+        "1000172912 \t 650173537 \t Biocon Limited \t 20th KM, Hosur Road, Electronics City, Bengaluru, Karnataka 560100, India (IND) \t 12/31/2026 \t ANALYSIS; API MANUFACTURE \t N \n"
+    )
+    d = fda_sites.parse_decrs(p, log=lambda *_: None)
+    assert list(d) == ["1000172912"]
+    e = d["1000172912"]
+    assert (e["city"], e["state"], e["postal"]) == ("Bengaluru", "Karnataka", "560100")
+    assert e["operations"] == ["analysis", "api manufacture"]
+
+
+def test_import_alert_real_layout():
+    html = """<div class="center"><h4>CHINA</h4></div><div class="div-info"><div class="div-name floatleft">Some Co</div></div>
+    <div class="center"><h4>INDIA</h4></div>
+    <div class="div-info">
+      <div class="div-name floatleft">AKRON FORMULATIONS INDIA PRIVATE LIMITED </div>
+      <div class="div-name floatright">Date Published : 11/26/2024</div>
+      <div class="clear">134 - B, Ida Bollaram, Jinnaram Mandal, Medak , Hyderabad, Telangana INDIA </div>
+    </div>
+    <div><div class="floatleft"><em>56 -- </em> Antibiotics<br></div></div>
+    <p class="clear"><div>Notes: All Drug and Drug Products</div></p>
+    <div class="center"><h4>INDONESIA</h4></div><div class="div-info"><div class="div-name floatleft">Other</div></div>"""
+    d = fda_sites.parse_import_alert(html)
+    assert len(d) == 1
+    v = next(iter(d.values()))
+    assert v["name"] == "AKRON FORMULATIONS INDIA PRIVATE LIMITED" and v["dates"] == ["11/26/2024"]
+    assert "Telangana" in v["address"] and v["notes"] == ["All Drug and Drug Products"]

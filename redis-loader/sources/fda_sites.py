@@ -128,6 +128,19 @@ def _table_rows(path: Path) -> tuple[list[str], list[list[str]]]:
     return [_norm_h(h) for h in rows[0]], rows[1:]
 
 
+_INDIA_ADDR = re.compile(r"\bIndia\s*\(IND\)\s*$|,\s*India\s*$", re.I)
+_ADDR_TAIL = re.compile(r",\s*([^,]+?)\s*,\s*([A-Za-z .&-]+?)\s+(\d{3}\s?\d{3})\s*,\s*India", re.I)
+
+
+def _split_indian_address(address: str) -> dict[str, str]:
+    """'…, Bengaluru, Karnataka 560100, India (IND)' -> city, state, PIN."""
+    m = _ADDR_TAIL.search(address or "")
+    if not m:
+        pin = re.search(r"(?<!\d)([1-8]\d{2})\s?(\d{3})(?!\d)", address or "")
+        return {"city": "", "state": "", "postal": "".join(pin.groups()) if pin else ""}
+    return {"city": m.group(1).strip(), "state": m.group(2).strip(), "postal": m.group(3).replace(" ", "")}
+
+
 def parse_decrs(path: Path, log=print) -> dict[str, dict[str, Any]]:
     header, rows = _table_rows(path)
     cols = _pick(header)
@@ -142,14 +155,18 @@ def parse_decrs(path: Path, log=print) -> dict[str, dict[str, Any]]:
 
     for r in rows:
         country = g(r, "country").upper()
-        joined = " ".join(r).upper()
-        if not (country in {"IN", "IND", "INDIA"} or (not country and " INDIA" in joined)):
+        address = ", ".join(x for x in (g(r, "address"), g(r, "address2")) if x)
+        # The current file has no country column: the address ends "..., India (IND)".
+        # (A plain " INDIA" test would also match "Indiana".)
+        if not (country in {"IN", "IND", "INDIA"} or (not country and _INDIA_ADDR.search(address))):
             continue
-        fei = g(r, "fei") or f"noFEI-{len(out)}"
+        parsed = _split_indian_address(address)
+        fei = (g(r, "fei") or "").lstrip("0") or f"noFEI-{len(out)}"
         e = out.setdefault(fei, {
-            "fei": g(r, "fei"), "duns": g(r, "duns"), "name": g(r, "name"),
-            "address": ", ".join(x for x in (g(r, "address"), g(r, "address2")) if x),
-            "city": g(r, "city"), "state": g(r, "state"), "postal": g(r, "postal"),
+            "fei": fei if not fei.startswith("noFEI") else "", "duns": g(r, "duns").lstrip("0"), "name": g(r, "name"),
+            "address": address,
+            "city": g(r, "city") or parsed["city"], "state": g(r, "state") or parsed["state"],
+            "postal": g(r, "postal") or parsed["postal"],
             "operations": set(), "expiration": g(r, "expiration"), "registrant": g(r, "registrant"),
         })
         for op in re.split(r"\s*[;,]\s*", g(r, "operations")):
@@ -218,7 +235,40 @@ _DATE = re.compile(r"(\d{1,2}/\d{1,2}/\d{4})")
 _FEI = re.compile(r"FEI\s*(?:#|No\.?|Number)?\s*:?\s*(\d{6,12})", re.I)
 
 
+_TAGS = re.compile(r"<[^>]+>")
+
+
+def _clean(fragment: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(_TAGS.sub(" ", fragment))).strip(" ,")
+
+
 def parse_import_alert(text_html: str, country: str = "INDIA") -> dict[str, dict[str, Any]]:
+    """FDA's current layout: <h4>COUNTRY</h4>, then one <div class="div-info"> per
+    firm (name, 'Date Published : …', address), followed by product lines with Notes."""
+    m = re.search(rf"<h4>\s*{re.escape(country)}\s*</h4>", text_html, re.I)
+    if m:
+        nxt = re.search(r"<h4>", text_html[m.end():], re.I)
+        sec = text_html[m.end(): m.end() + nxt.start()] if nxt else text_html[m.end():]
+        blocks = re.split(r'<div class="div-info">', sec)[1:]
+        out: dict[str, dict[str, Any]] = {}
+        for b in blocks:
+            name_m = re.search(r'div-name floatleft">(.*?)</div>', b, re.S)
+            if not name_m:
+                continue
+            name = _clean(name_m.group(1))
+            date_m = re.search(r"Date Published\s*:\s*([0-9/]+)", b)
+            addr_m = re.search(r'<div class="clear">(.*?)</div>', b, re.S)
+            notes = list(dict.fromkeys(_clean(n) for n in re.findall(r"<div>Notes:(.*?)</div>", b, re.S)))[:3]
+            fei = re.search(r"FEI\s*(?:#|No\.?|Number)?\s*:?\s*(\d{6,12})", b)
+            key = fei.group(1) if fei else norm_company(name) + "|" + (_clean(addr_m.group(1))[:40] if addr_m else "")
+            out[key] = {"name": name, "fei": fei.group(1) if fei else "", "address": _clean(addr_m.group(1)) if addr_m else "",
+                        "company_key": norm_company(name), "dates": [date_m.group(1)] if date_m else [], "notes": notes}
+        if out:
+            return out
+    return _parse_import_alert_loose(text_html, country)
+
+
+def _parse_import_alert_loose(text_html: str, country: str = "INDIA") -> dict[str, dict[str, Any]]:
     p = _Text()
     p.feed(html.unescape(text_html))
     p._flush()

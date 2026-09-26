@@ -38,6 +38,20 @@ BROWSER_HEADERS = {
 }
 
 
+# www.fda.gov's abuse detection, on the other hand, flags a browser User-Agent
+# that arrives without the rest of a browser's fingerprint — a plain tool
+# User-Agent works there. Each host gets the header set it accepts, and a
+# download that lands on an "apology"/404 page is retried with the other set.
+TOOL_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; nsq-platform-ingest/1.0)", "Accept": "*/*"}
+
+
+def headers_for(url: str) -> dict[str, str]:
+    from urllib.parse import urlparse
+
+    host = urlparse(url).netloc.lower()
+    return dict(TOOL_HEADERS if host in ("www.fda.gov", "fda.gov") else BROWSER_HEADERS)
+
+
 def decode_text(raw: bytes) -> str:
     """Bytes -> text, handling UTF-16 (FDA's Purple Book export) and UTF-8 BOMs."""
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
@@ -145,7 +159,8 @@ def http_get(url: str, *, params: Optional[dict] = None, timeout: int = 120, ret
         url = f"{url}{'&' if '?' in url else '?'}{urlencode(params)}"
     last: Exception | None = None
     for attempt in range(retries + 1):
-        req = Request(url, data=data, headers={**BROWSER_HEADERS, "Accept": accept if accept != "*/*" else BROWSER_HEADERS["Accept"], **(headers or {})})
+        base = headers_for(url)
+        req = Request(url, data=data, headers={**base, **({"Accept": accept} if accept != "*/*" else {}), **(headers or {})})
         try:
             with urlopen(req, timeout=timeout) as resp:
                 return resp.read()
@@ -168,10 +183,21 @@ def http_get(url: str, *, params: Optional[dict] = None, timeout: int = 120, ret
 
 def download(ctx: Ctx, url: str, filename: str, *, timeout: int = 300) -> Path:
     """Conditional GET into raw_dir/filename. Raises NotModified on 304."""
+    first = headers_for(url)
+    other = dict(BROWSER_HEADERS if first is not None and first.get("User-Agent") == TOOL_HEADERS["User-Agent"] else TOOL_HEADERS)
+    try:
+        return _download(ctx, url, filename, first, timeout)
+    except NotFound as exc:
+        # Bot filters answer with a redirect to an apology / 404 page: try the other header set once.
+        ctx.log(f"  {exc} — retrying with different request headers")
+        return _download(ctx, url, filename, other, timeout)
+
+
+def _download(ctx: Ctx, url: str, filename: str, base_headers: dict[str, str], timeout: int) -> Path:
     dest = ctx.raw_dir / filename
     cache_path = _cache_file(ctx.raw_dir)
     cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
-    headers = dict(BROWSER_HEADERS)
+    headers = dict(base_headers)
     prev = cache.get(url, {})
     if dest.exists() and not ctx.force:
         if prev.get("etag"):
@@ -181,6 +207,9 @@ def download(ctx: Ctx, url: str, filename: str, *, timeout: int = 300) -> Path:
     req = Request(url, headers=headers)
     try:
         with urlopen(req, timeout=timeout) as resp:
+            final = resp.geturl()
+            if "apology" in (final or "") or "abuse-detection" in (final or ""):
+                raise NotFound(f"blocked: {url} redirected to {final}")
             tmp = dest.with_suffix(dest.suffix + ".part")
             with open(tmp, "wb") as f:
                 while True:

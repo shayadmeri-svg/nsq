@@ -153,8 +153,16 @@ def run(ctx: Ctx) -> int:
     else:
         text = None
         # Links published on the downloads page first (if it is server-rendered), then the pattern.
-        listed = [u for u in page_links(META["page"], r"purplebook-search-.*\.csv$")]
-        cands = [(u, "purplebook-listed.csv") for u in listed[:2]] + candidate_urls(date.today())
+        listed = page_links(META["page"], r"purplebook-search-.*\.csv$")
+
+        def _when(u: str) -> tuple[int, int]:
+            y = re.search(r"/(20\d\d)/", u)
+            mo = re.search(r"purplebook-search-([a-z]+)-data", u, re.I)
+            mi = _MONTHS.index(mo.group(1).lower()) + 1 if mo and mo.group(1).lower() in _MONTHS else 0
+            return (int(y.group(1)) if y else 0, mi)
+
+        listed = sorted(set(listed), key=_when, reverse=True)
+        cands = [(u, "purplebook-{0}-{1:02d}.csv".format(*_when(u))) for u in listed[:3]] + candidate_urls(date.today())
         tried = []
         for url, local in cands:
             try:
