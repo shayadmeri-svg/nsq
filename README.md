@@ -61,11 +61,16 @@ change. Every sign-in, access change, org/plant edit and job run is audited.
 ## Run it
 
 ```bash
-cp .env.example .env     # REDIS_URL (Upstash), POSTGRES_PASSWORD, SUPERADMIN_EMAIL/PASSWORD, APP_BASE_URL
+cp .env.example .env     # REDIS_URL (Upstash), DATABASE_URL (Neon etc.) or POSTGRES_PASSWORD, SUPERADMIN_EMAIL/PASSWORD, APP_BASE_URL
 docker compose up -d --build
 ./pull-upstash.sh        # first time: copy the dataset into the in-server Redis
 # open http://<host>/  → sign in as the super admin → Admin → Organisations → New
 ```
+
+The CDSCO CSV is gitignored; when it is missing the refresh job and the
+`just` recipes rebuild it from the records in Redis (`just csv-from-redis`),
+and **Fetch latest CDSCO month** / `just fetch-nsq` keeps it current from the
+live CDSCO table.
 
 No Upstash? Admin → Data jobs → **Restore from snapshot** seeds Redis from
 `data/nsq_snapshot.json.gz`; **Reload CDMO seeds** loads the patent/plant data.
@@ -89,7 +94,8 @@ just test
 | Restore from snapshot | seed Redis from the bundled snapshot | admin / super admin with flush |
 | Rebuild enriched frame | recompute the precomputed dashboard frame | admin |
 | Write snapshot | dump Redis to `data/nsq_snapshot.json.gz` | admin |
-| Monthly NSQ refresh | upload the new cumulative CDSCO CSV, then: load → ontologies → frame → pull | super admin |
+| Fetch latest CDSCO month | pull the current month from the live CDSCO NSQ table, append new alerts to the cumulative CSV, then the full refresh | super admin |
+| Monthly NSQ refresh | rebuild from the cumulative CSV (or an uploaded one): load → ontologies → frame → pull. A missing CSV is rebuilt from Redis first | super admin |
 | Reload CDMO seeds | patents / regulatory / demand / seeded plants; user plants are kept | super admin |
 | Re-publish user plants | Postgres → Redis | admin |
 

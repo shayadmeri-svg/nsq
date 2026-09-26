@@ -87,10 +87,19 @@ def sync_plants_to_redis() -> str:
     return f"re-published {n} user-created plant(s) from Postgres"
 
 
-def _refresh_steps(p: dict[str, Any]):
+def _refresh_steps(p: dict[str, Any], fetch: bool = False):
     csv = str(_csv_path(p))
     target = _upstash() or _local()
-    steps = [
+    steps = []
+    if fetch:
+        steps.append(("Fetch latest CDSCO month and append to the cumulative CSV",
+                      [PY, "sync_cdsco.py", "--csv", csv, "--redis-url", _local()], {}))
+    else:
+        # A fresh box / clone has no CSV (it is gitignored): rebuild it from
+        # the records already in Redis instead of failing.
+        steps.append(("Ensure the cumulative CSV exists (rebuild from Redis if missing)",
+                      [PY, "sync_cdsco.py", "--csv", csv, "--redis-url", _local(), "--bootstrap-only"], {}))
+    steps += [
         ("Load CSV into " + ("Upstash" if _upstash() else "local Redis") + " (flush + ontology augment)",
          [PY, "load_csv_redis.py", "--input", csv, "--redis-url", target, "--flush", "--augment", "1"], {}),
         ("Build product ontology", [PY, "build_product_ontology.py", "--input", csv, "--redis-url", target], {}),
@@ -137,6 +146,8 @@ REGISTRY: dict[str, Job] = {j.key: j for j in [
     Job("refresh-nsq", "Monthly NSQ refresh", "Rebuild the whole NSQ dataset from a CSV: load, ontologies, frame, then copy to the in-server Redis.",
         "Data", _refresh_steps, role="super_admin", destructive=lambda p: True,
         params=[Param("csv", "CSV file (blank = bundled cumulative CSV)", kind="csv", default="")]),
+    Job("fetch-nsq", "Fetch latest CDSCO month", "Pull the current month from the live CDSCO NSQ table, append new alerts to the cumulative CSV, then run the full refresh.",
+        "Data", lambda p: _refresh_steps({"csv": ""}, fetch=True), role="super_admin", destructive=lambda p: True),
     Job("load-seeds", "Reload CDMO seeds", "Reload patents, regulatory passports, demand and seeded plants from data/*.json. User plants are kept.",
         "Data", _seed_steps, role="super_admin", destructive=lambda p: True, after=sync_plants_to_redis),
     Job("sync-plants", "Re-publish user plants", "Write every user-created plant from Postgres back into Redis.",

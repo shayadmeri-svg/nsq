@@ -16,9 +16,19 @@ def _bool(name: str, default: bool) -> bool:
     return v.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _db_url(raw: str) -> str:
+    """Accept the plain URL managed Postgres providers hand out (Neon,
+    Supabase, RDS): 'postgres://' / 'postgresql://' -> the psycopg 3 driver."""
+    raw = raw.strip()
+    for prefix in ("postgres://", "postgresql://"):
+        if raw.startswith(prefix):
+            return "postgresql+psycopg://" + raw[len(prefix):]
+    return raw
+
+
 @dataclass(frozen=True)
 class Settings:
-    database_url: str = os.environ.get("DATABASE_URL", "postgresql+psycopg://nsq@localhost:5432/nsq")
+    database_url: str = _db_url(os.environ.get("DATABASE_URL", "postgresql+psycopg://nsq@localhost:5432/nsq"))
     # The Redis the app reads (in-server copy). Upstash is only touched by jobs.
     redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     upstash_url: str = os.environ.get("UPSTASH_URL", "")

@@ -52,12 +52,13 @@ ping:
 
 _require-csv:
     @test -f "{{CSV}}" || { \
-      echo "ERROR: CSV not found: {{CSV}}"; \
-      echo "  data/*.csv is gitignored, so a fresh clone will not have it."; \
-      echo "  Redis is the source of truth for the running apps — this file is"; \
-      echo "  only needed to rebuild that state. Point at another file with:"; \
-      echo "    NSQ_CSV='data/your-export.csv' just <recipe>"; \
-      exit 1; }
+      echo "CSV not found: {{CSV}} (data/*.csv is gitignored)."; \
+      echo "Rebuilding it from the NSQ records in \$REDIS_URL ..."; \
+      cd {{LOADER}} && .venv/bin/python sync_cdsco.py --csv "../{{CSV}}" --bootstrap-only || { \
+        echo "ERROR: could not rebuild the CSV. Seed Redis first (just seed-local, or"; \
+        echo "  Admin → Data jobs → Restore from snapshot), or point at a file with"; \
+        echo "    NSQ_CSV='data/your-export.csv' just <recipe>"; \
+        exit 1; }; }
 
 _require-json:
     @test -f "{{INPUT}}" || { \
@@ -244,11 +245,20 @@ clean:
     @read -p "Type 'yes' to continue: " confirm && [ "$confirm" = "yes" ]
     cd {{LOADER}} && .venv/bin/python clean_nsq_redis.py
 
-# Fetch the live CDSCO publicNsqDrugTable JSON and load it into Redis
-# (wipes existing nsq:* keys first, so Redis always reflects the latest fetch)
-fetch-cdscoonline: && build-frame
-    cd {{LOADER}} && .venv/bin/python fetch_cdsco.py --url "{{CDSCO_URL}}" --output ../{{INPUT}}
-    cd {{LOADER}} && .venv/bin/python load_nsq_redis.py --input "../{{INPUT}}" --redis-url "$REDIS_URL" --flush
+# Rebuild the cumulative CSV from the NSQ records in $REDIS_URL (use when the
+# gitignored CSV is missing, e.g. on a fresh clone).
+csv-from-redis:
+    cd {{LOADER}} && .venv/bin/python sync_cdsco.py --csv "../{{CSV}}" --bootstrap-only
+
+# Fetch the latest month from the live CDSCO NSQ table and append new alerts to
+# the cumulative CSV (raw download kept in data/raw/cdsco/). Does not touch Redis.
+sync-nsq:
+    cd {{LOADER}} && .venv/bin/python sync_cdsco.py --csv "../{{CSV}}"
+
+# Monthly refresh straight from CDSCO: fetch + append, then the full
+# deterministic rebuild into $REDIS_URL (needs CONFIRM_FLUSH=yes), then
+# ./pull-upstash.sh on the server. Same as Admin → Data jobs → Fetch latest CDSCO month.
+fetch-nsq: _confirm-flush sync-nsq && reload-csv verify
 
 # Push a GeoJSON file into Redis as a single key (default: the India
 # states file used by analytics/app.py), so it doesn't need to live in git

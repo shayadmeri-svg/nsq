@@ -52,7 +52,7 @@ function RunModal({ job, onClose, onStarted }: { job: any | null; onClose: () =>
   const uploads = useQuery({ queryKey: ["uploads"], queryFn: () => api<any>("/api/jobs/uploads"), enabled: !!job?.params.some((p: any) => p.kind === "csv") });
   useEffect(() => { if (job) { setParams(Object.fromEntries(job.params.map((p: any) => [p.name, p.default]))); setConfirm(""); setErr(null); } }, [job]);
   if (!job) return <Modal open={false} onClose={onClose} title="">{null}</Modal>;
-  const destructive = job.key === "refresh-nsq" || job.key === "load-seeds" || ((job.key === "pull-upstash" || job.key === "backup-to-upstash") && !params.dry_run) || (job.key === "restore-snapshot" && params.flush);
+  const destructive = job.key === "refresh-nsq" || job.key === "fetch-nsq" || job.key === "load-seeds" || ((job.key === "pull-upstash" || job.key === "backup-to-upstash") && !params.dry_run) || (job.key === "restore-snapshot" && params.flush);
 
   const run = async () => {
     setBusy(true);

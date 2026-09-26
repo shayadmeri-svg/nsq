@@ -14,3 +14,4 @@ data/uploads/
 .claude-transfer/
 dump.rdb
 web/*.tsbuildinfo
+redis-loader/.venv
