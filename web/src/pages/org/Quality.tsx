@@ -28,7 +28,7 @@ export function Quality() {
   const [category, setCategory] = useState("");
   const [page, setPage] = useState(1);
   const dq = useDebounced(q);
-  useEffect(() => setPage(1), [dq, category]);
+  useEffect(() => { setPage(1); }, [dq, category]);
   const issues = useQuery({
     queryKey: ["org", slug, "issues", dq, category, page],
     queryFn: () => api<any>(`/api/orgs/${slug}/quality/issues?${new URLSearchParams({ q: dq, category, page: String(page), size: "15" })}`),

@@ -36,7 +36,7 @@ function LogViewer({ runId, onClose }: { runId?: number; onClose: () => void }) 
     es.onerror = () => es.close();
     return () => es.close();
   }, [runId, qc]);
-  useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [log]);
+  useEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [log]);
   return (
     <Drawer open={!!runId} onClose={onClose} title={`Run #${runId ?? ""}`} subtitle={<span className="flex items-center gap-1.5">{STATUS[status]?.icon} {status}</span>} width={860}>
       <pre ref={ref} className="scrollbar-thin h-[calc(100vh-160px)] overflow-auto rounded-2xl bg-night-900 p-5 font-mono text-[12px] leading-relaxed text-slate-200">{log || "Waiting for output…"}</pre>

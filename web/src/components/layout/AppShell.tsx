@@ -148,8 +148,8 @@ export function AppShell({ me }: { me: Me }) {
   const [mobile, setMobile] = useState(false);
   const slug = params.slug ?? (loc.pathname.startsWith("/o/") ? loc.pathname.split("/")[2] : undefined) ?? (!me.is_platform ? me.org?.slug : undefined);
   const pageKey = useMemo(() => loc.pathname.split("/").slice(0, 4).join("/").replace(/\/(quality|opportunities|eu)\/.+$/, "/$1"), [loc.pathname]);
-  useEffect(() => setMobile(false), [loc.pathname]);
-  useEffect(() => window.scrollTo({ top: 0 }), [pageKey]);
+  useEffect(() => { setMobile(false); }, [loc.pathname]);
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [pageKey]);
 
   const sidebar = (
     <nav className="flex h-full flex-col gap-2 overflow-y-auto bg-night-900 px-3 pb-4 pt-5 scrollbar-thin">
