@@ -18,7 +18,7 @@ INPUT := env_var_or_default("NSQ_JSON", "data/publicNsqDrugTable.json")
 # truth for the running apps; this CSV is the input that *builds* that state.
 # It is gitignored (data/*.csv), so a fresh clone will not have it — the
 # _require-csv guard below fails with the expected path instead of a pandas
-# stack trace. shared/nsq_redis.py's _DEFAULT_CSV must match this.
+# stack trace. core/nsq_redis.py's _DEFAULT_CSV must match this.
 CSV := env_var_or_default("NSQ_CSV", "data/CDSCO Not of Standard Quality (NSQ) Jan 21-Jul 26.csv")
 AUGMENT := env_var_or_default("NSQ_AUGMENT", "1")
 # Destructive recipes (anything passing --flush) wipe the nsq:* keyspace in
@@ -125,13 +125,11 @@ refresh-csv: reload-csv verify
 build-frame:
     @command -v docker >/dev/null 2>&1 || { \
       echo "WARNING: docker not found — the enriched frame was NOT rebuilt."; \
-      echo "  The apps will fall back to computing it (~55s per cold cache)"; \
-      echo "  until you run 'just build-frame' somewhere with docker."; \
+      echo "  Run it from Admin → Data jobs → Rebuild enriched frame instead."; \
       exit 0; }
     docker compose run --rm --no-deps \
       -e REDIS_URL="$REDIS_URL" \
-      -v "$PWD/redis-loader/build_enriched_frame.py:/app/build_enriched_frame.py:ro" \
-      --entrypoint python3 analytics /app/build_enriched_frame.py
+      --entrypoint python3 api /app/redis-loader/build_enriched_frame.py
 
 # Copy the static dataset from Upstash ($REDIS_URL) into the stack's own
 # `redis` container, then restart the services that read it. Run after
@@ -156,7 +154,7 @@ refresh-prod:
 
 # Dump the runtime-needed Redis keyspace to a local snapshot (dev Redis).
 # The snapshot is the fallback tier served when Redis is unavailable —
-# see shared/nsq_redis.py. Git-track the file so deploys carry it.
+# see core/nsq_redis.py. Git-track the file so deploys carry it.
 snapshot:
     cd {{LOADER}} && .venv/bin/python dump_snapshot.py --redis-url "$REDIS_URL" --output "../{{SNAPSHOT}}" --source-label dev
 
@@ -184,73 +182,18 @@ build-product-ontology: _require-csv
 verify:
     cd {{LOADER}} && .venv/bin/python verify_nsq_redis.py
 
-# Sync the source-of-truth files in shared/ to each service's local copy
-# (the Dockerfiles COPY from the service's own shared/ dir, not the
-# root). Run this after editing shared/nsq_redis.py,
-# shared/company_ontology.py, or shared/data_loader.py.
-sync-shared:
-    cp shared/nsq_redis.py analytics/shared/nsq_redis.py
-    cp shared/nsq_redis.py simulator/shared/nsq_redis.py
-    cp shared/nsq_redis.py engine/shared/nsq_redis.py
-    cp shared/nsq_redis.py manufacturer/shared/nsq_redis.py
-    cp shared/company_ontology.py analytics/shared/company_ontology.py
-    cp shared/company_ontology.py simulator/shared/company_ontology.py
-    cp shared/company_ontology.py engine/shared/company_ontology.py
-    cp shared/company_ontology.py manufacturer/shared/company_ontology.py
-    # data_loader: streamlit-cached enriched NSQ frame. NOT synced to engine
-    # (engine has no streamlit; data_loader uses @st.cache_data).
-    cp shared/data_loader.py analytics/shared/data_loader.py
-    cp shared/data_loader.py simulator/shared/data_loader.py
-    cp shared/data_loader.py manufacturer/shared/data_loader.py
-    # GMP/pharmacopeia knowledge cores (pure stdlib; no streamlit/redis).
-    # Source of truth in shared/; synced to analytics + manufacturer only
-    # (engine/simulator do not import them — minimise blast radius).
-    cp shared/gmp_knowledge.py analytics/shared/gmp_knowledge.py
-    cp shared/gmp_knowledge.py manufacturer/shared/gmp_knowledge.py
-    cp shared/pharmacopeia_methods.py analytics/shared/pharmacopeia_methods.py
-    cp shared/pharmacopeia_methods.py manufacturer/shared/pharmacopeia_methods.py
-    cp shared/pharmacopeia_diff.py analytics/shared/pharmacopeia_diff.py
-    cp shared/pharmacopeia_diff.py manufacturer/shared/pharmacopeia_diff.py
-    cp shared/ich_registry.py analytics/shared/ich_registry.py
-    cp shared/ich_registry.py manufacturer/shared/ich_registry.py
-    cp shared/us_regulatory_data.py analytics/shared/us_regulatory_data.py
-    cp shared/us_regulatory_data.py manufacturer/shared/us_regulatory_data.py
-    # streamlit_entry.py: the container ENTRYPOINT launcher (quiets the
-    # WebSocketClosedError flood). Streamlit services only — engine has no
-    # Streamlit.
-    cp shared/streamlit_entry.py analytics/shared/streamlit_entry.py
-    cp shared/streamlit_entry.py simulator/shared/streamlit_entry.py
-    cp shared/streamlit_entry.py manufacturer/shared/streamlit_entry.py
-    @echo "Synced. Verify with: git diff --stat analytics/shared simulator/shared engine/shared manufacturer/shared"
-
-# Sync the manufacturer_api vendored copies. The API shares the headless
-# cores with the manufacturer Streamlit app; this copies the source-of-truth
-# shared/ cores + the manufacturer app's own headless modules (diagnostics_core,
-# tenant_scope, tenants) + the streamlit-free ui/ chart builders into
-# manufacturer_api/. Run after editing any of them (and after `just sync-shared`).
-sync-manufacturer-api:
-    cp shared/nsq_redis.py manufacturer_api/shared/nsq_redis.py
-    cp shared/company_ontology.py manufacturer_api/shared/company_ontology.py
-    cp shared/data_loader.py manufacturer_api/shared/data_loader.py
-    cp shared/gmp_knowledge.py manufacturer_api/shared/gmp_knowledge.py
-    cp shared/pharmacopeia_methods.py manufacturer_api/shared/pharmacopeia_methods.py
-    cp shared/pharmacopeia_diff.py manufacturer_api/shared/pharmacopeia_diff.py
-    cp shared/ich_registry.py manufacturer_api/shared/ich_registry.py
-    cp shared/us_regulatory_data.py manufacturer_api/shared/us_regulatory_data.py
-    cp manufacturer/diagnostics_core.py manufacturer_api/diagnostics_core.py
-    cp manufacturer/tenant_scope.py manufacturer_api/tenant_scope.py
-    cp manufacturer/tenants.py manufacturer_api/tenants.py
-    cp manufacturer/ui/palette.py manufacturer_api/ui/palette.py
-    cp manufacturer/ui/charts.py manufacturer_api/ui/charts.py
-    @echo "Synced manufacturer_api. Verify with: git diff --stat manufacturer_api"
+# (sync-shared / sync-manufacturer-api are gone: core/ is the single copy the
+# api image and the loaders import. The legacy analytics app keeps its own
+# vendored analytics/shared/ until it is retired.)
 
 # Load the CDMO patent intelligence seed into Redis (cdmo:patent:*)
+# (Also available as Admin → Data jobs → Reload CDMO seeds.)
 load-patents:
     cd {{LOADER}} && .venv/bin/python load_patents.py --input ../data/patent_seed.json --redis-url "$REDIS_URL" --flush
 
 # Load the CDMO plant asset seed into Redis (cdmo:plant:*)
 load-plant-assets:
-    cd {{LOADER}} && .venv/bin/python load_plant_assets.py --input ../data/plant_assets_seed.json --redis-url "$REDIS_URL" --flush
+    cd {{LOADER}} && .venv/bin/python load_plant_assets.py --input ../data/plant_assets_seed.json --redis-url "$REDIS_URL"
 
 # Load the CDMO regulatory passport seed into Redis (cdmo:regulatory:*)
 load-regulatory:
@@ -263,48 +206,33 @@ load-demand:
 # Seed all CDMO intelligence keys in one command
 load-intelligence: load-patents load-plant-assets load-regulatory load-demand
 
-# Run the analytics Streamlit app locally on port 8501
-run-analytics:
-    cd analytics && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" python3 shared/streamlit_entry.py run app.py --server.headless=true --server.port=8501
-
-# Run the manufacturer (tenant) Streamlit app locally on port 8503.
-# Uses the simulator venv (streamlit + pandas + redis + plotly installed).
-# Override the tenant with NSQ_TENANT=<key> (default: regent-ajanta-biotech).
-run-manufacturer:
-	cd manufacturer && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" ../simulator/.venv/bin/python shared/streamlit_entry.py run app.py --server.headless=true --server.port=8503
-
-# Run the test suite. Uses the simulator venv (has pytest + runtime deps).
-# Forces REDIS_URL to the host-local Redis (the dev data lives on
-# localhost:6379; .env's host.docker.internal form only resolves inside
-# containers, which would make the host-side integration tests skip).
-test:
-	REDIS_URL=redis://localhost:6379 simulator/.venv/bin/python -m pytest tests/ -q
-
-# Run the FastAPI scoring engine locally (requires engine dependencies)
+# Run the API locally on :8001 (needs Postgres at $DATABASE_URL and Redis at
+# $LOCAL_REDIS_URL, default localhost). Seeds the super admin from
+# SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD on first boot.
 run-api:
-    cd engine && python3 -m uvicorn api_main:app --host 0.0.0.0 --port 8000 --reload
+    cd backend && REDIS_URL="${LOCAL_REDIS_URL:-redis://localhost:6379/0}" UPSTASH_URL="$REDIS_URL" python3 -m uvicorn app.main:app --port 8001 --reload
 
-# Run the manufacturing process simulator API + route-selector page on port 8010
-run-simulator:
-    cd simulator && .venv/bin/python -m uvicorn api_main:app --host 0.0.0.0 --port 8010 --reload
-
-# Run the manufacturer_api FastAPI service locally on port 8001 — the React web
-# app's backend. Uses the simulator venv (fastapi + pandas + redis + plotly +
-# rapidfuzz installed). Mirrors run-api / run-simulator. Requires REDIS_URL
-# (the .env is auto-loaded) and NSQ_CSV for the offline CSV fallback.
-run-manufacturer-api:
-	cd manufacturer_api && NSQ_CSV="../{{CSV}}" NSQ_SNAPSHOT="../{{SNAPSHOT}}" python3 -m uvicorn api_main:app --host 0.0.0.0 --port 8001 --reload
-
-# Run the React web app (Vite dev server) on port 5173. Proxies /api to the
-# manufacturer_api on :8001 (see web/vite.config.ts). Run the API separately:
-# `just run-manufacturer-api`. First install deps: `cd web && npm install`.
+# Run the React app (Vite dev server, :5173; proxies /api to :8001).
+# First: cd web && npm install
 run-web:
-	cd web && npm run dev
+    cd web && npm run dev
 
-# Type-check + production-build the React web app (validates the frontend;
-# also runs inside the web Dockerfile's build stage).
+# Type-check + production-build the React app.
 build-web:
-	cd web && npm run build
+    cd web && npm run build
+
+# Seed a local Redis from the bundled snapshot + CDMO seeds (no Upstash needed).
+seed-local:
+    cd {{LOADER}} && .venv/bin/python restore_snapshot.py --input ../{{SNAPSHOT}} --redis-url "${LOCAL_REDIS_URL:-redis://localhost:6379/0}" --flush
+    cd {{LOADER}} && for f in patents:patent_seed regulatory:regulatory_seed demand:demand_seed; do .venv/bin/python load_${f%%:*}.py --input ../data/${f##*:}.json --redis-url "${LOCAL_REDIS_URL:-redis://localhost:6379/0}" --flush; done
+    cd {{LOADER}} && .venv/bin/python load_plant_assets.py --input ../data/plant_assets_seed.json --redis-url "${LOCAL_REDIS_URL:-redis://localhost:6379/0}"
+    cd {{LOADER}} && REDIS_URL="${LOCAL_REDIS_URL:-redis://localhost:6379/0}" .venv/bin/python build_enriched_frame.py
+
+# Run the test suites: core/loader tests and the API tests (the API tests need
+# Postgres at $TEST_DATABASE_URL and a seeded local Redis; they skip otherwise).
+test:
+    REDIS_URL=redis://localhost:6379 python3 -m pytest tests/ -q
+    cd backend && DATABASE_URL="${TEST_DATABASE_URL:-postgresql+psycopg://nsq@localhost:5432/nsq_test}" REDIS_URL=redis://localhost:6379 python3 -m pytest tests -q
 
 # Clean only the CDMO intelligence keys (DESTRUCTIVE, no confirmation)
 clean-intelligence:

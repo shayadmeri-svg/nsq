@@ -1,0 +1,11 @@
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+web/dist
+data
+terraform
+docs
+*.md
+!core/**/*.md

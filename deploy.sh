@@ -7,8 +7,8 @@
 #
 # NOTE: this script ships CODE only — it does NOT load new data. The loaders
 # write the NSQ dataset to Upstash (`just refresh-prod` from a dev box), and
-# ./pull-upstash.sh copies it into this box's own `redis` container, which
-# is what the services read. Deploy seeds an EMPTY local Redis only; if the
+# ./pull-upstash.sh (or Admin → Data jobs → Pull from Upstash) copies it into
+# this box's own `redis` container, which is what the API reads. Deploy seeds an EMPTY local Redis only; if the
 # box shows stale data after a refresh, run ./pull-upstash.sh.
 set -euxo pipefail
 
@@ -63,15 +63,14 @@ docker compose up -d --build
 #     and a single-file bind mount pins the inode — os.replace on the host
 #     leaves running containers reading the old snapshot bytes. Restarting
 #     picks up the new file. Seconds of downtime; safe to re-run.
-docker compose restart analytics manufacturer manufacturer-api
+docker compose restart api
 # The gateway resolves upstream containers by name; restart it too so a
 # long-running nginx never proxies to addresses from before the rebuild.
 docker compose restart gateway
 
 # --- host nginx (optional) -------------------------------------------------
 # Nothing in this repo installs a host-level nginx: the stack's own gateway
-# container terminates on :8080 and the two Streamlit apps publish their own
-# ports. This block only matters if you have hand-installed an nginx in front
+# container owns :80 and no other container port is published. This block only matters if you have hand-installed an nginx in front
 # (e.g. to add TLS); it is a no-op otherwise.
 if command -v nginx >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
   nginx -t && systemctl reload nginx

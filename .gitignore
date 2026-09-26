@@ -9,3 +9,7 @@ __pycache__/
 redis-loader/.venv/
 simulator/.venv/
 web/node_modules/
+web/dist/
+data/uploads/
+.claude-transfer/
+dump.rdb

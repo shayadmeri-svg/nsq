@@ -49,12 +49,15 @@ GEMINI_API_KEY=$(aws ssm get-parameter \
 GEMINI_API_KEY="$(echo "$GEMINI_API_KEY" | xargs || true)"
 
 # Written atomically: a half-written .env would take the whole stack down on
-# the next `docker compose up`.
+# the next `docker compose up`. Keys that are not managed in SSM
+# (SUPERADMIN_*, POSTGRES_PASSWORD, APP_BASE_URL, COOKIE_SECURE, ...) are
+# carried over from the existing .env, so they only need setting once.
 umask 077
-cat > .env.tmp <<ENV_EOF
-REDIS_URL=$REDIS_URL
-GEMINI_API_KEY=$GEMINI_API_KEY
-ENV_EOF
+{
+  if [ -f .env ]; then grep -vE '^(REDIS_URL|GEMINI_API_KEY)=' .env || true; fi
+  echo "REDIS_URL=$REDIS_URL"
+  echo "GEMINI_API_KEY=$GEMINI_API_KEY"
+} > .env.tmp
 mv .env.tmp .env
 chmod 600 .env
 echo "refresh-env: wrote $APP_DIR/.env from SSM ($AWS_REGION)."
