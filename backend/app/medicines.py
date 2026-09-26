@@ -133,7 +133,7 @@ def openfda_ndc(actives: list[str]) -> Optional[dict[str, Any]]:
     ref = exact[0]
     return {
         "products": len(exact), "dosage_forms": [f for f, _ in forms.most_common(6)],
-        "routes": sorted({rt.title() for r in exact for rt in (r.get("route") or [])}),
+        "routes": [rt for rt, _ in Counter(rt.title() for r in exact for rt in (r.get("route") or [])).most_common(6)],
         "strengths": {k: sorted(v)[:12] for k, v in strengths.items()},
         "brands": sorted({r.get("brand_name", "") for r in exact if r.get("brand_name")})[:12],
         "labelers": sorted({r.get("labeler_name", "") for r in exact if r.get("labeler_name")})[:12],
@@ -247,6 +247,21 @@ def enrich_ingredient(a: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_TOPICAL = {"Cream", "Ointment", "Gel", "Lotion"}
+
+
+def _route(form: str, us_routes: list[str]) -> str:
+    """Route that fits the dosage form; US routes are only a hint (they span every product form)."""
+    f = (form or "").title()
+    if f in _TOPICAL:
+        return "Topical"
+    if f in ("Tablet", "Capsule", "Syrup", "Suspension", "Granules", "Powder"):
+        return "Oral"
+    if f == "Injection":
+        return next((r for r in us_routes if r in ("Intravenous", "Intramuscular", "Subcutaneous")), "Parenteral")
+    return us_routes[0] if us_routes else ""
+
+
 def lookup(text: str) -> dict[str, Any]:
     """Everything the open databases know about a product, plus the gaps."""
     comp = parse_composition(text)
@@ -264,7 +279,7 @@ def lookup(text: str) -> dict[str, Any]:
                 a["us_strengths"] = us
         actives.append(enrich_ingredient(a))
     med = {"name": text, "brand": "", "dosage_form": comp["dosage_form"] or ((ndc or {}).get("dosage_forms") or [""])[0],
-           "route": ((ndc or {}).get("routes") or [""])[0] or ("Oral" if comp["dosage_form"] in ("Tablet", "Capsule", "Syrup", "Suspension") else ""),
+           "route": _route(comp["dosage_form"] or ((ndc or {}).get("dosage_forms") or [""])[0], (ndc or {}).get("routes") or []),
            "ingredients": actives, "excipients": (label or {}).get("excipients") or [],
            "identifiers": {"rxcui": (rx or {}).get("rxcui"), "unii": (ndc or {}).get("unii") or [], "ndc_example": (ndc or {}).get("example_ndc")},
            "sources": {**sources, "product_strength": comp["product_strength"]},
