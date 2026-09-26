@@ -24,7 +24,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Optional
 
-from .common import Ctx, Unreachable, download, download_first, http_get, page_links, write_normalized
+from .common import Ctx, Unreachable, decode_text, download, download_first, http_get, page_links, write_normalized
 
 DECRS = {
     "title": "FDA establishment registrations (DECRS)",
@@ -116,7 +116,7 @@ def _table_rows(path: Path) -> tuple[list[str], list[list[str]]]:
         df = pd.read_excel(io.BytesIO(blob), dtype=str).fillna("")
         rows = [list(df.columns)] + df.values.tolist()
     else:
-        text = blob.decode("utf-8", errors="replace") if blob[:3] != b"\xef\xbb\xbf" else blob[3:].decode("utf-8", errors="replace")
+        text = decode_text(blob)
         sample = text[:20000]
         try:
             dialect = csv.Sniffer().sniff(sample, delimiters="|\t,~;")
@@ -267,11 +267,11 @@ def parse_import_alert(text_html: str, country: str = "INDIA") -> dict[str, dict
 
 def run_import_alerts(ctx: Ctx) -> int:
     if ctx.from_file:
-        text = ctx.from_file.read_text(encoding="utf-8", errors="replace")
+        text = decode_text(ctx.from_file.read_bytes())
     else:
         path = download_first(ctx, [IMPORT_ALERT["url"], "https://www.accessdata.fda.gov/cms_ia/importalert_189.html"],
                               "importalert_66-40.html")
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = decode_text(path.read_bytes())
     data = parse_import_alert(text)
     if not data:
         raise RuntimeError("No Indian firms parsed from Import Alert 66-40 — the page layout may have changed.")

@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Any
 
-from .common import Ctx, NotFound, download, page_links, write_normalized
+from .common import Ctx, NotFound, decode_text, download, page_links, write_normalized
 
 BASE = "https://www.accessdata.fda.gov/drugsatfda_docs/PurpleBook/{year}/purplebook-search-{month}-data-download.csv"
 META = {
@@ -149,7 +149,7 @@ def candidate_urls(today: date, months_back: int = 5) -> list[tuple[str, str]]:
 
 def run(ctx: Ctx) -> int:
     if ctx.from_file:
-        text = ctx.from_file.read_text(encoding="utf-8-sig", errors="replace")
+        text = decode_text(ctx.from_file.read_bytes())
     else:
         text = None
         # Links published on the downloads page first (if it is server-rendered), then the pattern.
@@ -162,7 +162,11 @@ def run(ctx: Ctx) -> int:
             except NotFound as exc:
                 tried.append(url.rsplit("/", 1)[-1])
                 continue
-            text = path.read_text(encoding="utf-8-sig", errors="replace")
+            text = decode_text(path.read_bytes())
+            if "<html" in text[:500].lower():
+                ctx.log(f"  {url} returned an HTML page, not the CSV — skipping")
+                text = None
+                continue
             ctx.log(f"using {url}")
             break
         if text is None:

@@ -130,3 +130,13 @@ def test_recalls():
     assert list(d) == ["acme pharma"]
     assert d["acme pharma"]["recalls"] == 2 and d["acme pharma"]["class_i"] == 1
     assert d["acme pharma"]["last"] == "20250310"
+
+
+def test_purple_book_utf16():
+    from sources.common import decode_text
+    csv_text = ("N/R/U,Applicant,BLA Number,Proprietary Name,Proper Name,BLA Type,Licensure,Date of First Licensure\n"
+                ",Genentech,103705,Rituxan,rituximab,351(a),Licensed,11/26/1997\n")
+    raw = "﻿".encode("utf-16-le")[:0] + csv_text.encode("utf-16")  # with BOM
+    d = purple_book.parse_csv(decode_text(raw))
+    assert d["rituximab"]["reference"]["proprietary_name"] == "Rituxan"
+    assert decode_text("abc".encode("utf-16-le")) == "abc"

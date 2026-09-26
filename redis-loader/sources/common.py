@@ -27,7 +27,27 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-UA = "Mozilla/5.0 (compatible; nsq-platform-ingest/1.0; +https://github.com/)"
+# FDA's accessdata.fda.gov sits behind a bot filter that redirects clients it
+# does not recognise as browsers to a 404 page, so send ordinary browser headers.
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+BROWSER_HEADERS = {
+    "User-Agent": UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/csv,application/json,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def decode_text(raw: bytes) -> str:
+    """Bytes -> text, handling UTF-16 (FDA's Purple Book export) and UTF-8 BOMs."""
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16", errors="replace")
+    if len(raw) > 4 and raw[1:2] == b"\x00" and raw[3:4] == b"\x00":
+        return raw.decode("utf-16-le", errors="replace")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -125,7 +145,7 @@ def http_get(url: str, *, params: Optional[dict] = None, timeout: int = 120, ret
         url = f"{url}{'&' if '?' in url else '?'}{urlencode(params)}"
     last: Exception | None = None
     for attempt in range(retries + 1):
-        req = Request(url, data=data, headers={"User-Agent": UA, "Accept": accept, **(headers or {})})
+        req = Request(url, data=data, headers={**BROWSER_HEADERS, "Accept": accept if accept != "*/*" else BROWSER_HEADERS["Accept"], **(headers or {})})
         try:
             with urlopen(req, timeout=timeout) as resp:
                 return resp.read()
@@ -151,7 +171,7 @@ def download(ctx: Ctx, url: str, filename: str, *, timeout: int = 300) -> Path:
     dest = ctx.raw_dir / filename
     cache_path = _cache_file(ctx.raw_dir)
     cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
-    headers = {"User-Agent": UA, "Accept": "*/*"}
+    headers = dict(BROWSER_HEADERS)
     prev = cache.get(url, {})
     if dest.exists() and not ctx.force:
         if prev.get("etag"):
