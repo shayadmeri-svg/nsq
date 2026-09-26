@@ -208,6 +208,32 @@ def load_watchlist() -> tuple[list[dict[str, Any]], set[str]]:
     return add, excl
 
 
+def load_entries() -> list[dict[str, Any]]:
+    """Molecules added or edited in the app (exported from Postgres by the job runner)."""
+    p = data_dir() / "generated" / "molecules.json"
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+
+
+def find_nsq(stats: dict[str, dict[str, Any]], names: list[str]) -> Optional[dict[str, Any]]:
+    idx = {k: k for k in stats}
+    for n in names:
+        k = ing.ingredient_key(n)
+        if not k:
+            continue
+        for cand in (k, k.split()[0], ing.us_name(k)):
+            if cand in stats:
+                return stats[cand]
+        hit = ing.match_tracked(k, idx)
+        if hit:
+            return stats[hit]
+    return None
+
+
 class Sources:
     def __init__(self) -> None:
         self.meta: dict[str, dict[str, Any]] = {}
@@ -331,8 +357,37 @@ def geo(code: str, name: str, loe: Optional[date], barrier: str, note: str) -> d
             "export_eligible": eligible, "patent_barrier": barrier if status != "off_patent" else "none", "notes": note}
 
 
+def apply_entry(entry: dict[str, Any], p: dict, r: dict, d: dict) -> list[str]:
+    """Typed values win. The value the seed/sources gave is kept as source_value."""
+    import molecule_fields as mf
+
+    by = entry.get("by") or "an admin"
+    at = entry.get("at") or ""
+    typed: list[str] = []
+    for key, value in (entry.get("values") or {}).items():
+        f = mf.BY_KEY.get(key)
+        if f is None:
+            continue
+        prev = mf.current_value(key, p, r, d)
+        if key == "aliases":
+            value = sorted({*(prev or []), *(value or [])})
+        mf.apply(key, value, p, r, d)
+        rec = {"patent": p, "signals": p, "regulatory": r, "demand": d}[f["record"]]
+        prov_key = f.get("prov") or key
+        old = (rec.get("provenance") or {}).get(prov_key) or {}
+        entry_prov = {"status": "entered", "source": f"Entered by {by}", "retrieved_at": at}
+        if prev not in (None, "", [], {}) and prev != value and key != "aliases":
+            entry_prov["source_value"] = prev
+            if old.get("status") in ("sourced", "derived") and old.get("source"):
+                entry_prov["note"] = f"{old['source']} gives {prev}"
+        rec.setdefault("provenance", {})[prov_key] = entry_prov
+        typed.append(key)
+    return typed
+
+
 def build_molecule(key: str, names: list[str], origin: str, src: Sources, nsq: Optional[dict[str, Any]],
-                   cur_p: Optional[dict], cur_r: Optional[dict], cur_d: Optional[dict]) -> Optional[tuple[dict, dict, dict, dict]]:
+                   cur_p: Optional[dict], cur_r: Optional[dict], cur_d: Optional[dict],
+                   entry: Optional[dict[str, Any]] = None) -> Optional[tuple[dict, dict, dict, dict]]:
     ob, ema, pb = src.ob(names), src.ema(names), src.pb(names)
     ct = src.data["clinical_trials"].get(key)
     if not (ob or ema or pb or cur_p or origin == "manual"):
@@ -534,13 +589,14 @@ def build_molecule(key: str, names: list[str], origin: str, src: Sources, nsq: O
         if not ct:
             dprov["trial_counts"] = _prov("unknown", note="Not queried yet — the ClinicalTrials.gov fetch walks the universe weekly.")
     d["provenance"] = {**(cur_d or {}).get("provenance", {}), **dprov}
+    typed = apply_entry(entry, p, r, d) if entry else []
 
     summary = {
         "key": key, "name": p["api_name"], "brand": p.get("brand_name", ""), "origin": origin, "area": p.get("therapeutic_area", ""),
         "sources": p["signals"]["sources"], "alerts": (nsq or {}).get("alerts", 0), "manufacturers": len((nsq or {}).get("mfrs", ())),
         "loe_us": p.get("estimated_loe_us"), "loe_eu": p.get("estimated_loe_eu"), "fto": p.get("fto_risk"),
         "anda": d.get("competitor_anda_count"), "trials": d.get("trial_count_total"), "modality": p["signals"]["modality"],
-        "included": True,
+        "included": True, "entered": typed, "edited_by": (entry or {}).get("by"), "edited_at": (entry or {}).get("at"),
     }
     return p, r, d, summary
 
@@ -562,6 +618,7 @@ def build(redis_url: Optional[str], min_alerts: int, max_auto: int) -> dict[str,
     curated_d = {m["molecule_key"]: m for m in load_seed("demand_seed", "profiles")}
     stats = nsq_stats(redis_url)
     watch, excluded = load_watchlist()
+    entries = {e["key"]: e for e in load_entries() if e.get("key")}
 
     # NSQ ingredient -> curated key (so curated molecules pick up their NSQ facts)
     class _P:  # minimal object for ing.tracked_index
@@ -576,6 +633,17 @@ def build(redis_url: Optional[str], min_alerts: int, max_auto: int) -> dict[str,
         ck = ing.match_tracked(key_, cur_index)
         if ck and ck in cands and cands[ck]["nsq"] is None:
             cands[ck]["nsq"] = e
+    for k, e in entries.items():
+        vals = e.get("values") or {}
+        names = [e.get("name", ""), vals.get("api_name", "")] + list(vals.get("aliases") or [])
+        names = [n for n in dict.fromkeys(names) if n]
+        if k in cands:
+            cands[k]["entry"] = e
+        else:
+            # Added in the app → always included ("manual"); an edit of an auto
+            # molecule stays "auto" and still needs a public source to be included.
+            cands[k] = {"key": k, "names": names, "origin": "manual" if e.get("added") else "auto",
+                        "nsq": find_nsq(stats, names), "entry": e}
     for w in watch:
         name = w.get("name", "")
         k = w.get("key") or ing.molecule_key_for(ing.us_name(ing.ingredient_key(name)))
@@ -595,6 +663,10 @@ def build(redis_url: Optional[str], min_alerts: int, max_auto: int) -> dict[str,
         if key in cands:
             if cands[key]["nsq"] is None:
                 cands[key]["nsq"] = e
+            # keep the NSQ spelling as an alias (e.g. amoxycillin for amoxicillin)
+            for n in [ingk, *sorted(e.get("variants", []))[:3]]:
+                if n not in cands[key]["names"]:
+                    cands[key]["names"].append(n)
             continue
         if n_auto >= max_auto:
             skipped.append({"key": key, "name": ingk, "alerts": e["alerts"], "reason": f"beyond the {max_auto}-molecule cap"})
@@ -605,7 +677,7 @@ def build(redis_url: Optional[str], min_alerts: int, max_auto: int) -> dict[str,
     patents, regs, dems, rows = [], [], [], []
     for k, c in cands.items():
         res = build_molecule(k, [n for n in c["names"] if n], c["origin"], src, c["nsq"],
-                             curated_p.get(k), curated_r.get(k), curated_d.get(k))
+                             curated_p.get(k), curated_r.get(k), curated_d.get(k), c.get("entry"))
         if res is None:
             e = c["nsq"] or {}
             skipped.append({"key": k, "name": c["names"][0], "alerts": e.get("alerts", 0),

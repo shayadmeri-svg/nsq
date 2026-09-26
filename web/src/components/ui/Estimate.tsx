@@ -14,11 +14,12 @@ const TONE: Record<string, { icon: string; chip: string; word: string }> = {
   sourced: { icon: "text-emerald-500 hover:text-emerald-600", chip: "bg-emerald-50 text-emerald-700", word: "Sourced" },
   derived: { icon: "text-sky-500 hover:text-sky-600", chip: "bg-sky-50 text-sky-700", word: "Derived" },
   unknown: { icon: "text-slate-400 hover:text-slate-600", chip: "bg-slate-100 text-slate-600", word: "No source" },
+  entered: { icon: "text-violet-500 hover:text-violet-600", chip: "bg-violet-50 text-violet-700", word: "Entered" },
 };
 
 // Per-value provenance from the molecule universe builder:
 // { status: sourced|derived|estimate|unknown, source?, note?, retrieved_at? }
-export type ValueProv = { status: string; source?: string; note?: string; retrieved_at?: string };
+export type ValueProv = { status: string; source?: string; note?: string; retrieved_at?: string; source_value?: any };
 
 export function Estimate({ field, className, align = "left", prov }: { field: string; className?: string; align?: "left" | "right"; prov?: ValueProv | null }) {
   const { data } = useProvenance();
@@ -32,7 +33,11 @@ export function Estimate({ field, className, align = "left", prov }: { field: st
     present: prov
       ? [prov.source, prov.note].filter(Boolean).join(" — ") + (prov.retrieved_at ? ` (retrieved ${prov.retrieved_at.slice(0, 10)})` : "")
       : reg!.present,
-    gap: prov ? (status === "sourced" ? "Refreshed by the scheduled source sync." : reg?.gap ?? "") : reg!.gap,
+    gap: prov
+      ? status === "sourced" ? "Refreshed by the scheduled source sync."
+        : status === "entered" ? (prov.source_value != null ? `Typed values win; the source says ${typeof prov.source_value === "object" ? "something different" : prov.source_value}.` : "Typed values win over the sources.")
+        : reg?.gap ?? ""
+      : reg!.gap,
   };
   const t = TONE[f.status] ?? TONE.estimate;
   const Icon = f.status === "estimate" ? AlertTriangle : Info;

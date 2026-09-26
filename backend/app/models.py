@@ -166,3 +166,21 @@ class WatchMolecule(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     added_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MoleculeEntry(Base):
+    """Values typed into the molecule form. They win over the curated seed and
+    the public sources when the universe is built (the source value is kept
+    alongside for comparison). `added` = the molecule was created in the app
+    (always tracked); otherwise these are edits to a seeded / auto molecule."""
+
+    __tablename__ = "molecule_entries"
+
+    key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    added: Mapped[bool] = mapped_column(Boolean, default=False)
+    values: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(String(254), default="")
+    updated_by: Mapped[str] = mapped_column(String(254), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())

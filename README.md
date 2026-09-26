@@ -139,6 +139,16 @@ sourced or derived value carries its source and date; the dashboards' disclaimer
 it per value. Nothing is invented: market size and prevalence stay unknown for
 auto-discovered molecules.
 
+**Adding or editing a molecule.** Admin → Molecule universe → **Add molecule** (or
+"Track" on a skipped ingredient, or "Start tracking" on an organisation's untracked
+ingredient). The form pre-fills from the curated seed, the fetched sources and the NSQ
+alerts, grouped as identity / patents / regulatory / demand (`core/molecule_fields.py`
+lists every field). Only fields you type are stored (Postgres `molecule_entries`); on
+every rebuild they win over the sources, and the source value is kept alongside
+(visible in the molecule drawer and the value's info icon). "Use source" on a field or
+"Clear typed values" drops them; a molecule added in the app stops being tracked when
+cleared. Saving starts a universe rebuild.
+
 **Site directory.** Every manufacturer × PIN code printed on an NSQ alert (~2,000 sites),
 with the dosage forms it made and FDA matches. An organisation admin can add one of their
 sites as a plant; its capabilities are marked *inferred*.

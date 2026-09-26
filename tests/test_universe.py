@@ -110,3 +110,41 @@ def test_loaders_accept_generated(env, monkeypatch):
         )
         back = PatentIntelligence.from_redis(e.to_redis())
         assert back.provenance == e.provenance and back.signals == json.loads(json.dumps(e.signals))
+
+
+def test_typed_values_win_and_keep_source_value(env):
+    bu, tmp = env
+    (tmp / "generated" / "molecules.json").write_text(json.dumps([
+        {"key": "amoxicillin", "name": "Amoxicillin", "by": "qa@example.com", "at": "2026-09-27",
+         "values": {"estimated_loe_us": "2031-01-01", "market_size_usd_bn": 2.5, "aliases": ["amoxil"]}},
+        {"key": "empagliflozin", "name": "Empagliflozin", "added": True, "by": "qa@example.com", "at": "2026-09-27",
+         "values": {"api_name": "Empagliflozin", "brand_name": "Jardiance", "dosage_form": "Tablet", "te_code": "AB",
+                    "patents": [{"kind": "formulation", "description": "Crystalline form", "jurisdiction": "IN",
+                                 "expiry_date": "2029-05-01", "risk_level": "high"}]}},
+    ]))
+    u = bu.build(None, 5, 50)
+    rows = {r["key"]: r for r in u["molecules"]}
+    assert rows["empagliflozin"]["origin"] == "manual" and "brand_name" in rows["empagliflozin"]["entered"]
+    assert rows["amoxicillin"]["origin"] == "auto"
+    pats = {m["molecule_key"]: m for m in json.loads((tmp / "generated" / "patents.json").read_text())["molecules"]}
+    amx = pats["amoxicillin"]
+    assert amx["estimated_loe_us"] == "2031-01-01"
+    prov = amx["provenance"]["loe_us"]
+    assert prov["status"] == "entered" and prov["source_value"] == "1983-05-01" and "Orange Book" in prov["note"]
+    assert amx["market_size_usd_bn"] == 2.5 and "amoxil" in amx["aliases"] and "amoxycillin" in amx["aliases"]
+    emp = pats["empagliflozin"]
+    assert emp["formulation_patents"][0]["jurisdiction"] == "IN"
+    regs = {m["molecule_key"]: m for m in json.loads((tmp / "generated" / "regulatory.json").read_text())["passports"]}
+    assert regs["empagliflozin"]["te_rating"] == "A"
+
+
+def test_field_validation():
+    import molecule_fields as mf
+    assert mf.clean("estimated_loe_us", "2030-04") == "2030-04-01"
+    assert mf.clean("aliases", "a, b\nc") == ["a", "b", "c"]
+    with pytest.raises(mf.FieldError):
+        mf.clean("fto_risk", "extreme")
+    with pytest.raises(mf.FieldError):
+        mf.clean("buyer_activity_score", 150)
+    with pytest.raises(mf.FieldError):
+        mf.clean("api_name", " ")

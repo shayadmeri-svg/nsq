@@ -151,12 +151,20 @@ def export_watchlist() -> str:
 
     from .models import WatchMolecule
 
+    from .models import MoleculeEntry
+
     with SessionLocal() as db:
         rows = [{"name": w.name, "key": w.key, "exclude": w.exclude} for w in db.scalars(select(WatchMolecule))]
-    out = settings.data_dir / "generated" / "watchlist.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(_json.dumps(rows, indent=1))
-    return f"exported {len(rows)} watchlist entr{'y' if len(rows) == 1 else 'ies'}"
+        entries = [{"key": e.key, "name": e.name, "added": e.added, "values": e.values or {},
+                    "by": e.updated_by or e.created_by,
+                    "at": (e.updated_at or e.created_at).date().isoformat() if (e.updated_at or e.created_at) else ""}
+                   for e in db.scalars(select(MoleculeEntry))]
+    out = settings.data_dir / "generated"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "watchlist.json").write_text(_json.dumps(rows, indent=1))
+    (out / "molecules.json").write_text(_json.dumps(entries, indent=1, default=str))
+    return (f"exported {len(rows)} watchlist entr{'y' if len(rows) == 1 else 'ies'} and "
+            f"{len(entries)} molecule{'' if len(entries) == 1 else 's'} entered in the app")
 
 
 def _gen(name: str) -> str:

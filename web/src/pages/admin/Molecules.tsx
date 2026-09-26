@@ -1,5 +1,8 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, EyeOff, FlaskConical, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, EyeOff, FlaskConical, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { LogViewer } from "../../components/jobs";
+import { MoleculeForm } from "../../components/molecules/MoleculeForm";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, CardHeader, Drawer, ErrorNote, PageHeader, PageSkeleton, Segmented, Stat } from "../../components/ui";
@@ -18,13 +21,14 @@ export const SOURCE_CHIP: Record<string, { short: string; label: string; cls: st
 const ORIGIN: Record<string, { tone: any; label: string }> = {
   curated: { tone: "indigo", label: "curated" },
   auto: { tone: "brand", label: "auto" },
-  manual: { tone: "amber", label: "watchlist" },
+  manual: { tone: "amber", label: "added in app" },
 };
 const PROV_TONE: Record<string, string> = {
   sourced: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   derived: "bg-sky-50 text-sky-700 ring-sky-200",
   estimate: "bg-amber-50 text-amber-700 ring-amber-200",
   unknown: "bg-slate-50 text-slate-500 ring-slate-200",
+  entered: "bg-violet-50 text-violet-700 ring-violet-200",
 };
 
 export function SourceDots({ sources }: { sources: string[] }) {
@@ -43,13 +47,14 @@ function ProvRow({ field, p }: { field: string; p: any }) {
       <div className="min-w-0">
         <div className="font-semibold text-ink">{field.replace(/_/g, " ")}</div>
         {(p.note || p.source) && <div className="mt-0.5 text-ink-muted">{p.source ? <b className="font-medium text-ink-soft">{p.source}. </b> : null}{p.note}</div>}
+        {p.source_value != null && <div className="mt-0.5 text-violet-700">Source value kept for comparison: {typeof p.source_value === "object" ? JSON.stringify(p.source_value) : String(p.source_value)}</div>}
       </div>
       <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset", PROV_TONE[p.status] ?? PROV_TONE.unknown)}>{p.status}</span>
     </div>
   );
 }
 
-function MoleculeDrawer({ mkey, onClose }: { mkey?: string; onClose: () => void }) {
+function MoleculeDrawer({ mkey, onClose, onEdit }: { mkey?: string; onClose: () => void; onEdit: (key: string) => void }) {
   const { data, error } = useQuery({ queryKey: ["molecule", mkey], queryFn: () => api<any>(`/api/pipelines/molecules/${mkey}`), enabled: !!mkey });
   const p = data?.patent;
   const sig = p?.signals ?? {};
@@ -58,6 +63,7 @@ function MoleculeDrawer({ mkey, onClose }: { mkey?: string; onClose: () => void 
     <Drawer open={!!mkey} onClose={onClose} title={p ? p.api_name : mkey} subtitle={p ? <span className="flex items-center gap-2">{p.brand_name || "—"} · {p.originator || "originator unknown"} <Badge tone={ORIGIN[p.origin]?.tone}>{ORIGIN[p.origin]?.label}</Badge></span> : undefined} width={760}>
       {error ? <ErrorNote error={error} /> : !p ? <div className="text-sm text-ink-muted">Loading…</div> : (
         <div className="space-y-5">
+          <div className="flex justify-end"><Button size="sm" onClick={() => onEdit(p.molecule_key)}><Pencil size={13} /> Edit values</Button></div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {[["US LOE", fmtDate(p.estimated_loe_us)], ["EU LOE", fmtDate(p.estimated_loe_eu)], ["India", fmtDate(p.estimated_loe_in)], ["FTO risk", p.fto_risk]].map(([k, v]) => (
               <div key={k} className="rounded-xl bg-slate-50 p-3"><div className="label">{k}</div><div className="mt-1 font-display text-lg font-bold capitalize">{v}</div></div>
@@ -102,7 +108,7 @@ function MoleculeDrawer({ mkey, onClose }: { mkey?: string; onClose: () => void 
   );
 }
 
-function Watchlist({ skipped }: { skipped: any[] }) {
+function Watchlist({ skipped, onTrack }: { skipped: any[]; onTrack: (name: string) => void }) {
   const { data } = useQuery({ queryKey: ["watchlist"], queryFn: () => api<any>("/api/pipelines/watchlist") });
   const [name, setName] = useState("");
   const qc = useQueryClient();
@@ -120,9 +126,10 @@ function Watchlist({ skipped }: { skipped: any[] }) {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Card delay={0.15}>
-        <CardHeader title="Watchlist" subtitle="Force a molecule in (even with no NSQ alerts or public record), or keep an auto-discovered one out." />
+        <CardHeader title="Exclusions & quick adds" subtitle="Keep an auto-discovered molecule out (e.g. an excipient), or add one by name only. Use “Add molecule” to fill in its profile." />
         <form className="flex gap-2 px-5 pt-4" onSubmit={(e) => { e.preventDefault(); if (name.trim()) add(name.trim()); }}>
-          <input className="input h-9 flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Empagliflozin" />
+          <input className="input h-9 flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Menthol" />
+          <Button size="sm" variant="secondary" type="button" onClick={() => name.trim() && add(name.trim(), true)}><EyeOff size={14} /> Exclude</Button>
           <Button size="sm" type="submit"><Plus size={14} /> Track</Button>
         </form>
         <div className="max-h-72 space-y-1 overflow-auto px-5 py-4 scrollbar-thin">
@@ -141,7 +148,7 @@ function Watchlist({ skipped }: { skipped: any[] }) {
           {skipped.map((s: any) => (
             <div key={s.key + s.name} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50">
               <div className="min-w-0"><b className="capitalize">{s.name}</b> <span className="text-ink-muted">· {s.alerts} alerts</span><div className="truncate text-ink-faint">{s.reason}</div></div>
-              <Button size="sm" variant="secondary" onClick={() => add(s.name)}><Plus size={12} /> Track</Button>
+              <Button size="sm" variant="secondary" onClick={() => onTrack(s.name)}><Plus size={12} /> Track</Button>
             </div>
           ))}
           {!skipped.length && <div className="text-xs text-ink-muted">Nothing skipped.</div>}
@@ -159,6 +166,10 @@ export function Molecules() {
   const [sort, setSort] = useState("alerts");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState<string | undefined>();
+  const [form, setForm] = useState<{ name?: string; key?: string } | null>(null);
+  const [runId, setRunId] = useState<number | undefined>();
+  const [params, setParams] = useSearchParams();
+  useEffect(() => { const a = params.get("add"); if (a) { setForm({ name: a }); params.delete("add"); setParams(params, { replace: true }); } }, [params, setParams]);
   useEffect(() => { const t = setTimeout(() => { setDq(q); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["universe", dq, origin, source, sort, page],
@@ -172,12 +183,13 @@ export function Molecules() {
 
   return (
     <>
-      <PageHeader eyebrow="Platform · Pipelines" title="Molecule universe" subtitle={<>Curated seeds, molecules discovered from NSQ alerts and confirmed by a public source, and watchlist additions. Built {timeAgo(data.built_at)}.</>} />
+      <PageHeader eyebrow="Platform · Pipelines" title="Molecule universe" subtitle={<>Curated seeds, molecules discovered from NSQ alerts and confirmed by a public source, and molecules added here. Built {timeAgo(data.built_at)}.</>}
+        actions={<Button onClick={() => setForm({})}><Plus size={15} /> Add molecule</Button>} />
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="Molecules" value={c.molecules ?? 0} icon={<FlaskConical size={18} />} />
         <Stat label="Curated" value={c.curated ?? 0} tone="indigo" delay={0.05} hint="hand-built profiles, overlaid with sources" />
         <Stat label="Auto-discovered" value={c.auto ?? 0} tone="brand" delay={0.1} hint={`from ${Number(c.nsq_ingredients ?? 0).toLocaleString("en-IN")} NSQ ingredients`} />
-        <Stat label="Skipped" value={c.skipped ?? 0} tone="amber" delay={0.15} hint="no public record, excluded or over the cap" />
+        <Stat label="Added in app / skipped" value={c.manual ?? 0} suffix={` / ${c.skipped ?? 0}`} tone="amber" delay={0.15} hint="typed profiles · no public record, excluded or over the cap" />
       </div>
       <Card delay={0.1} className="mt-5 p-5">
         <div className="label mb-3">Source coverage</div>
@@ -198,7 +210,7 @@ export function Molecules() {
       <Card delay={0.12} className="mt-5">
         <CardHeader title="Molecules" subtitle={`${data.total} shown`} action={
           <div className="flex flex-wrap items-center gap-2">
-            <Segmented value={origin} onChange={(v) => { setOrigin(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "curated", label: "Curated" }, { value: "auto", label: "Auto" }, { value: "manual", label: "Watchlist" }]} />
+            <Segmented value={origin} onChange={(v) => { setOrigin(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "curated", label: "Curated" }, { value: "auto", label: "Auto" }, { value: "manual", label: "Added" }]} />
             <select className="input h-9 w-36" value={sort} onChange={(e) => setSort(e.target.value)}>
               <option value="alerts">Most NSQ alerts</option><option value="loe">Earliest US LOE</option><option value="anda">Most ANDAs</option><option value="trials">Most trials</option><option value="name">Name</option>
             </select>
@@ -213,7 +225,7 @@ export function Molecules() {
             <tbody>
               {data.items.map((m: any) => (
                 <tr key={m.key} onClick={() => setOpen(m.key)} className="cursor-pointer border-b border-line/70 hover:bg-slate-50">
-                  <td className="px-5 py-2.5"><div className="flex items-center gap-2 font-semibold">{m.name}<Badge tone={ORIGIN[m.origin]?.tone}>{ORIGIN[m.origin]?.label}</Badge></div><div className="text-[11px] text-ink-muted">{m.brand || "—"} · {m.area || "area unknown"}{m.modality === "biologic" ? " · biologic" : ""}</div></td>
+                  <td className="px-5 py-2.5"><div className="flex items-center gap-2 font-semibold">{m.name}<Badge tone={ORIGIN[m.origin]?.tone}>{ORIGIN[m.origin]?.label}</Badge>{m.entered?.length > 0 && <span title={`Typed: ${m.entered.join(", ")}${m.edited_by ? ` — ${m.edited_by}` : ""}`} className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 ring-1 ring-inset ring-violet-200">{m.entered.length} typed</span>}</div><div className="text-[11px] text-ink-muted">{m.brand || "—"} · {m.area || "area unknown"}{m.modality === "biologic" ? " · biologic" : ""}</div></td>
                   <td className="px-3 py-2.5"><SourceDots sources={m.sources} /></td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{m.alerts || "—"}</td>
                   <td className="px-3 py-2.5 text-xs">{fmtDate(m.loe_us)}</td>
@@ -231,8 +243,10 @@ export function Molecules() {
           <div className="flex gap-1.5"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={14} /></Button><Button size="sm" variant="secondary" disabled={page >= data.pages} onClick={() => setPage(page + 1)}><ChevronRight size={14} /></Button></div>
         </div>
       </Card>
-      <div className="mt-5"><Watchlist skipped={data.skipped ?? []} /></div>
-      <MoleculeDrawer mkey={open} onClose={() => setOpen(undefined)} />
+      <div className="mt-5"><Watchlist skipped={data.skipped ?? []} onTrack={(name) => setForm({ name })} /></div>
+      <MoleculeDrawer mkey={open} onClose={() => setOpen(undefined)} onEdit={(key) => { setOpen(undefined); setForm({ key }); }} />
+      <MoleculeForm open={!!form} name={form?.name} mkey={form?.key} onClose={() => setForm(null)} onSaved={(id) => id && setRunId(id)} />
+      <LogViewer runId={runId} onClose={() => setRunId(undefined)} />
     </>
   );
 }

@@ -10,6 +10,7 @@ import { Estimate } from "../../components/ui/Estimate";
 import { api } from "../../lib/api";
 import { fmtDate, TIER_STYLE, titleCase } from "../../lib/format";
 import { useOrg, useOrgData, VERDICT } from "./common";
+import { useMe } from "../../lib/session";
 
 const TIER_COLOR: Record<string, string> = { strategic: "#0a9a7d", core: "#6366f1", adjacent: "#f59e0b", stretch: "#94a3b8" };
 
@@ -127,6 +128,7 @@ function Detail({ slug, molecule, onClose }: { slug: string; molecule?: string; 
 
 export function Opportunities() {
   const { org, slug } = useOrg();
+  const { data: me } = useMe();
   const { molecule } = useParams();
   const nav = useNavigate();
   const { data, isLoading, error } = useOrgData<any>("opportunities");
@@ -229,6 +231,7 @@ export function Opportunities() {
                 <div className="mt-2 text-xs text-ink-muted">{u.categories.join(" · ")}{u.last ? ` · last ${u.last}` : ""}</div>
                 <div className="mt-1 truncate text-[11px] text-ink-faint" title={u.products.join(" | ")}>{u.products[0]}</div>
                 {u.variants?.length > 0 && <div className="mt-1 truncate text-[11px] text-amber-700" title={u.variants.join(", ")}>also spelt: {u.variants.join(", ")}</div>}
+                {me?.is_platform && <Link to={`/admin/molecules?add=${encodeURIComponent(u.ingredient)}`} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline">Start tracking <ArrowRight size={11} /></Link>}
               </motion.div>
             ))}
           </motion.div>
