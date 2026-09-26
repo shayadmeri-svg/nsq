@@ -152,21 +152,31 @@ export function PageHeader({ eyebrow, title, subtitle, actions }: { eyebrow?: Re
 }
 
 // --- Drawer + Modal -------------------------------------------------------------------------
+// Overlays: ONE keyed motion child per AnimatePresence, with the inner panel
+// driven by variants so its exit is awaited. The closed state also turns off
+// pointer events immediately, so a half-finished exit can never leave an
+// invisible layer on top of the page swallowing clicks.
+const overlay = {
+  open: { opacity: 1, pointerEvents: "auto" as const },
+  closed: { opacity: 0, pointerEvents: "none" as const },
+};
+
 export function Drawer({ open, onClose, title, subtitle, children, width = 720 }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; width?: number }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [open, onClose]);
   return (
     <AnimatePresence>
       {open && (
-        <>
-          <motion.div className="fixed inset-0 z-40 bg-night-900/30 backdrop-blur-[2px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
+        <motion.div key="drawer" className="fixed inset-0 z-40" variants={overlay} initial="closed" animate="open" exit="closed" transition={{ duration: 0.2 }}>
+          <div className="absolute inset-0 bg-night-900/30 backdrop-blur-[2px]" onClick={onClose} />
           <motion.aside
-            className="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-lift"
+            className="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-lift"
             style={{ maxWidth: width }}
-            initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+            variants={{ open: { x: 0 }, closed: { x: "100%" } }}
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
           >
             <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
@@ -178,7 +188,7 @@ export function Drawer({ open, onClose, title, subtitle, children, width = 720 }
             </div>
             <div className="scrollbar-thin flex-1 overflow-y-auto px-6 py-5">{children}</div>
           </motion.aside>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   );
@@ -188,10 +198,10 @@ export function Modal({ open, onClose, title, children, footer }: { open: boolea
   return (
     <AnimatePresence>
       {open && (
-        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-night-900/40 p-4 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={onClose}>
+        <motion.div key="modal" className="fixed inset-0 z-50 grid place-items-center bg-night-900/40 p-4 backdrop-blur-sm" variants={overlay} initial="closed" animate="open" exit="closed" transition={{ duration: 0.18 }} onMouseDown={onClose}>
           <motion.div
             onMouseDown={(e) => e.stopPropagation()}
-            initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 6 }}
+            variants={{ open: { opacity: 1, scale: 1, y: 0 }, closed: { opacity: 0, scale: 0.97, y: 8 } }}
             transition={{ type: "spring", damping: 26, stiffness: 340 }}
             className="w-full max-w-lg rounded-2xl bg-white shadow-lift"
           >

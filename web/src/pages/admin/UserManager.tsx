@@ -80,11 +80,10 @@ function RowMenu({ u, roles, onDone }: { u: any; roles: string[]; onDone: () => 
   return (
     <div className="relative">
       <button onClick={() => setOpen((o) => !o)} className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100"><MoreHorizontal size={16} /></button>
+      {open && <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />}
       <AnimatePresence>
         {open && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.97, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute right-0 z-40 w-56 rounded-xl bg-white p-1.5 text-sm shadow-lift ring-1 ring-line">
+            <motion.div key="menu" initial={{ opacity: 0, scale: 0.97, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute right-0 z-40 w-56 rounded-xl bg-white p-1.5 text-sm shadow-lift ring-1 ring-line">
               <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Change role</div>
               {roles.filter((r) => r !== u.role).map((r) => <button key={r} onClick={() => act(() => patch(`/api/admin/users/${u.id}`, { role: r }), `Role changed to ${ROLE_LABEL[r]}`)} className="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-slate-50">{ROLE_LABEL[r]}</button>)}
               <div className="my-1 border-t border-line" />
@@ -92,7 +91,6 @@ function RowMenu({ u, roles, onDone }: { u: any; roles: string[]; onDone: () => 
               <button onClick={() => act(() => post(`/api/admin/users/${u.id}/revoke-sessions`), "Signed out everywhere")} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-slate-50"><LogOut size={14} /> Sign out everywhere</button>
               <button onClick={() => act(() => patch(`/api/admin/users/${u.id}`, { is_active: !u.is_active }), u.is_active ? "User deactivated" : "User reactivated")} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 ${u.is_active ? "text-rose-600 hover:bg-rose-50" : "hover:bg-slate-50"}`}>{u.is_active ? <><UserX size={14} /> Deactivate</> : <><UserCheck size={14} /> Reactivate</>}</button>
             </motion.div>
-          </>
         )}
       </AnimatePresence>
       <Modal open={!!temp} onClose={() => setTemp(null)} title="Temporary password" footer={<Button onClick={() => setTemp(null)}>Done</Button>}>

@@ -126,16 +126,14 @@ function UserMenu({ me }: { me: Me }) {
           <span className="block text-[11px] text-ink-muted">{ROLE_LABEL[me.role]}</span>
         </span>
       </button>
+      {open && <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />}
       <AnimatePresence>
         {open && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-            <motion.div initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 6, scale: 1 }} exit={{ opacity: 0, y: -6 }} className="absolute right-0 z-40 w-60 rounded-2xl bg-white p-1.5 shadow-lift ring-1 ring-line">
+            <motion.div key="menu" initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 6, scale: 1 }} exit={{ opacity: 0, y: -6 }} className="absolute right-0 z-40 w-60 rounded-2xl bg-white p-1.5 shadow-lift ring-1 ring-line">
               <div className="px-3 py-2 text-xs text-ink-muted">{me.email}</div>
               <button onClick={() => { setOpen(false); nav("/account"); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-slate-50"><UserCog size={15} /> Account & password</button>
               <button onClick={async () => { await logout(); nav("/login"); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"><LogOut size={15} /> Sign out</button>
             </motion.div>
-          </>
         )}
       </AnimatePresence>
     </div>
@@ -185,12 +183,10 @@ export function AppShell({ me }: { me: Me }) {
   return (
     <div className="flex min-h-full">
       <aside className="sticky top-0 hidden h-screen w-[264px] shrink-0 lg:block">{sidebar}</aside>
+      {mobile && <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setMobile(false)} />}
       <AnimatePresence>
         {mobile && (
-          <>
-            <motion.div className="fixed inset-0 z-40 bg-black/40 lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMobile(false)} />
-            <motion.aside className="fixed inset-y-0 left-0 z-50 w-[264px] lg:hidden" initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: "spring", damping: 30, stiffness: 300 }}>{sidebar}</motion.aside>
-          </>
+          <motion.aside key="mobile-nav" className="fixed inset-y-0 left-0 z-50 w-[264px] lg:hidden" initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: "spring", damping: 30, stiffness: 300 }}>{sidebar}</motion.aside>
         )}
       </AnimatePresence>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -205,11 +201,11 @@ export function AppShell({ me }: { me: Me }) {
           </div>
         </header>
         <main className="flex-1">
-          <AnimatePresence mode="wait">
-            <motion.div key={pageKey} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }} className="mx-auto w-full max-w-[1320px] px-4 py-7 md:px-8">
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
+          {/* Enter-only page transition. No exit / mode="wait": with the Outlet
+              inside, a stalled exit would leave the new route unrendered. */}
+          <motion.div key={pageKey} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }} className="mx-auto w-full max-w-[1320px] px-4 py-7 md:px-8">
+            <Outlet />
+          </motion.div>
         </main>
       </div>
     </div>
