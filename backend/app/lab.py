@@ -245,6 +245,11 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
 
 
 def engines() -> dict[str, Any]:
+    draw = {"rdkit_draw": molecule.DRAW_ERROR is None, "draw_error": molecule.DRAW_ERROR}
+    return {**_engines(), **draw}
+
+
+def _engines() -> dict[str, Any]:
     if not SIM_URL:
         return {"pharmapy": {"available": False, "reason": "SIM_URL not set (start the sim service)"}, "builtin": {"available": True}}
     try:

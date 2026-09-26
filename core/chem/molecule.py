@@ -8,10 +8,13 @@ from typing import Any, Optional
 
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Crippen, Descriptors, Lipinski, rdMolDescriptors
-try:  # needs libXrender; the drawing is optional, the chemistry is not
+try:  # needs X11 libraries (libXrender etc.); if they're missing we draw with our own SVG writer
     from rdkit.Chem.Draw import rdMolDraw2D
-except ImportError:  # pragma: no cover
+    DRAW_ERROR = None
+except ImportError as _exc:  # pragma: no cover
     rdMolDraw2D = None
+    DRAW_ERROR = str(_exc)
+from rdkit.Chem import rdDepictor
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -90,9 +93,67 @@ def descriptors(mol: Chem.Mol) -> dict[str, Any]:
     }
 
 
+_COLORS = {"O": "#e11d48", "N": "#2563eb", "S": "#a16207", "F": "#16a34a", "Cl": "#16a34a", "Br": "#9a3412", "I": "#7c3aed", "P": "#ea580c"}
+
+
+def svg_basic(mol: Chem.Mol, width: int = 320, height: int = 220) -> str:
+    """Plain SVG depiction from RDKit 2D coordinates (no drawing libraries needed)."""
+    m = Chem.Mol(mol)
+    try:
+        Chem.Kekulize(m, clearAromaticFlags=True)
+    except Exception:
+        pass
+    rdDepictor.Compute2DCoords(m)
+    conf = m.GetConformer()
+    xs = [conf.GetAtomPosition(i).x for i in range(m.GetNumAtoms())]
+    ys = [conf.GetAtomPosition(i).y for i in range(m.GetNumAtoms())]
+    if not xs:
+        return ""
+    pad = 18
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
+    k = min((width - 2 * pad) / max(max(xs) - min(xs), 1e-6), (height - 2 * pad) / max(max(ys) - min(ys), 1e-6), 40.0)
+    cx, cy = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+    P = [(width / 2 + (x - cx) * k, height / 2 - (y - cy) * k) for x, y in zip(xs, ys)]
+    labels = {}
+    for a in m.GetAtoms():
+        sym = a.GetSymbol()
+        if sym != "C" or a.GetDegree() == 0 or a.GetFormalCharge():
+            h = a.GetTotalNumHs()
+            lab = sym + ("H" if h == 1 else f"H{h}" if h > 1 else "")
+            ch = a.GetFormalCharge()
+            lab += ("+" if ch == 1 else "−" if ch == -1 else (f"{ch:+d}" if ch else ""))
+            labels[a.GetIdx()] = lab
+    parts = []
+    fs = max(9.0, min(14.0, k * 0.42))
+    for b in m.GetBonds():
+        i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+        (x1, y1), (x2, y2) = P[i], P[j]
+        dx, dy = x2 - x1, y2 - y1
+        ln = (dx * dx + dy * dy) ** 0.5 or 1
+        ux, uy = dx / ln, dy / ln
+        s1 = fs * 0.62 if i in labels else 0
+        s2 = fs * 0.62 if j in labels else 0
+        x1, y1, x2, y2 = x1 + ux * s1, y1 + uy * s1, x2 - ux * s2, y2 - uy * s2
+        order = int(b.GetBondTypeAsDouble()) if b.GetBondTypeAsDouble() >= 1 else 1
+        off = 2.6
+        nx, ny = -uy * off, ux * off
+        shifts = [0] if order == 1 else [-1, 1] if order == 2 else [-2, 0, 2]
+        for sft in shifts:
+            parts.append(f'<line x1="{x1 + nx * sft / (1 if order != 3 else 2):.1f}" y1="{y1 + ny * sft / (1 if order != 3 else 2):.1f}" '
+                         f'x2="{x2 + nx * sft / (1 if order != 3 else 2):.1f}" y2="{y2 + ny * sft / (1 if order != 3 else 2):.1f}" '
+                         f'stroke="#1e293b" stroke-width="1.5" stroke-linecap="round"/>')
+    for idx, lab in labels.items():
+        x, y = P[idx]
+        col = _COLORS.get(m.GetAtomWithIdx(idx).GetSymbol(), "#0f172a")
+        parts.append(f'<text x="{x:.1f}" y="{y + fs * 0.36:.1f}" font-size="{fs:.1f}" font-family="Helvetica,Arial,sans-serif" '
+                     f'text-anchor="middle" fill="{col}" font-weight="600">{lab}</text>')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+            + "".join(parts) + "</svg>")
+
+
 def svg(mol: Chem.Mol, width: int = 320, height: int = 220) -> str:
     if rdMolDraw2D is None:
-        return ""
+        return svg_basic(mol, width, height)
     d = rdMolDraw2D.MolDraw2DSVG(width, height)
     opts = d.drawOptions()
     opts.clearBackground = False
