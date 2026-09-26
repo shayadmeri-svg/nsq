@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SHARED = REPO / "shared"
+SHARED = REPO / "core"
 
 # shared/ modules import each other by bare name (the services put shared/
 # on sys.path), so import them the same way here.

@@ -42,7 +42,7 @@ from pathlib import Path
 
 # shared/ lives one level up; the analytics image ships it at /app/shared.
 _HERE = Path(__file__).resolve().parent
-for candidate in (_HERE.parent / "shared", Path("/app/shared")):
+for candidate in (_HERE.parent / "core", Path("/app/core"), Path("/app/shared")):
     if candidate.is_dir():
         sys.path.insert(0, str(candidate))
         break

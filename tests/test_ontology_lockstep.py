@@ -36,13 +36,8 @@ REPO = Path(__file__).resolve().parent.parent
 
 # (relative_path, normalize_fn_name, similarity_fn_name)
 ONT_COPIES = [
-    ("shared/company_ontology.py", "normalize_company_name", "_similarity"),
+    ("core/company_ontology.py", "normalize_company_name", "_similarity"),
     ("analytics/shared/company_ontology.py", "normalize_company_name", "_similarity"),
-    ("engine/shared/company_ontology.py", "normalize_company_name", "_similarity"),
-    ("manufacturer/shared/company_ontology.py", "normalize_company_name", "_similarity"),
-    ("manufacturer_api/shared/company_ontology.py", "normalize_company_name", "_similarity"),
-    ("simulator/intelligence/company_ontology.py", "normalize_company_name", "_similarity"),
-    ("simulator/shared/company_ontology.py", "normalize_company_name", "_similarity"),
 ]
 REDIS_LOADER = ("redis-loader/load_csv_redis.py", "_normalize", "_similarity")
 

@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 # Make the shared/ module importable so we can reuse the resolver.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 import company_ontology  # noqa: E402
 import redis  # noqa: E402

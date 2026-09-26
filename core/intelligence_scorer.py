@@ -589,15 +589,14 @@ def _equipment_matches(train: dict[str, Any], required_caps: set[str]) -> bool:
     return cap in required_caps
 
 
-def score_customer_profile_fit(
-    complexity: "ManufacturingComplexity",
-    plant: Optional[PlantAsset],
-) -> tuple[float, float, float, float, float, str, list[str]]:
-    """Return infrastructure, talent, certification, and GMP readiness scores, overall customer fit score, tier, and gaps."""
-    if plant is None:
-        return 0.0, 0.0, 0.0, 0.0, 0.0, "stretch", ["No plant asset selected."]
+def customer_profile_requirements(complexity: "ManufacturingComplexity") -> dict[str, list[str]]:
+    """What a plant needs to make this molecule: capability tokens, active
+    certifications and talent-depth keys.
 
-    # Required capabilities inferred from complexity.
+    Single source for score_customer_profile_fit() and for callers that need
+    the structured gap (e.g. "which additions unlock the most molecules")
+    rather than the human-readable gap strings.
+    """
     required_caps: set[str] = set()
     modality = complexity.modality
     drug_form = complexity.drug_form
@@ -614,17 +613,6 @@ def score_customer_profile_fit(
         if complexity.potency_classification in ("potent", "cytotoxic", "high_potency"):
             required_caps.add("potent_containment")
 
-    plant_caps = set((c or "").lower() for c in plant.capabilities)
-    train_caps = set((t.get("capability") or "").lower() for t in plant.equipment_trains)
-    available_caps = plant_caps | train_caps
-
-    matched = required_caps & available_caps
-    missing = required_caps - available_caps
-
-    infrastructure_score = 100.0 * (len(matched) / len(required_caps)) if required_caps else 50.0
-
-    # Talent relevance.
-    talent_keys: list[str] = []
     if modality in ("monoclonal_antibody", "recombinant_protein", "fusion_protein", "peptide"):
         talent_keys = ["bioprocess", "analytical", "regulatory_affairs", "quality", "sterile_manufacturing"]
     elif drug_form in ("injection", "vial"):
@@ -634,17 +622,73 @@ def score_customer_profile_fit(
         if complexity.potency_classification in ("potent", "cytotoxic", "high_potency"):
             talent_keys.append("cytotoxic_handling")
 
-    talent_values = [plant.talent_depth.get(k, 0.0) for k in talent_keys]
-    talent_score = sum(talent_values) / len(talent_values) if talent_values else 0.0
-
-    # Certification relevance — assume at least WHO-GMP for any program; add EU/USFDA for export.
+    # Assume at least WHO-GMP for any program.
     required_certs = {"who_gmp"}
     if complexity.modality != "small_molecule":
         required_certs.add("biologic_gmp")
     if complexity.potency_classification == "cytotoxic":
         required_certs.add("cytotoxic_licensing")
 
-    active_certs = set((c or "").lower().replace("-", "_") for c in plant.certifications_active)
+    return {
+        "capabilities": sorted(required_caps),
+        "certifications": sorted(required_certs),
+        "talent_keys": talent_keys,
+    }
+
+
+def plant_available_capabilities(plant: PlantAsset) -> set[str]:
+    """Capability tokens a plant offers: declared capabilities + equipment trains."""
+    plant_caps = set((c or "").lower() for c in plant.capabilities)
+    train_caps = set((t.get("capability") or "").lower() for t in plant.equipment_trains)
+    caps = plant_caps | train_caps
+    # Requirements use generic tokens ("granulation", "chromatography",
+    # "protein_a"); the capability catalog uses specific ones. Any specific
+    # token satisfies its generic parent — without this every OSD plant was
+    # reported as missing "granulation" despite having wet/dry granulation.
+    for generic, specifics in _GENERIC_CAPABILITY_ALIASES.items():
+        if caps & specifics:
+            caps.add(generic)
+    return caps
+
+
+_GENERIC_CAPABILITY_ALIASES: dict[str, set[str]] = {
+    "granulation": {"wet_granulation", "dry_granulation", "high_shear_wet_granulation", "roller_compaction"},
+    "chromatography": {"protein_a_chromatography", "cex_chromatography", "aex_chromatography", "hic_chromatography"},
+    "protein_a": {"protein_a_chromatography"},
+    "cell_culture": {"single_use_bioreactor", "stainless_bioreactor", "bioreactor"},
+    "sterility_testing": {"sterility_testing_isolator"},
+    "aseptic_fill": {"barrier_isolator_filling", "vial_filling", "pfs_filling", "cartridge_filling"},
+}
+
+
+def plant_active_certifications(plant: PlantAsset) -> set[str]:
+    return set((c or "").lower().replace("-", "_") for c in plant.certifications_active)
+
+
+def score_customer_profile_fit(
+    complexity: "ManufacturingComplexity",
+    plant: Optional[PlantAsset],
+) -> tuple[float, float, float, float, float, str, list[str]]:
+    """Return infrastructure, talent, certification, and GMP readiness scores, overall customer fit score, tier, and gaps."""
+    if plant is None:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, "stretch", ["No plant asset selected."]
+
+    req = customer_profile_requirements(complexity)
+    required_caps: set[str] = set(req["capabilities"])
+
+    available_caps = plant_available_capabilities(plant)
+
+    matched = required_caps & available_caps
+    missing = required_caps - available_caps
+
+    infrastructure_score = 100.0 * (len(matched) / len(required_caps)) if required_caps else 50.0
+
+    talent_keys = req["talent_keys"]
+    talent_values = [plant.talent_depth.get(k, 0.0) for k in talent_keys]
+    talent_score = sum(talent_values) / len(talent_values) if talent_values else 0.0
+
+    required_certs = set(req["certifications"])
+    active_certs = plant_active_certifications(plant)
     cert_matched = required_certs & active_certs
     cert_missing = required_certs - active_certs
     certification_score = 100.0 * (len(cert_matched) / len(required_certs)) if required_certs else 100.0

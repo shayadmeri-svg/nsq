@@ -18,8 +18,8 @@ import pandas as pd
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-MFR = REPO / "manufacturer"
-MFR_SHARED = MFR / "shared"
+MFR = REPO / "core"
+MFR_SHARED = REPO / "core"
 
 
 @pytest.fixture(scope="module", autouse=True)

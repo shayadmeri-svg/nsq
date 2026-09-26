@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-SHARED = REPO / "shared"
+SHARED = REPO / "core"
 
 # Columns the dashboard + diagnostics views read. Must all be present on the
 # enriched frame regardless of which dispatcher branch produced it.

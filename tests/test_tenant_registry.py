@@ -26,7 +26,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "manufacturer"))
-sys.path.insert(0, str(REPO / "shared"))
+sys.path.insert(0, str(REPO / "core"))
 
 FAKE_ONTOLOGY = {
     "regent ajanta": {

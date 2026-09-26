@@ -33,8 +33,8 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-GMP = REPO / "analytics" / "shared" / "gmp_knowledge.py"
-SHARED = REPO / "analytics" / "shared"
+GMP = REPO / "core" / "gmp_knowledge.py"
+SHARED = REPO / "core"
 if str(SHARED) not in sys.path:
     sys.path.insert(0, str(SHARED))
 

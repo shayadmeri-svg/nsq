@@ -27,8 +27,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-MFR = REPO / "manufacturer"
-SHARED = REPO / "shared"
+MFR = REPO / "core"
+SHARED = REPO / "core"
 
 EXPECTED_KEY = "regent ajanta"  # re-pinned after the 2026-08-27 deterministic rebuild ("biotech" drops as legal-form noise)
 EXPECTED_CANONICAL = "Regent Ajanta Biotech"
@@ -68,14 +68,14 @@ def _redis_reachable() -> bool:
 
 
 def test_tenant_registry_resolves_regent():
-    tenants = _load("manufacturer/tenants.py", "mfr_tenants")
+    tenants = _load("core/tenants.py", "mfr_tenants")
     t = tenants.get_active_tenant()
     assert t.ontology_key == EXPECTED_KEY
     assert t.canonical == EXPECTED_CANONICAL
 
 
 def test_tenant_registry_env_override(monkeypatch):
-    tenants = _load("manufacturer/tenants.py", "mfr_tenants_env")
+    tenants = _load("core/tenants.py", "mfr_tenants_env")
     monkeypatch.setenv("NSQ_TENANT", "regent-ajanta-biotech")
     assert tenants.get_active_tenant().key == "regent-ajanta-biotech"
     # Unknown env value falls back to the first registered tenant.
@@ -88,7 +88,7 @@ def test_tenant_filter_returns_eight_rows():
     _stub_streamlit()
     sys.path.insert(0, str(SHARED))
     try:
-        data_loader = _load("shared/data_loader.py", "mfr_data_loader")
+        data_loader = _load("core/data_loader.py", "mfr_data_loader")
         df = data_loader.load_and_preprocess_data()
     finally:
         sys.path.remove(str(SHARED))
@@ -115,7 +115,7 @@ def test_tenant_filter_returns_eight_rows():
 def test_tenant_key_in_ontology():
     sys.path.insert(0, str(SHARED))
     try:
-        co = _load("shared/company_ontology.py", "mfr_company_ontology")
+        co = _load("core/company_ontology.py", "mfr_company_ontology")
         ont = co.load_ontology()
     finally:
         sys.path.remove(str(SHARED))

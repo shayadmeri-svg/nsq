@@ -35,7 +35,7 @@ import pytest
 import redis
 
 REPO = Path(__file__).resolve().parent.parent
-SHARED = REPO / "shared"
+SHARED = REPO / "core"
 LOADER = REPO / "redis-loader"
 
 # shared/ modules import each other by bare name (the services put shared/

@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 def _load_model():
     """Load the process_models package standalone (no simulator venv deps)."""
-    pkg_dir = REPO / "simulator" / "process_models"
+    pkg_dir = REPO / "core" / "process_models"
     spec = importlib.util.spec_from_file_location(
         "process_models", pkg_dir / "__init__.py",
         submodule_search_locations=[str(pkg_dir)],

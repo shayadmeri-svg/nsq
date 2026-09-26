@@ -22,7 +22,7 @@ from pathlib import Path
 
 import redis
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "engine" / "shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 from intelligence_models import DemandProfile
 from intelligence_store import save_demand

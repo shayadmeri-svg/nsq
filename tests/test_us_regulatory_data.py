@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SHARED = REPO / "analytics" / "shared"
+SHARED = REPO / "core"
 if str(SHARED) not in sys.path:
     sys.path.insert(0, str(SHARED))
 
