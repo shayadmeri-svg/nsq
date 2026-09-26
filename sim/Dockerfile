@@ -1,7 +1,9 @@
 # PharmaPy sidecar. PharmaPy needs assimulo 3.4.3 (SUNDIALS) and numpy<2, so it
 # lives apart from the API. assimulo is built from source against Debian's SUNDIALS
 # (its headers include mpi.h, hence mpi-default-dev). Works on amd64 and arm64.
-FROM python:3.11-slim
+# bookworm = Debian 12, which ships SUNDIALS 6.4. Debian 13 (the default for
+# python:3.11-slim now) has SUNDIALS 7, which removed the headers assimulo 3.4.3 uses.
+FROM python:3.11-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential gfortran git curl libsundials-dev liblapack-dev libblas-dev mpi-default-dev \
     && rm -rf /var/lib/apt/lists/*
