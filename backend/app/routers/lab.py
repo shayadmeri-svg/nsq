@@ -70,3 +70,9 @@ def structure(body: dict[str, Any] = Body(default={}), user: User = Depends(curr
         raise HTTPException(422, "Not a valid SMILES.")
     return {"smiles": smiles, "svg": molecule.svg(mol, int(body.get("width", 260)), int(body.get("height", 180))),
             "descriptors": molecule.descriptors(mol)}
+
+
+@router.post("/molecule/{key}/fetch-structure")
+def fetch_structure(key: str, user: User = Depends(current_user)):
+    """Fetch this molecule's structure from PubChem / ChEMBL now (no need to wait for the nightly job)."""
+    return _run(lab.fetch_structure, key)

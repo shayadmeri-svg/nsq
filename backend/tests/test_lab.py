@@ -29,3 +29,23 @@ def test_lab_api(root):
     assert c["engine"] == "builtin" and c["summary"]["yield_pct"] > 0
     assert root.post("/api/lab/fluid-bed", json={"dew_point_c": 70, "inlet_c": 60}, headers=H).status_code == 422
     assert root.get("/api/lab/molecule/nope").status_code == 404
+
+
+def test_fetch_structure_on_demand(root, monkeypatch, tmp_path):
+    from app import lab, medicines
+    from app.config import settings
+    live = settings.data_dir / "generated" / "structures_live.json"
+    before = live.read_text() if live.exists() else None
+    monkeypatch.setattr(medicines, "enrich_ingredient", lambda a: {**a, "smiles": "CC(=O)Oc1ccccc1C(=O)O", "structure_source": "PubChem", "pka_acid": 3.5, "links": {}})
+    try:
+        r = root.post("/api/lab/molecule/zzfetchtest/fetch-structure", headers=H)
+        assert r.status_code == 200 and r.json()["smiles"]
+        assert lab.structures()["zzfetchtest"]["pka_acid"] == 3.5
+        monkeypatch.setattr(medicines, "enrich_ingredient", lambda a: {**a, "smiles": None, "sources": {"pubchem": {"status": "not found"}}})
+        assert root.post("/api/lab/molecule/zznothing/fetch-structure", headers=H).status_code == 422
+    finally:
+        if before is None:
+            live.unlink(missing_ok=True)
+        else:
+            live.write_text(before)
+        lab._cache.clear()

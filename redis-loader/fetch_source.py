@@ -29,7 +29,7 @@ from sources.common import (EXIT_ERROR, EXIT_OK, EXIT_UNCHANGED, EXIT_UNREACHABL
 def run_one(name: str, args) -> int:
     spec = SOURCES[name]
     ctx = Ctx(name=name, from_file=Path(args.from_file).expanduser() if args.from_file else None,
-              force=args.force, limit=args.limit, options={})
+              force=args.force, limit=args.limit, options={"missing_only": args.missing_only})
     print(f"▸ {spec['title']} ({spec['publisher']})", flush=True)
     # Sources that change monthly are not re-downloaded every day: fewer requests
     # also keeps publishers' abuse detection (FDA) from blocking the server.
@@ -80,7 +80,8 @@ def main() -> int:
     ap.add_argument("source", nargs="?", help="Source key, or 'all'.")
     ap.add_argument("--from-file", help="Parse a file you downloaded instead of fetching.")
     ap.add_argument("--force", action="store_true", help="Ignore HTTP caching / refresh everything.")
-    ap.add_argument("--limit", type=int, help="Per-run cap (clinical_trials).")
+    ap.add_argument("--limit", type=int, help="Per-run cap (clinical_trials, pubchem).")
+    ap.add_argument("--missing-only", action="store_true", help="pubchem: only molecules never looked up (fast; runs after every universe build).")
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
     if args.list or not args.source:

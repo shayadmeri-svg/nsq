@@ -147,7 +147,13 @@ def run(ctx: Ctx) -> int:
         return (now - datetime.fromisoformat(f)).total_seconds() if f else float("inf")
 
     targets = _targets()
-    due = sorted([t for t in targets if ctx.force or age(t["key"]) > max_age.total_seconds()], key=lambda t: -age(t["key"]))
+    if ctx.options.get("missing_only"):
+        due = [t for t in targets if t["key"] not in prev]
+        if not due:
+            ctx.log(f"{len(targets)} molecules, all already looked up")
+            return sum(1 for v in prev.values() if v.get("found"))
+    else:
+        due = sorted([t for t in targets if ctx.force or age(t["key"]) > max_age.total_seconds()], key=lambda t: -age(t["key"]))
     todo = due[:limit]
     ctx.log(f"{len(targets)} molecules, {len(due)} due, looking up {len(todo)} this run")
     data, done = dict(prev), 0

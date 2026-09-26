@@ -1,8 +1,9 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Atom, Beaker, Info } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Badge, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
+import { useToast } from "../../components/ui/toast";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { ProcessLab } from "./ProcessLab";
@@ -247,9 +248,23 @@ export function Lab() {
   const list = useQuery({ queryKey: ["lab-molecules"], queryFn: () => api<any>("/api/lab/molecules"), staleTime: 300_000 });
   const [key, setKey] = useState(() => new URLSearchParams(window.location.search).get("m") ?? "");
   const [tab, setTab] = useState<Tab>("molecule");
-  const mols = useMemo(() => (list.data?.molecules ?? []).filter((m: any) => m.has_structure), [list.data]);
+  const mols = useMemo(() => [...(list.data?.molecules ?? [])].sort((a: any, b: any) => Number(b.has_structure) - Number(a.has_structure)), [list.data]);
+  const withStructure = mols.filter((m: any) => m.has_structure).length;
   useEffect(() => { if (!key && mols.length) setKey(mols[0].key); }, [mols, key]);
-  const prof = useQuery({ queryKey: ["lab-mol", key], queryFn: () => api<any>(`/api/lab/molecule/${key}`), enabled: !!key });
+  const current = mols.find((m: any) => m.key === key);
+  const prof = useQuery({ queryKey: ["lab-mol", key], queryFn: () => api<any>(`/api/lab/molecule/${key}`), enabled: !!key && !!current?.has_structure });
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [fetching, setFetching] = useState(false);
+  const fetchStructure = async () => {
+    setFetching(true);
+    try {
+      const r = await post<any>(`/api/lab/molecule/${key}/fetch-structure`);
+      toast(`Structure found (${r.source})`);
+      await qc.invalidateQueries({ queryKey: ["lab-molecules"] });
+      await qc.invalidateQueries({ queryKey: ["lab-mol", key] });
+    } catch (e) { toast((e as Error).message, "error"); } finally { setFetching(false); }
+  };
   if (list.error) return <ErrorNote error={list.error} />;
   if (!list.data) return <Skeleton className="h-96" />;
   const needsMol = ["molecule", "dissolution", "crystal"].includes(tab);
@@ -258,12 +273,19 @@ export function Lab() {
       <Card className="flex flex-wrap items-center gap-3 p-4">
         <Atom size={18} className="text-brand-600" />
         <select className="input h-9 w-72 text-sm" value={key} onChange={(e) => setKey(e.target.value)}>
-          {mols.map((m: any) => <option key={m.key} value={m.key}>{m.name}{m.alerts ? ` · ${m.alerts} NSQ alerts` : ""}{m.bcs ? ` · BCS ${m.bcs}` : ""}</option>)}
+          {mols.map((m: any) => <option key={m.key} value={m.key}>{m.name}{m.alerts ? ` · ${m.alerts} NSQ alerts` : ""}{m.bcs ? ` · BCS ${m.bcs}` : ""}{m.has_structure ? "" : " · no structure yet"}</option>)}
         </select>
         <Segmented value={tab} onChange={setTab} options={[{ value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "crystal", label: "Crystallisation" }, { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" }, { value: "legacy", label: "Telmisartan demo (rule-based)" }]} />
-        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-ink-muted"><Beaker size={13} />{mols.length} molecules with structures</span>
+        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-ink-muted"><Beaker size={13} />{withStructure} of {mols.length} molecules have structures</span>
       </Card>
-      {needsMol && (prof.error ? <ErrorNote error={prof.error} /> : !prof.data ? <Skeleton className="h-96" /> : (
+      {needsMol && current && !current.has_structure && (
+        <Card className="flex flex-wrap items-center gap-4 p-6">
+          <div className="min-w-0 flex-1"><div className="font-display text-base font-bold">{current.name} has no chemical structure yet</div>
+            <p className="mt-1 text-xs text-ink-muted">Every model here starts from the structure. It is fetched automatically after each universe build and nightly by the PubChem job; you can also fetch it now from PubChem (falling back to ChEMBL).</p></div>
+          <Button onClick={fetchStructure} loading={fetching}><Atom size={14} /> Fetch structure now</Button>
+        </Card>
+      )}
+      {needsMol && current?.has_structure && (prof.error ? <ErrorNote error={prof.error} /> : !prof.data ? <Skeleton className="h-96" /> : (
         <>
           {tab === "molecule" && <MoleculeTab p={prof.data} list={list.data} />}
           {tab === "dissolution" && <Dissolution mkey={key} p={prof.data} />}

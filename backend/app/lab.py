@@ -40,7 +40,9 @@ def structures() -> dict[str, dict[str, Any]]:
     seed_p = settings.data_dir / "structures_seed.json"
     pc_p = settings.data_dir / "sources" / "pubchem.json"
     from . import medicines as med_mod
-    key = (_mtime(seed_p), _mtime(pc_p), med_mod.VERSION["n"])
+    live_p = settings.data_dir / "generated" / "structures_live.json"
+    uni_p = settings.data_dir / "generated" / "molecule_universe.json"
+    key = (_mtime(seed_p), _mtime(pc_p), _mtime(live_p), _mtime(uni_p), med_mod.VERSION["n"])
     hit = _cache.get("structures")
     if hit and hit[0] == key:
         return hit[1]
@@ -59,6 +61,20 @@ def structures() -> dict[str, dict[str, Any]]:
             out[k] = {"key": k, "name": (v.get("query") or k).title() if not prev else prev["name"], "smiles": v["smiles"],
                       "aliases": prev.get("aliases", []), "source": "PubChem", "cid": v.get("cid"), "url": v.get("url"),
                       "xlogp": v.get("xlogp"), "mp_c": v.get("mp_c"), "mp_values": v.get("mp_values"), "iupac": v.get("iupac")}
+    # Structures fetched on demand from the Lab (PubChem, else ChEMBL)
+    if live_p.exists():
+        for k, v in json.loads(live_p.read_text(encoding="utf-8")).items():
+            if v.get("smiles") and not (out.get(k) or {}).get("smiles"):
+                out[k] = {**v, "key": k, "aliases": (out.get(k) or {}).get("aliases", [])}
+    # Every molecule in the universe is listed, with or without a structure yet
+    if uni_p.exists():
+        try:
+            u = json.loads(uni_p.read_text(encoding="utf-8"))
+            for m in (u.get("molecules") if isinstance(u, dict) else u) or []:
+                if m.get("key") and m["key"] not in out and m.get("modality", "small_molecule") == "small_molecule":
+                    out[m["key"]] = {"key": m["key"], "name": m.get("name") or m["key"], "smiles": None, "aliases": [], "source": "universe (no structure yet)"}
+        except (OSError, ValueError):
+            pass
     # Ingredients of medicines added in the Playground (PubChem / ChEMBL at save time)
     try:
         from sqlalchemy import select
@@ -286,3 +302,25 @@ def fluid_bed(p: dict[str, Any]) -> dict[str, Any]:
     return product.fluid_bed(inlet_c=float(p.get("inlet_c", 60)), dew_point_c=float(p.get("dew_point_c", 10)), air_m3_h=float(p.get("air_m3_h", 300)),
                              spray_g_min=float(p.get("spray_g_min", 50)), solids_pct=float(p.get("solids_pct", 8)),
                              heat_loss_pct=float(p.get("heat_loss_pct", 10)))
+
+
+def fetch_structure(key: str) -> dict[str, Any]:
+    """Look a molecule up in PubChem (else ChEMBL) now and keep the result for the lab."""
+    from . import medicines as med_mod
+    rec = structures().get(key) or {"name": key.replace("_", " ")}
+    got = med_mod.enrich_ingredient({"name": rec["name"], "molecule_key": key, "role": "active", "source": "lab"})
+    if not got.get("smiles"):
+        status = {k: v.get("status") for k, v in (got.get("sources") or {}).items()}
+        raise ValueError(f"No structure found for {rec['name']} (PubChem: {status.get('pubchem')}, ChEMBL: {status.get('chembl')}).")
+    live_p = settings.data_dir / "generated" / "structures_live.json"
+    live_p.parent.mkdir(parents=True, exist_ok=True)
+    cur = json.loads(live_p.read_text(encoding="utf-8")) if live_p.exists() else {}
+    cur[key] = {"name": rec["name"], "smiles": got["smiles"], "source": got.get("structure_source") or "PubChem", "cid": got.get("cid"),
+                "url": (got.get("links") or {}).get("pubchem") or (got.get("links") or {}).get("chembl"), "xlogp": got.get("xlogp"),
+                "mp_c": got.get("mp_c"), "pka_acid": got.get("pka_acid"), "pka_base": got.get("pka_base")}
+    tmp = live_p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cur, indent=1), encoding="utf-8")
+    tmp.replace(live_p)
+    _cache.pop("structures", None)
+    _cache.pop("molecules", None)
+    return cur[key]

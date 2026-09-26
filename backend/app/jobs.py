@@ -181,6 +181,8 @@ def _universe_steps(p: dict[str, Any]):
         Step("Load patents", [PY, "load_patents.py", "--input", _gen("patents.json"), "--redis-url", _local(), "--flush"]),
         Step("Load regulatory passports", [PY, "load_regulatory.py", "--input", _gen("regulatory.json"), "--redis-url", _local(), "--flush"]),
         Step("Load demand profiles", [PY, "load_demand.py", "--input", _gen("demand.json"), "--redis-url", _local(), "--flush"]),
+        # New molecules get a chemical structure straight away (only never-seen ones; PubChem may be unreachable)
+        Step("Fetch structures for new molecules (PubChem)", [PY, "fetch_source.py", "pubchem", "--missing-only"], allow_fail=True, ok_codes={3}),
     ]
 
 
