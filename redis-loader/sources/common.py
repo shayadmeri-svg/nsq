@@ -92,6 +92,14 @@ class NotFound(Exception):
     """The URL answered 404/410 (the publisher moved or renamed the file)."""
 
 
+class Blocked(Exception):
+    """The publisher's bot / abuse detection refused the request (usually temporary)."""
+
+
+def _is_block(url_or_msg: str) -> bool:
+    return any(w in (url_or_msg or "") for w in ("apology", "abuse-detection"))
+
+
 def download_first(ctx: "Ctx", urls: list[str], filename: str, *, timeout: int = 300) -> "Path":
     """Try candidate URLs in order; the first that downloads (or is unchanged) wins."""
     errors = []
@@ -190,7 +198,12 @@ def download(ctx: Ctx, url: str, filename: str, *, timeout: int = 300) -> Path:
     except NotFound as exc:
         # Bot filters answer with a redirect to an apology / 404 page: try the other header set once.
         ctx.log(f"  {exc} — retrying with different request headers")
-        return _download(ctx, url, filename, other, timeout)
+        try:
+            return _download(ctx, url, filename, other, timeout)
+        except NotFound as exc2:
+            if _is_block(str(exc2)):
+                raise Blocked(str(exc2)) from exc2
+            raise
 
 
 def _download(ctx: Ctx, url: str, filename: str, base_headers: dict[str, str], timeout: int) -> Path:

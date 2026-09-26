@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 from sources import SOURCES, Ctx  # noqa: E402
-from sources.common import (EXIT_ERROR, EXIT_OK, EXIT_UNCHANGED, EXIT_UNREACHABLE, NotFound, NotModified,  # noqa: E402
+from sources.common import (EXIT_ERROR, EXIT_OK, EXIT_UNCHANGED, EXIT_UNREACHABLE, Blocked, NotFound, NotModified, read_manifest,  # noqa: E402
                             Unreachable, now_iso, update_manifest)
 
 
@@ -31,6 +31,16 @@ def run_one(name: str, args) -> int:
     ctx = Ctx(name=name, from_file=Path(args.from_file).expanduser() if args.from_file else None,
               force=args.force, limit=args.limit, options={})
     print(f"▸ {spec['title']} ({spec['publisher']})", flush=True)
+    # Sources that change monthly are not re-downloaded every day: fewer requests
+    # also keeps publishers' abuse detection (FDA) from blocking the server.
+    min_days = spec.get("min_interval_days", 0)
+    last = (read_manifest().get(name) or {}).get("last_success")
+    if min_days and last and not args.force and not args.from_file:
+        from datetime import datetime, timezone
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() / 86400
+        if age < min_days:
+            print(f"  fetched {age:.1f} days ago — refreshed every {min_days} days (use 'Re-download' to force)", flush=True)
+            return EXIT_UNCHANGED
     t0 = time.time()
     update_manifest(name, last_attempt=now_iso())
     try:
@@ -39,6 +49,12 @@ def run_one(name: str, args) -> int:
         print("  unchanged since the last download", flush=True)
         update_manifest(name, status="unchanged", last_checked=now_iso(), error="")
         return EXIT_UNCHANGED
+    except Blocked as exc:
+        print(f"  BLOCKED — the publisher's abuse detection refused this server: {exc}", file=sys.stderr, flush=True)
+        print("  This is usually lifted within hours; the data fetched before stays in use.", file=sys.stderr, flush=True)
+        print("  To refresh now, download the file in your browser and run this source with the uploaded file.", file=sys.stderr, flush=True)
+        update_manifest(name, status="unreachable", error=f"Blocked by the publisher (temporary): {exc}"[:500])
+        return EXIT_UNREACHABLE
     except NotFound as exc:
         print(f"  NOT FOUND — the publisher moved or renamed the file: {exc}", file=sys.stderr, flush=True)
         print("  Download it by hand and run this source with the uploaded file (Admin → Pipelines).", file=sys.stderr, flush=True)

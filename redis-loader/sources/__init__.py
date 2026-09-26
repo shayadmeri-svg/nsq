@@ -21,11 +21,11 @@ CDSCO_META = {
 }
 
 SOURCES: dict[str, dict[str, Any]] = {
-    "orange_book": {**orange_book.META, "run": orange_book.run, "group": "molecules"},
-    "purple_book": {**purple_book.META, "run": purple_book.run, "group": "molecules"},
+    "orange_book": {**orange_book.META, "run": orange_book.run, "group": "molecules", "min_interval_days": 7},
+    "purple_book": {**purple_book.META, "run": purple_book.run, "group": "molecules", "min_interval_days": 7},
     "ema": {**ema.META, "run": ema.run, "group": "molecules"},
     "clinical_trials": {**clinical_trials.META, "run": clinical_trials.run, "group": "demand"},
-    "fda_establishments": {**fda_sites.DECRS, "run": fda_sites.run_establishments, "group": "sites"},
+    "fda_establishments": {**fda_sites.DECRS, "run": fda_sites.run_establishments, "group": "sites", "min_interval_days": 3},
     "fda_import_alerts": {**fda_sites.IMPORT_ALERT, "run": fda_sites.run_import_alerts, "group": "sites"},
     "fda_recalls": {**fda_sites.RECALLS, "run": fda_sites.run_recalls, "group": "sites"},
 }
