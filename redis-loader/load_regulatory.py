@@ -94,6 +94,7 @@ def load(input_path: Path, redis_url: str, flush: bool) -> None:
             readiness=raw.get("readiness", "partial"),
             source_url=raw.get("source_url", ""),
             notes=raw.get("notes", ""),
+            provenance=raw.get("provenance") or {},
         )
         save_regulatory(passport, client=r)
         loaded += 1

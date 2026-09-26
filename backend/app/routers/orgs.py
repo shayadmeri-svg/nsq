@@ -17,7 +17,7 @@ import intelligence_store as store
 from intelligence_models import PlantAsset
 from intelligence_scorer import evaluate_manufacturing_readiness
 
-from .. import data, insights
+from .. import data, insights, sites
 from ..audit import audit
 from ..db import get_db
 from ..models import Org, PLATFORM_ROLES, Plant, User
@@ -206,6 +206,56 @@ def create_plant(slug: str, body: PlantBody, request: Request, user: User = Depe
     db.commit()
     data.invalidate()
     audit(db, "plant.created", actor=user, target_type="plant", target_id=asset_id, detail={"org": org.slug}, request=request)
+    return insights.plant_profile(plant)
+
+
+def _linked_sites(org) -> dict[str, str]:
+    plants = data.cdmo()["plants"]
+    out = {}
+    for pid in org.plant_ids or []:
+        p = plants.get(pid)
+        sid = (p.reference or {}).get("site_id") if p else None
+        if sid:
+            out[sid] = pid
+    return out
+
+
+@router.get("/{slug}/site-suggestions")
+def site_suggestions(slug: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Sites in the public-record directory that belong to this organisation's
+    NSQ manufacturer identities, with whether each is already a plant."""
+    org = org_for_user(db, slug, user)
+    res = sites.search(ontology_keys=list(org.ontology_keys or []), size=100)
+    linked = _linked_sites(org)
+    return {"items": [{**s, "plant_id": linked.get(s["id"])} for s in res["items"]], "total": res["total"],
+            "can_add": can_manage_org(user, org)}
+
+
+class FromSiteBody(BaseModel):
+    site_id: str
+
+
+@router.post("/{slug}/plants/from-site")
+def plant_from_site(slug: str, body: FromSiteBody, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    org = org_for_user(db, slug, user)
+    if not can_manage_org(user, org):
+        raise HTTPException(403, "Only organisation admins can add plants.")
+    site = sites.get(body.site_id)
+    if site is None:
+        raise HTTPException(404, "Site not found in the directory.")
+    if site["ontology_key"] not in (org.ontology_keys or []) and user.role not in PLATFORM_ROLES:
+        raise HTTPException(403, "That site belongs to a manufacturer this organisation is not linked to.")
+    if body.site_id in _linked_sites(org):
+        raise HTTPException(409, "This site is already one of the organisation's plants.")
+    asset_id = f"{org.slug}-{_slug(site['company'])[:40]}-{site['pincode'] or uuid.uuid4().hex[:6]}"
+    plant = PlantAsset(**sites.plant_from_site(site, asset_id))
+    store.save_plant_asset(plant, data.redis_client())
+    db.merge(Plant(asset_id=asset_id, org_id=org.id, created_by=user.id, payload=plant.model_dump(mode="json")))
+    if asset_id not in (org.plant_ids or []):
+        org.plant_ids = list(org.plant_ids or []) + [asset_id]
+    db.commit()
+    data.invalidate()
+    audit(db, "plant.created_from_site", actor=user, target_type="plant", target_id=asset_id, detail={"org": org.slug, "site": body.site_id}, request=request)
     return insights.plant_profile(plant)
 
 

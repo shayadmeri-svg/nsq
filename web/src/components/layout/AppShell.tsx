@@ -1,8 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  Activity, Building2, ChevronDown, ClipboardList, Factory, FlaskConical, Gauge, Globe2, LayoutDashboard, LogOut,
-  Map, Menu, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users,
-} from "lucide-react";
+import { Activity, Building2, ChevronDown, ClipboardList, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -169,13 +166,16 @@ export function AppShell({ me }: { me: Me }) {
           <NavItem to="/admin/explorer" icon={<Map size={17} />}>All-India NSQ</NavItem>
           <NavItem to="/admin/orgs" icon={<Building2 size={17} />}>Organisations</NavItem>
           <NavItem to="/admin/users" icon={<ShieldCheck size={17} />}>Users & access</NavItem>
+          <NavItem to="/admin/pipelines" icon={<Workflow size={17} />}>Data pipelines</NavItem>
+          <NavItem to="/admin/molecules" icon={<FlaskRound size={17} />}>Molecule universe</NavItem>
+          <NavItem to="/admin/sites" icon={<Factory size={17} />}>Site directory</NavItem>
           <NavItem to="/admin/jobs" icon={<PlayCircle size={17} />}>Data jobs</NavItem>
           <NavItem to="/admin/audit" icon={<ScrollText size={17} />}>Audit log</NavItem>
         </Section>
       )}
       <div className="mt-auto rounded-xl bg-gradient-to-br from-white/[0.06] to-transparent p-3 text-[11.5px] leading-relaxed text-slate-400 ring-1 ring-inset ring-white/5">
         <div className="mb-1 flex items-center gap-1.5 font-semibold text-slate-300"><FlaskConical size={13} /> Data sources</div>
-        CDSCO NSQ alerts · curated patent, regulatory & demand seeds · plant profiles.
+        CDSCO NSQ alerts · FDA Orange/Purple Book · EMA · ClinicalTrials.gov · FDA site records · curated seeds.
       </div>
     </nav>
   );

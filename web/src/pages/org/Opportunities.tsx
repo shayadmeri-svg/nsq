@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis, Cell, ReferenceLine } from "recharts";
 import { PillarRadar } from "../../components/charts";
-import { Badge, Card, CardHeader, Drawer, Empty, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Ring, Segmented, Skeleton, Stat } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Ring, Segmented, Skeleton, Stat } from "../../components/ui";
 import { Estimate } from "../../components/ui/Estimate";
 import { api } from "../../lib/api";
 import { fmtDate, TIER_STYLE, titleCase } from "../../lib/format";
@@ -13,16 +13,30 @@ import { useOrg, useOrgData, VERDICT } from "./common";
 
 const TIER_COLOR: Record<string, string> = { strategic: "#0a9a7d", core: "#6366f1", adjacent: "#f59e0b", stretch: "#94a3b8" };
 
-function Loe({ loe }: { loe: Record<string, string | null> }) {
-  if (!loe.in && !loe.eu && !loe.us) return <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">Off-patent everywhere</span>;
+function Loe({ loe, prov }: { loe: Record<string, string | null>; prov?: Record<string, any> }) {
+  if (!loe.in && !loe.eu && !loe.us && !prov) return <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">Off-patent everywhere</span>;
+  const past = (d: string | null) => !!d && new Date(d) < new Date();
   return (
     <div className="flex gap-3 text-xs">
-      {(["in", "eu", "us"] as const).map((k) => (
-        <div key={k}><span className="text-ink-faint">{k.toUpperCase()} </span><span className="whitespace-nowrap font-medium">{loe[k] ? fmtDate(loe[k]).replace(/^\d+ /, "") : "open"}</span></div>
-      ))}
+      {(["in", "eu", "us"] as const).map((k) => {
+        const p = prov?.[`loe_${k}`];
+        const unknown = !loe[k] && p?.status === "unknown";
+        return (
+          <div key={k} className="flex items-center gap-0.5"><span className="text-ink-faint">{k.toUpperCase()}&nbsp;</span>
+            <span className={`whitespace-nowrap font-medium ${past(loe[k]) || (!loe[k] && !unknown) ? "text-emerald-700" : ""} ${unknown ? "text-ink-faint" : ""}`}>{loe[k] ? fmtDate(loe[k]).replace(/^\d+ /, "") : unknown ? "?" : "open"}</span>
+            {p && <Estimate field="loe" prov={p} />}
+          </div>
+        );
+      })}
     </div>
   );
 }
+
+const ORIGIN_BADGE: Record<string, JSX.Element> = {
+  curated: <Badge tone="brand">Tracked</Badge>,
+  auto: <Badge tone="sky">Tracked · sourced</Badge>,
+  manual: <Badge tone="amber">Watchlist</Badge>,
+};
 
 function CliffChart({ rows, onPick }: { rows: any[]; onPick: (k: string) => void }) {
   // Off-patent molecules all sit at x = 0; spread them deterministically so each bubble stays clickable.
@@ -64,8 +78,8 @@ function Detail({ slug, molecule, onClose }: { slug: string; molecule?: string; 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-line p-4">
               <div className="label mb-2 flex items-center gap-1.5">Loss of exclusivity <Estimate field="loe" /></div>
-              <Loe loe={{ in: data.patent.estimated_loe_in, eu: data.patent.estimated_loe_eu, us: data.patent.estimated_loe_us }} />
-              <div className="mt-3 flex flex-wrap items-center gap-1.5"><Badge tone={data.patent.fto_risk === "high" ? "rose" : data.patent.fto_risk === "medium" ? "amber" : "brand"}>FTO risk: {data.patent.fto_risk}</Badge><Estimate field="fto_risk" />{data.patent.market_size_usd_bn && <><Badge tone="indigo">${data.patent.market_size_usd_bn} bn market</Badge><Estimate field="market_size_usd_bn" /></>}</div>
+              <Loe loe={{ in: data.patent.estimated_loe_in, eu: data.patent.estimated_loe_eu, us: data.patent.estimated_loe_us }} prov={data.patent.provenance && Object.keys(data.patent.provenance).length ? data.patent.provenance : undefined} />
+              <div className="mt-3 flex flex-wrap items-center gap-1.5"><Badge tone={data.patent.fto_risk === "high" ? "rose" : data.patent.fto_risk === "medium" ? "amber" : "brand"}>FTO risk: {data.patent.fto_risk}</Badge><Estimate field="fto_risk" prov={data.patent.provenance?.fto_risk} />{data.patent.market_size_usd_bn && <><Badge tone="indigo">${data.patent.market_size_usd_bn} bn market</Badge><Estimate field="market_size_usd_bn" /></>}</div>
               <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-ink-muted">{data.patent.notes}</p>
             </div>
             {fit ? (
@@ -117,6 +131,7 @@ export function Opportunities() {
   const nav = useNavigate();
   const { data, isLoading, error } = useOrgData<any>("opportunities");
   const [tier, setTier] = useState<string>("all");
+  const [shown, setShown] = useState(40);
   // Molecules that appear in the organisation's own alerts come first.
   const rows = useMemo(() => (data?.molecules ?? [])
     .filter((m: any) => tier === "all" || m.fit_tier === tier)
@@ -185,11 +200,11 @@ export function Opportunities() {
               <th className="px-5 py-2.5">Molecule</th><th className="px-3 py-2.5">Your alerts</th><th className="px-3 py-2.5"><span className="inline-flex items-center gap-1">Loss of exclusivity <Estimate field="loe" /></span></th><th className="px-3 py-2.5">Best plant</th><th className="px-3 py-2.5">Fit</th><th className="px-3 py-2.5">Missing</th><th className="px-5 py-2.5 text-right">Score</th>
             </tr></thead>
             <tbody>
-              {rows.map((m: any) => (
+              {rows.slice(0, shown).map((m: any) => (
                 <tr key={m.molecule_key} onClick={() => nav(`/o/${slug}/opportunities/${m.molecule_key}`)} className={`cursor-pointer border-b border-line/70 transition hover:bg-brand-50/40 ${m.alerts_in_org ? "bg-rose-50/30" : ""}`}>
-                  <td className={`border-l-[3px] px-5 py-3 ${m.alerts_in_org ? "border-rose-400" : "border-brand-500"}`}><div className="flex items-center gap-2 font-semibold">{m.api_name}<Badge tone="brand">Tracked</Badge></div><div className="text-xs text-ink-muted">{m.therapeutic_area} · {titleCase(m.modality)}{m.market_size_usd_bn ? ` · $${m.market_size_usd_bn} bn` : ""}</div></td>
+                  <td className={`border-l-[3px] px-5 py-3 ${m.alerts_in_org ? "border-rose-400" : "border-brand-500"}`}><div className="flex items-center gap-2 font-semibold">{m.api_name}{ORIGIN_BADGE[m.origin] ?? ORIGIN_BADGE.curated}</div><div className="text-xs text-ink-muted">{m.therapeutic_area} · {titleCase(m.modality)}{m.market_size_usd_bn ? ` · $${m.market_size_usd_bn} bn` : ""}</div></td>
                   <td className="px-3 py-3">{m.alerts_in_org ? <Badge tone="rose">{m.alerts_in_org} NSQ</Badge> : <span className="text-xs text-ink-faint">—</span>}</td>
-                  <td className="px-3 py-3"><Loe loe={m.loe} /></td>
+                  <td className="px-3 py-3"><Loe loe={m.loe} prov={Object.keys(m.prov ?? {}).length ? m.prov : undefined} /></td>
                   <td className="px-3 py-3 text-xs">{m.best_plant?.name ?? "—"}</td>
                   <td className="px-3 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[m.fit_tier]}`}>{titleCase(m.fit_tier)}</span></td>
                   <td className="max-w-[260px] px-3 py-3 text-xs text-ink-muted"><div className="truncate">{[...m.missing_capabilities.map((c: any) => c.label), ...m.missing_certifications.map((c: string) => c.toUpperCase())].join(", ") || <span className="text-emerald-600">Nothing core</span>}</div></td>
@@ -199,6 +214,7 @@ export function Opportunities() {
             </tbody>
           </table>
         </div>
+        {rows.length > shown && <div className="flex justify-center p-4"><Button variant="secondary" size="sm" onClick={() => setShown(shown + 60)}>Show {Math.min(60, rows.length - shown)} more of {rows.length - shown}</Button></div>}
       </Card>
       <Card delay={0.25} className="mt-5 border-dashed bg-white/60">
         <CardHeader icon={<CircleDashed size={16} />} title="Also in your CDSCO alerts — untracked" subtitle={`${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet. They cannot be scored until they are added to the tracked set.`} />

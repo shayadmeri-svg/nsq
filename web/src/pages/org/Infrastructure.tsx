@@ -1,11 +1,12 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ExternalLink, Factory, FileSearch, MapPin, Pencil, Plus, ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import { Badge, Bar, Button, Card, Drawer, Empty, ErrorNote, Field, PageHeader, PageSkeleton } from "../../components/ui";
 import { useToast } from "../../components/ui/toast";
 import { Estimate } from "../../components/ui/Estimate";
-import { post, put } from "../../lib/api";
+import { api, post, put } from "../../lib/api";
+import { FdaBadges, SiteDetail } from "../admin/Sites";
 import { cn } from "../../lib/cn";
 import { titleCase } from "../../lib/format";
 import { useOrg, useOrgData } from "./common";
@@ -145,6 +146,53 @@ function ReferencePanel({ p }: { p: any }) {
   );
 }
 
+function SiteSuggestions({ slug }: { slug: string }) {
+  const { data } = useQuery({ queryKey: ["site-suggestions", slug], queryFn: () => api<any>(`/api/orgs/${slug}/site-suggestions`) });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [open, setOpen] = useState<any | null>(null);
+  const toast = useToast();
+  const qc = useQueryClient();
+  if (!data?.items?.length) return null;
+  const add = async (id: string) => {
+    setBusy(id);
+    try {
+      await post(`/api/orgs/${slug}/plants/from-site`, { site_id: id });
+      toast("Plant added from public records — review and confirm its capabilities.");
+      qc.invalidateQueries({ queryKey: ["site-suggestions", slug] });
+      qc.invalidateQueries({ queryKey: ["org", slug] });
+      qc.invalidateQueries();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Card delay={0.15} className="mt-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5">
+        <div>
+          <div className="flex items-center gap-2 font-display text-[15px] font-bold"><FileSearch size={16} /> Your sites in public records</div>
+          <div className="text-xs text-ink-muted">Manufacturing addresses printed on your CDSCO-alerted products, matched with FDA records. Adding one creates a plant whose capabilities are inferred from what was made there.</div>
+        </div>
+      </div>
+      <div className="mt-3 divide-y divide-line/70">
+        {data.items.map((s: any) => (
+          <div key={s.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+            <button onClick={() => setOpen(s)} className="min-w-0 text-left">
+              <div className="truncate text-sm font-semibold hover:text-brand-700">{s.company} <span className="font-normal text-ink-muted">· {s.city || s.state} {s.pincode}</span></div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">{s.alerts} alerts · {Object.keys(s.forms).join(", ")} <FdaBadges fda={s.fda} /></div>
+            </button>
+            {s.plant_id ? <Badge tone="brand"><Check size={11} /> added</Badge> : data.can_add && <Button size="sm" loading={busy === s.id} onClick={() => add(s.id)}><Plus size={13} /> Add as plant</Button>}
+          </div>
+        ))}
+      </div>
+      <Drawer open={!!open} onClose={() => setOpen(null)} title={open?.company ?? ""} subtitle={open ? <FdaBadges fda={open.fda} /> : undefined} width={680}>
+        {open && <SiteDetail site={open} />}
+      </Drawer>
+    </Card>
+  );
+}
+
 export function Infrastructure() {
   const { org, slug } = useOrg();
   const { data, isLoading, error } = useOrgData<any>("infrastructure");
@@ -200,6 +248,7 @@ export function Infrastructure() {
           </Card>
         ))}
       </div>
+      <SiteSuggestions slug={slug} />
       <PlantEditor slug={slug} plant={editing} taxonomy={data.taxonomy} onClose={() => setEditing(undefined)} />
     </>
   );

@@ -132,3 +132,37 @@ class Plant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class PipelineSchedule(Base):
+    """When a job runs on its own (Admin → Pipelines). Times are in SCHEDULE_TZ (default Asia/Kolkata)."""
+
+    __tablename__ = "pipeline_schedules"
+
+    job_key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    frequency: Mapped[str] = mapped_column(String(10), default="daily")  # daily | weekly | monthly
+    hour: Mapped[int] = mapped_column(Integer, default=2)
+    minute: Mapped[int] = mapped_column(Integer, default=30)
+    weekday: Mapped[int] = mapped_column(Integer, default=0)  # 0 = Monday (weekly)
+    day: Mapped[int] = mapped_column(Integer, default=1)  # day of month (monthly)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_fired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(254), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())
+
+
+class WatchMolecule(Base):
+    """Admin additions to (or exclusions from) the auto-built molecule universe."""
+
+    __tablename__ = "watch_molecules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    key: Mapped[str] = mapped_column(String(160), index=True, default="")
+    exclude: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(Text, default="")
+    added_by: Mapped[str] = mapped_column(String(254), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

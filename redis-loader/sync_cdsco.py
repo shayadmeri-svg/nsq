@@ -17,7 +17,15 @@ Usage:
   python sync_cdsco.py --csv ... --bootstrap-only      # only rebuild a missing CSV
   python sync_cdsco.py --csv ... --from-json saved.json
 
-Exit codes: 0 ok (including "nothing new"), 1 error, 2 CDSCO unreachable.
+Backfill a month or a range (the viewer's year/month filter; the parameter
+names are not documented, so several spellings are tried and the rows'
+reporting month is checked):
+  python sync_cdsco.py --csv ... --month 2025-03
+  python sync_cdsco.py --csv ... --backfill-from 2021-01     # only months with no rows
+  python sync_cdsco.py --csv ... --gaps                      # list empty months and exit
+
+Exit codes: 0 ok (including "nothing new"), 1 error, 2 CDSCO unreachable,
+3 nothing new (only with --exit-unchanged, used by the scheduled pipeline).
 """
 
 from __future__ import annotations
@@ -103,10 +111,76 @@ def rows_from_cdsco(payload: dict) -> list[dict]:
     return rows
 
 
-def fetch(url: str, timeout: int) -> dict:
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0 (nsq-platform sync)", "Accept": "application/json"})
+def fetch(url: str, timeout: int, data: bytes | None = None) -> dict:
+    req = Request(url, data=data, headers={"User-Agent": "Mozilla/5.0 (nsq-platform sync)", "Accept": "application/json"})
     with urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8", errors="replace"))
+
+
+_MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+
+def _month_variants(ym: str) -> list[tuple[str, dict[str, str], bool]]:
+    """(url, params, post?) spellings of a year/month filter to try in order."""
+    y, m = ym.split("-")
+    mi = int(m)
+    names = [("year", "month"), ("selYear", "selMonth"), ("nsqYear", "nsqMonth"), ("yr", "mnth")]
+    vals = [m, str(mi), _MON[mi - 1], _MON[mi - 1].title()]
+    out = []
+    for yk, mk in names:
+        for mv in vals:
+            out.append((CDSCO_URL, {yk: y, mk: mv}, False))
+    for yk, mk in names[:2]:
+        out.append((CDSCO_URL, {yk: y, mk: m}, True))
+    return out
+
+
+def fetch_month(ym: str, timeout: int) -> tuple[dict, str]:
+    """Fetch one reporting month. Returns (payload, how) or raises ValueError
+    when CDSCO ignores every filter spelling (rows come back for another month)."""
+    from urllib.parse import urlencode
+
+    want = _month_title(f"{_MON[int(ym[5:7]) - 1]}-{ym[:4]}")
+    seen_months: set[str] = set()
+    for url, params, post in _month_variants(ym):
+        q = urlencode(params)
+        try:
+            payload = fetch(url, timeout, data=q.encode()) if post else fetch(f"{url}?{q}", timeout)
+        except json.JSONDecodeError:
+            continue
+        rows = rows_from_cdsco(payload)
+        months = {r.get("Reporting Month & Year", "") for r in rows}
+        seen_months |= months
+        if rows and months == {want}:
+            return payload, f"{'POST' if post else 'GET'} {q}"
+    raise ValueError(f"CDSCO did not honour a month filter for {ym} (got {sorted(seen_months)[:3]})")
+
+
+def month_gaps(rows: list[dict], start: str) -> list[str]:
+    have = set()
+    for r in rows:
+        parts = (r.get("Reporting Month & Year") or "").split("-")
+        if len(parts) == 2 and parts[0][:3].upper() in MONTH_MAP:
+            have.add(f"{parts[1]}-{MONTH_MAP[parts[0][:3].upper()]}")
+    y, m = int(start[:4]), int(start[5:7])
+    today = datetime.now(timezone.utc)
+    out = []
+    while (y, m) <= (today.year, today.month):
+        ym = f"{y}-{m:02d}"
+        if ym not in have:
+            out.append(ym)
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return out
+
+
+def _manifest(**fields) -> None:
+    try:
+        from sources.common import now_iso, update_manifest
+        update_manifest("cdsco", **fields)
+    except Exception:  # pragma: no cover - never fail the sync over bookkeeping
+        pass
 
 
 def main() -> int:
@@ -118,6 +192,10 @@ def main() -> int:
     ap.add_argument("--from-json", type=Path, help="Use a saved CDSCO JSON instead of fetching.")
     ap.add_argument("--raw-dir", type=Path, default=None, help="Where to keep raw downloads (default data/raw/cdsco).")
     ap.add_argument("--bootstrap-only", action="store_true", help="Only rebuild a missing CSV from Redis.")
+    ap.add_argument("--month", help="Fetch one reporting month (YYYY-MM) instead of the current one.")
+    ap.add_argument("--backfill-from", help="Fetch every month since YYYY-MM that has no rows in the CSV.")
+    ap.add_argument("--gaps", action="store_true", help="List months with no rows (since --backfill-from or 2021-01) and exit.")
+    ap.add_argument("--exit-unchanged", action="store_true", help="Exit 3 when nothing new was added.")
     args = ap.parse_args()
 
     # 1. Make sure the cumulative CSV exists.
@@ -137,26 +215,50 @@ def main() -> int:
     if args.bootstrap_only:
         return 0
 
-    # 2. Get the latest CDSCO month.
+    if args.gaps:
+        gaps = month_gaps(rows, args.backfill_from or "2021-01")
+        print(f"{len(gaps)} month(s) with no rows: {', '.join(gaps) or '—'}")
+        return 0
+
+    # 2. Get the latest CDSCO month (or the requested ones).
     raw_dir = args.raw_dir or (args.csv.parent / "raw" / "cdsco")
+    _manifest(last_attempt=datetime.now(timezone.utc).replace(microsecond=0).isoformat())
+    payloads: list[dict] = []
     if args.from_json:
-        payload = json.loads(args.from_json.read_text(encoding="utf-8"))
+        payloads.append(json.loads(args.from_json.read_text(encoding="utf-8")))
         print(f"read {args.from_json}")
     else:
-        print(f"fetching {args.url}")
-        try:
-            payload = fetch(args.url, args.timeout)
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
-            print(f"CDSCO unreachable: {exc}", file=sys.stderr)
-            return 2
-        except json.JSONDecodeError as exc:
-            print(f"CDSCO returned non-JSON: {exc}", file=sys.stderr)
-            return 1
+        months = [args.month] if args.month else (month_gaps(rows, args.backfill_from) if args.backfill_from else [None])
+        if args.backfill_from:
+            print(f"backfill: {len(months)} empty month(s) since {args.backfill_from}")
         raw_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        (raw_dir / f"publicNsqDrugTable-{stamp}.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        for ym in months:
+            try:
+                if ym:
+                    payload, how = fetch_month(ym, args.timeout)
+                    print(f"  {ym}: {len(payload.get('aaData') or []):,} rows via {how}")
+                else:
+                    print(f"fetching {args.url}")
+                    payload = fetch(args.url, args.timeout)
+            except (HTTPError, URLError, TimeoutError, OSError) as exc:
+                print(f"CDSCO unreachable: {exc}", file=sys.stderr)
+                _manifest(status="unreachable", error=str(exc)[:300])
+                return 2
+            except json.JSONDecodeError as exc:
+                print(f"CDSCO returned non-JSON: {exc}", file=sys.stderr)
+                _manifest(status="error", error=f"non-JSON: {exc}"[:300])
+                return 1
+            except ValueError as exc:
+                print(f"  {exc}", file=sys.stderr)
+                if len(months) == 1:
+                    _manifest(status="error", error=str(exc)[:300])
+                    return 1
+                continue
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            (raw_dir / f"publicNsqDrugTable-{ym or 'current'}-{stamp}.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            payloads.append(payload)
 
-    fetched = rows_from_cdsco(payload)
+    fetched = [r for p in payloads for r in rows_from_cdsco(p)]
     months = sorted({r.get("Reporting Month & Year", "") for r in fetched})
     print(f"CDSCO rows: {len(fetched):,} for {', '.join(months) or '—'}")
 
@@ -176,6 +278,12 @@ def main() -> int:
     if added:
         write_csv(args.csv, rows)
     print(f"added {added:,} new alert(s); cumulative CSV now {len(rows):,} rows")
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    _manifest(status="ok" if added else "unchanged", last_success=now, last_checked=now, records=len(rows),
+              added=added, months=months[-3:], error="")
+    if added == 0 and args.exit_unchanged:
+        print("nothing new — later pipeline steps skipped")
+        return 3
     return 0
 
 

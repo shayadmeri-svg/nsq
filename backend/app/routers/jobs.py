@@ -73,12 +73,13 @@ def run_job(key: str, body: RunBody, request: Request, user: User = Depends(requ
             raise HTTPException(403, "Only a super admin can run this job in destructive mode.")
         if body.confirm != job.key:
             raise HTTPException(400, f"Type {job.key!r} to confirm this destructive job.")
-    if "csv" in params and params["csv"]:
-        try:
-            if not jobs._csv_path(params).exists():
-                raise HTTPException(400, "That CSV upload does not exist.")
-        except ValueError as exc:
-            raise HTTPException(400, str(exc))
+    for pname in ("csv", "file"):
+        if params.get(pname):
+            try:
+                if not jobs.upload_path(params[pname]).exists():
+                    raise HTTPException(400, "That upload does not exist.")
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
     if jobs.is_running(key):
         raise HTTPException(409, "This job is already running.")
     run = JobRun(job_key=key, params=params, status="queued", started_by=user.id, started_by_email=user.email)
@@ -134,7 +135,7 @@ async def stream_run(run_id: int, request: Request, user: User = Depends(require
             if len(text) > sent:
                 yield f"event: log\ndata: {json.dumps(text[sent:])}\n\n"
                 sent = len(text)
-            if status in ("succeeded", "failed", "missing"):
+            if status in ("succeeded", "partial", "failed", "missing"):
                 yield f"event: done\ndata: {json.dumps({'status': status})}\n\n"
                 return
             await asyncio.sleep(0.7)
@@ -147,7 +148,8 @@ async def stream_run(run_id: int, request: Request, user: User = Depends(require
 @router.get("/uploads")
 def list_uploads(user: User = Depends(require_platform)):
     jobs.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    files = sorted(jobs.UPLOAD_DIR.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted((p for p in jobs.UPLOAD_DIR.iterdir() if p.is_file() and p.suffix.lower() in jobs.UPLOAD_TYPES),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
     return {"uploads": [
         {"name": p.name, "bytes": p.stat().st_size,
          "modified_at": datetime.fromtimestamp(p.stat().st_mtime, timezone.utc).isoformat()} for p in files
@@ -159,18 +161,18 @@ async def upload_csv(request: Request, file: UploadFile = File(...), user: User 
     if user.role != "super_admin":
         raise HTTPException(403, "Only a super admin can upload data files.")
     name = re.sub(r"[^A-Za-z0-9._ -]+", "_", file.filename or "upload.csv").strip() or "upload.csv"
-    if not name.lower().endswith(".csv"):
-        raise HTTPException(400, "Upload a .csv file.")
+    if not any(name.lower().endswith(ext) for ext in jobs.UPLOAD_TYPES):
+        raise HTTPException(400, f"Upload one of: {', '.join(sorted(jobs.UPLOAD_TYPES))}.")
     jobs.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     dest = jobs.UPLOAD_DIR / name
     size = 0
     with dest.open("wb") as fh:
         while chunk := await file.read(1 << 20):
             size += len(chunk)
-            if size > 50 * (1 << 20):
+            if size > 300 * (1 << 20):
                 fh.close()
                 dest.unlink(missing_ok=True)
-                raise HTTPException(413, "CSV larger than 50 MB.")
+                raise HTTPException(413, "File larger than 300 MB.")
             fh.write(chunk)
     audit(db, "data.csv_uploaded", actor=user, target_type="file", target_id=name, detail={"bytes": size}, request=request)
     return {"name": name, "bytes": size}

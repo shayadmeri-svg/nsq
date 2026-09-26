@@ -83,6 +83,12 @@ def tracked_index(patents: dict) -> dict[str, str]:
         if k:
             idx[k] = mkey
             idx.setdefault(k.split()[0], mkey)
+    # Other spellings (INN/BAN/USAN, NSQ misspellings) recorded by the universe builder.
+    for mkey, p in patents.items():
+        for a in getattr(p, "aliases", None) or []:
+            ak = ingredient_key(a)
+            if ak:
+                idx.setdefault(ak, mkey)
     return idx
 
 
@@ -105,3 +111,116 @@ def match_tracked(ingredient: str, index: dict[str, str]) -> str | None:
         if hit:
             return index[hit[0]]
     return None
+
+
+# --- cross-source name resolution ----------------------------------------------
+# CDSCO uses Indian/British names (INN/BAN); the Orange Book and Purple Book use
+# US names (USAN). Keys are ingredient_key() outputs.
+USAN_SYNONYMS: dict[str, str] = {
+    "paracetamol": "acetaminophen",
+    "salbutamol": "albuterol",
+    "levosalbutamol": "levalbuterol",
+    "amoxycillin": "amoxicillin",
+    "guaiphenesin": "guaifenesin",
+    "frusemide": "furosemide",
+    "glibenclamide": "glyburide",
+    "adrenaline": "epinephrine",
+    "noradrenaline": "norepinephrine",
+    "lignocaine": "lidocaine",
+    "rifampicin": "rifampin",
+    "pethidine": "meperidine",
+    "thyroxine": "levothyroxine",
+    "chlorphenamine": "chlorpheniramine",
+    "isoprenaline": "isoproterenol",
+    "oestradiol": "estradiol",
+    "cyclosporin": "cyclosporine",
+    "ciclosporin": "cyclosporine",
+    "aciclovir": "acyclovir",
+    "valaciclovir": "valacyclovir",
+    "benzylpenicillin": "penicillin g",
+    "phenoxymethylpenicillin": "penicillin v",
+    "hyoscine": "scopolamine",
+    "hyoscine butylbromide": "scopolamine",
+    "dicycloverine": "dicyclomine",
+    "cephalexin": "cephalexin",
+    "cefalexin": "cephalexin",
+    "cefuroxime axetil": "cefuroxime",
+    "sulphamethoxazole": "sulfamethoxazole",
+    "sulfamethoxazole": "sulfamethoxazole",
+    "sulphasalazine": "sulfasalazine",
+    "sulphadiazine": "sulfadiazine",
+    "chlorthalidone": "chlorthalidone",
+    "mesalazine": "mesalamine",
+    "ondansetron": "ondansetron",
+    "glyceryl trinitrate": "nitroglycerin",
+    "colecalciferol": "cholecalciferol",
+    "vitamin d": "cholecalciferol",
+    "ergocalciferol": "ergocalciferol",
+    "tretinoin": "tretinoin",
+    "trimethoprim": "trimethoprim",
+    "metformin": "metformin",
+    "nifedipine": "nifedipine",
+    "dexchlorpheniramine": "dexchlorpheniramine",
+    "gentamycin": "gentamicin",
+    "amikacin": "amikacin",
+    "clavulanate": "clavulanate",
+    "clavulanic acid": "clavulanate",
+    "potassium clavulanate": "clavulanate",
+    "domperidone": "domperidone",
+    "esomeprazole magnesium": "esomeprazole",
+    "rosuvastatin": "rosuvastatin",
+    "atorvastatin": "atorvastatin",
+    "dextromethorphan": "dextromethorphan",
+    "povidone iodine": "povidone iodine",
+    "iron sucrose": "iron sucrose",
+    "ferrous sulphate": "ferrous sulfate",
+    "magnesium sulphate": "magnesium sulfate",
+    "zinc sulphate": "zinc sulfate",
+    "methylprednisolone": "methylprednisolone",
+    "beclomethasone": "beclomethasone",
+    "cotrimoxazole": "sulfamethoxazole",
+}
+
+
+def us_name(key: str) -> str:
+    """ingredient key -> the US (USAN) spelling used by FDA sources."""
+    if not key:
+        return key
+    if key in USAN_SYNONYMS:
+        return USAN_SYNONYMS[key]
+    first = key.split()[0]
+    if first in USAN_SYNONYMS:
+        return USAN_SYNONYMS[first]
+    # BAN 'ph' spellings of sulfur compounds: sulphate -> sulfate
+    return re.sub(r"sulph", "sulf", key)
+
+
+def molecule_key_for(name: str) -> str:
+    """Stable snake_case molecule key from an ingredient name."""
+    return re.sub(r"[^a-z0-9]+", "_", ingredient_key(name) or name.lower()).strip("_")
+
+
+def fold_variants(counts: dict[str, int], min_len: int = 6, cutoff: int = 90) -> dict[str, str]:
+    """Map misspelled ingredient keys to the most frequent close spelling.
+
+    counts: key -> frequency. Returns variant -> canonical for every key that
+    folds into another (canonical keys map to themselves implicitly)."""
+    try:
+        from rapidfuzz import fuzz
+    except ImportError:  # pragma: no cover
+        return {}
+    ordered = sorted(counts, key=lambda k: (-counts[k], k))
+    canon: list[str] = []
+    out: dict[str, str] = {}
+    for k in ordered:
+        hit = None
+        if len(k) >= min_len:
+            for c in canon:
+                if c[:2] == k[:2] and abs(len(c) - len(k)) <= 3 and fuzz.ratio(k, c) >= cutoff:
+                    hit = c
+                    break
+        if hit:
+            out[k] = hit
+        else:
+            canon.append(k)
+    return out

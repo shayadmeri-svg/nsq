@@ -16,6 +16,9 @@ import { Users } from "./pages/admin/Users";
 import { Jobs } from "./pages/admin/Jobs";
 import { Audit } from "./pages/admin/Audit";
 import { Explorer } from "./pages/admin/Explorer";
+import { Molecules } from "./pages/admin/Molecules";
+import { Pipelines } from "./pages/admin/Pipelines";
+import { Sites } from "./pages/admin/Sites";
 
 function Splash() {
   return (
@@ -66,6 +69,9 @@ export default function App() {
         <Route path="/admin/orgs" element={<Orgs />} />
         <Route path="/admin/users" element={<Users />} />
         <Route path="/admin/jobs" element={<Jobs />} />
+        <Route path="/admin/pipelines" element={<Pipelines />} />
+        <Route path="/admin/molecules" element={<Molecules />} />
+        <Route path="/admin/sites" element={<Sites />} />
         <Route path="/admin/audit" element={<Audit />} />
         <Route path="/admin/explorer" element={<Explorer />} />
       </Route>

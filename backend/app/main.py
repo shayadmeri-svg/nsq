@@ -10,11 +10,11 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 
-from . import data
+from . import data, scheduler
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .models import JobRun, Plant, User, utcnow
-from .routers import admin, auth, jobs as jobs_router, orgs, platform
+from .routers import admin, auth, jobs as jobs_router, orgs, pipelines, platform
 from .security import csrf_guard, hash_password
 
 log = logging.getLogger("nsq")
@@ -57,7 +57,9 @@ def restore_user_plants() -> None:
 async def lifespan(app: FastAPI):
     init_db()
     restore_user_plants()
+    scheduler.start()
     yield
+    scheduler.stop()
 
 
 app = FastAPI(title="NSQ Platform API", version="2.0.0", lifespan=lifespan,
@@ -67,7 +69,7 @@ if settings.cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
                        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["content-type", "x-nsq-client"])
 
-for r in (auth.router, orgs.router, admin.router, jobs_router.router, platform.router):
+for r in (auth.router, orgs.router, admin.router, jobs_router.router, pipelines.router, platform.router):
     app.include_router(r)
 
 

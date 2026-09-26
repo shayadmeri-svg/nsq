@@ -70,6 +70,10 @@ services:
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-12}
       - CORS_ORIGINS=
+      - SCHEDULER=${SCHEDULER:-on}
+      - SCHEDULE_TZ=${SCHEDULE_TZ:-Asia/Kolkata}
+      - UNIVERSE_MIN_ALERTS=${UNIVERSE_MIN_ALERTS:-5}
+      - UNIVERSE_MAX_AUTO=${UNIVERSE_MAX_AUTO:-250}
     volumes:
       # Seeds, snapshot and CSV uploads. Read-write: the snapshot and
       # refresh jobs write here.

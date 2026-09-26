@@ -58,6 +58,13 @@ class PatentIntelligence(BaseModel):
     notes: str = ""
     source_url: str = ""
     updated_at: str = Field(default_factory=_utc_now)
+    # Where the molecule came from: curated seed, auto-discovered from NSQ +
+    # public sources, or added to the watchlist by an admin.
+    origin: str = "curated"  # curated | auto | manual
+    aliases: list[str] = Field(default_factory=list)  # other spellings (INN/BAN/USAN)
+    # field -> {"status": sourced|derived|estimate, "source", "retrieved_at", "note"}
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    signals: dict[str, Any] = Field(default_factory=dict)  # compact per-source facts for the UI
 
     def export_eligible_count(self) -> int:
         return sum(1 for g in self.geo_coverage if g.export_eligible)
@@ -89,6 +96,10 @@ class PatentIntelligence(BaseModel):
             "notes": self.notes,
             "source_url": self.source_url,
             "updated_at": self.updated_at,
+            "origin": self.origin,
+            "aliases": _json_encode(self.aliases),
+            "provenance": _json_encode(self.provenance),
+            "signals": _json_encode(self.signals),
         }
 
     @classmethod
@@ -114,6 +125,10 @@ class PatentIntelligence(BaseModel):
             notes=data.get("notes", ""),
             source_url=data.get("source_url", ""),
             updated_at=data.get("updated_at", _utc_now()),
+            origin=data.get("origin", "curated") or "curated",
+            aliases=_parse_list(data.get("aliases", "")),
+            provenance=_parse_json(data.get("provenance", ""), {}),
+            signals=_parse_json(data.get("signals", ""), {}),
         )
 
 
@@ -246,6 +261,7 @@ class RegulatoryPassport(BaseModel):
     readiness: str = "placeholder"  # placeholder | partial | ready
     source_url: str = ""
     notes: str = ""
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
     def to_redis(self) -> dict[str, str]:
         return {
@@ -267,6 +283,7 @@ class RegulatoryPassport(BaseModel):
             "readiness": self.readiness,
             "source_url": self.source_url,
             "notes": self.notes,
+            "provenance": _json_encode(self.provenance),
         }
 
     @classmethod
@@ -290,6 +307,7 @@ class RegulatoryPassport(BaseModel):
             readiness=data.get("readiness", "placeholder"),
             source_url=data.get("source_url", ""),
             notes=data.get("notes", ""),
+            provenance=_parse_json(data.get("provenance", ""), {}),
         )
 
 
@@ -422,6 +440,7 @@ class DemandProfile(BaseModel):
     market_momentum_score: float = 0.0  # 0–100
     notes: str = ""
     source_url: str = ""
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
     def to_redis(self) -> dict[str, str]:
         return {
@@ -438,6 +457,7 @@ class DemandProfile(BaseModel):
             "market_momentum_score": str(self.market_momentum_score),
             "notes": self.notes,
             "source_url": self.source_url,
+            "provenance": _json_encode(self.provenance),
         }
 
     @classmethod
@@ -468,6 +488,7 @@ class DemandProfile(BaseModel):
             market_momentum_score=_float("market_momentum_score"),
             notes=data.get("notes", ""),
             source_url=data.get("source_url", ""),
+            provenance=_parse_json(data.get("provenance", ""), {}),
         )
 
 

@@ -257,8 +257,55 @@ sync-nsq:
 
 # Monthly refresh straight from CDSCO: fetch + append, then the full
 # deterministic rebuild into $REDIS_URL (needs CONFIRM_FLUSH=yes), then
-# ./pull-upstash.sh on the server. Same as Admin → Data jobs → Fetch latest CDSCO month.
-fetch-nsq: _confirm-flush sync-nsq && reload-csv verify
+# ./pull-upstash.sh on the server. Same as Admin → Pipelines → Fetch latest CDSCO month.
+# `just fetch-nsq 2026-08` fetches one reporting month instead of the current one.
+fetch-nsq MONTH="": _confirm-flush (_sync-nsq-month MONTH) && reload-csv verify
+
+_sync-nsq-month MONTH:
+    cd {{LOADER}} && .venv/bin/python sync_cdsco.py --csv "../{{CSV}}" {{ if MONTH != "" { "--month " + MONTH } else { "" } }}
+
+# Fetch every month since FROM that has no rows in the cumulative CSV
+# (e.g. `just backfill-nsq 2021-01`). Appends to the CSV only; run
+# `just reload-csv` afterwards. `just nsq-gaps` lists the empty months.
+backfill-nsq FROM="2021-01":
+    cd {{LOADER}} && .venv/bin/python sync_cdsco.py --csv "../{{CSV}}" --backfill-from {{FROM}}
+
+nsq-gaps FROM="2021-01":
+    cd {{LOADER}} && .venv/bin/python sync_cdsco.py --csv "../{{CSV}}" --gaps --backfill-from {{FROM}}
+
+# --- public sources → molecule universe + site directory -------------------------
+# Each fetcher writes data/sources/<name>.json (raw downloads in data/raw/<name>/).
+# A file path as the last argument parses a file you downloaded yourself instead of fetching.
+# Same jobs as Admin → Pipelines; the API also runs them on a schedule.
+
+# List the sources
+sources:
+    cd {{LOADER}} && .venv/bin/python fetch_source.py --list
+
+# Fetch one source: just fetch-source orange_book [~/Downloads/orange_book.zip]
+fetch-source NAME FILE="":
+    cd {{LOADER}} && DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py {{NAME}} {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
+
+fetch-orange-book FILE="": (fetch-source "orange_book" FILE)
+fetch-purple-book FILE="": (fetch-source "purple_book" FILE)
+fetch-ema FILE="": (fetch-source "ema" FILE)
+fetch-fda-sites: (fetch-source "fda_establishments") (fetch-source "fda_import_alerts") (fetch-source "fda_recalls")
+# ClinicalTrials.gov needs the candidate list, so build the universe first.
+fetch-trials: build-universe (fetch-source "clinical_trials")
+
+# Combine curated seeds + fetched sources + NSQ ingredients (+ watchlist) and
+# load patents / regulatory / demand into $REDIS_URL. MIN_ALERTS = NSQ alerts
+# an ingredient needs before it is considered.
+build-universe MIN_ALERTS="5":
+    cd {{LOADER}} && DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python build_universe.py --redis-url "$REDIS_URL" --min-alerts {{MIN_ALERTS}}
+    cd {{LOADER}} && for f in patents regulatory demand; do .venv/bin/python load_${f}.py --input ../data/generated/${f}.json --redis-url "$REDIS_URL" --flush; done
+
+# Everything: all sources (a source that is down is skipped), then the universe.
+sync-sources:
+    cd {{LOADER}} && DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py all
+    just build-universe
+    cd {{LOADER}} && DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py clinical_trials || true
+    just build-universe
 
 # Push a GeoJSON file into Redis as a single key (default: the India
 # states file used by analytics/app.py), so it doesn't need to live in git

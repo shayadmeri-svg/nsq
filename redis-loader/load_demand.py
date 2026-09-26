@@ -77,6 +77,7 @@ def load(input_path: Path, redis_url: str, flush: bool) -> None:
             market_momentum_score=_float(raw.get("market_momentum_score")),
             notes=raw.get("notes", ""),
             source_url=raw.get("source_url", ""),
+            provenance=raw.get("provenance") or {},
         )
         save_demand(profile, client=r)
         loaded += 1

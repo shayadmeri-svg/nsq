@@ -11,7 +11,10 @@ HEADER = ["Index", "Name of Product", "Batch No", "Mfg", "Exp", "Manufactured By
 
 
 def _run(*args):
-    return subprocess.run([sys.executable, "sync_cdsco.py", *map(str, args)], cwd=LOADER, capture_output=True, text=True)
+    import os
+    csv_arg = str(args[args.index("--csv") + 1]) if "--csv" in args else ""
+    env = {**os.environ, "DATA_DIR": str(Path(csv_arg).parent) if csv_arg else os.environ.get("DATA_DIR", "")}
+    return subprocess.run([sys.executable, "sync_cdsco.py", *map(str, args)], cwd=LOADER, capture_output=True, text=True, env=env)
 
 
 def test_appends_new_rows_once_and_normalises_month(tmp_path):
@@ -40,6 +43,14 @@ def test_appends_new_rows_once_and_normalises_month(tmp_path):
 
     r = _run("--csv", cum, "--from-json", src)
     assert "added 0 new" in r.stdout and len(list(csv.DictReader(open(cum)))) == 2
+
+    r = _run("--csv", cum, "--from-json", src, "--exit-unchanged")
+    assert r.returncode == 3
+    manifest = json.loads((tmp_path / "sources" / "manifest.json").read_text())
+    assert manifest["cdsco"]["status"] == "unchanged"
+
+    r = _run("--csv", cum, "--gaps", "--backfill-from", "2026-07")
+    assert "2026-07" not in r.stdout.split(":")[-1] and "2026-08" not in r.stdout.split(":")[-1]
 
 
 def test_missing_csv_without_redis_fails_clearly(tmp_path):

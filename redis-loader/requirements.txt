@@ -3,3 +3,6 @@ pydantic==2.9.2
 # build_states_geojson.py only (LGD parquet read + geometry simplify).
 pyarrow>=14
 shapely>=2.0
+rapidfuzz>=3.6
+# optional: DECRS / source files delivered as .xlsx
+openpyxl>=3.1

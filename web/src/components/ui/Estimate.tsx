@@ -12,13 +12,28 @@ const TONE: Record<string, { icon: string; chip: string; word: string }> = {
   inferred: { icon: "text-sky-500 hover:text-sky-600", chip: "bg-sky-50 text-sky-700", word: "Inferred" },
   frozen: { icon: "text-slate-400 hover:text-slate-600", chip: "bg-slate-100 text-slate-700", word: "Snapshot" },
   sourced: { icon: "text-emerald-500 hover:text-emerald-600", chip: "bg-emerald-50 text-emerald-700", word: "Sourced" },
+  derived: { icon: "text-sky-500 hover:text-sky-600", chip: "bg-sky-50 text-sky-700", word: "Derived" },
+  unknown: { icon: "text-slate-400 hover:text-slate-600", chip: "bg-slate-100 text-slate-600", word: "No source" },
 };
 
-export function Estimate({ field, className, align = "left" }: { field: string; className?: string; align?: "left" | "right" }) {
+// Per-value provenance from the molecule universe builder:
+// { status: sourced|derived|estimate|unknown, source?, note?, retrieved_at? }
+export type ValueProv = { status: string; source?: string; note?: string; retrieved_at?: string };
+
+export function Estimate({ field, className, align = "left", prov }: { field: string; className?: string; align?: "left" | "right"; prov?: ValueProv | null }) {
   const { data } = useProvenance();
   const [open, setOpen] = useState(false);
-  const f = data?.fields[field];
-  if (!f) return null;
+  const reg = data?.fields[field];
+  if (!reg && !prov) return null;
+  const status = prov?.status ?? reg!.status;
+  const f = {
+    label: reg?.label ?? field.replace(/_/g, " "),
+    status,
+    present: prov
+      ? [prov.source, prov.note].filter(Boolean).join(" — ") + (prov.retrieved_at ? ` (retrieved ${prov.retrieved_at.slice(0, 10)})` : "")
+      : reg!.present,
+    gap: prov ? (status === "sourced" ? "Refreshed by the scheduled source sync." : reg?.gap ?? "") : reg!.gap,
+  };
   const t = TONE[f.status] ?? TONE.estimate;
   const Icon = f.status === "estimate" ? AlertTriangle : Info;
   return (
@@ -43,8 +58,8 @@ export function Estimate({ field, className, align = "left" }: { field: string; 
               <span className="font-semibold">{f.label}</span>
               <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", t.chip)}>{t.word}</span>
             </span>
-            <span className="block text-ink-soft"><b className="text-ink">Present: </b>{f.present}</span>
-            <span className="mt-1.5 block text-ink-soft"><b className="text-ink">Gap: </b>{f.gap}</span>
+            <span className="block text-ink-soft"><b className="text-ink">{prov ? "Source: " : "Present: "}</b>{f.present}</span>
+            {f.gap && <span className="mt-1.5 block text-ink-soft"><b className="text-ink">{f.status === "sourced" ? "Refresh: " : "Gap: "}</b>{f.gap}</span>}
           </motion.span>
         )}
       </AnimatePresence>

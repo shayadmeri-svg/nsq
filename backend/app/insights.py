@@ -455,7 +455,22 @@ def _label(token: str) -> str:
     return c.label if c else token.replace("_", " ").capitalize()
 
 
+_OPP_CACHE: dict[tuple, dict[str, Any]] = {}
+
+
 def org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] = None, today: Optional[date] = None) -> dict[str, Any]:
+    """Cached per (plants, identities, data generation): scoring every molecule
+    against every plant is the most expensive dashboard call."""
+    key = (tuple(plant_ids), tuple(ontology_keys or []), id(data.cdmo()), id(data.frame()), today or date.today())
+    hit = _OPP_CACHE.get(key)
+    if hit is None:
+        if len(_OPP_CACHE) > 64:
+            _OPP_CACHE.clear()
+        hit = _OPP_CACHE[key] = _org_opportunities(plant_ids, ontology_keys, today)
+    return hit
+
+
+def _org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] = None, today: Optional[date] = None) -> dict[str, Any]:
     today = today or date.today()
     m = data.cdmo()
     coverage = ingredient_coverage(data.org_frame(ontology_keys or []))
@@ -526,6 +541,10 @@ def org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] =
             "warnings": cand.warnings,
             "tracked": True,
             "alerts_in_org": coverage["tracked_counts"].get(key, 0),
+            "origin": getattr(patent, "origin", "curated"),
+            "sources": (getattr(patent, "signals", None) or {}).get("sources", []),
+            "prov": {k: v for k, v in (getattr(patent, "provenance", None) or {}).items()
+                     if k in ("loe_us", "loe_eu", "loe_in", "fto_risk", "market_size_usd_bn", "patents")},
         }
         rows.append(row)
 
@@ -587,7 +606,11 @@ def org_eu_export(ontology_keys: list[str], plant_ids: list[str], molecule_keys:
             a = eu_export.assess(patent, reg, complexity, plant, nsq)
             if best is None or a.readiness_pct > best.readiness_pct:
                 best = a
-        out.append(best.to_dict())
+        d = best.to_dict()
+        prov = getattr(patent, "provenance", None) or {}
+        d["prov"] = {k: prov[k] for k in ("loe_eu", "geo_coverage") if k in prov}
+        d["origin"] = getattr(patent, "origin", "curated")
+        out.append(d)
     out.sort(key=lambda a: (-a["readiness_pct"], a["api_name"]))
 
     # Org-level blockers: items that are a gap for most molecules.

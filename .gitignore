@@ -15,3 +15,8 @@ data/uploads/
 dump.rdb
 web/*.tsbuildinfo
 redis-loader/.venv
+
+# public-source pipeline outputs (rebuilt on the server)
+data/raw/
+data/sources/
+data/generated/

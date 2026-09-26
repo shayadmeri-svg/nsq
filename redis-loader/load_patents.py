@@ -90,8 +90,8 @@ def load(input_path: Path, redis_url: str, flush: bool) -> None:
             molecule_key=raw["molecule_key"],
             brand_name=raw["brand_name"],
             api_name=raw["api_name"],
-            therapeutic_area=raw["therapeutic_area"],
-            originator=raw["originator"],
+            therapeutic_area=raw.get("therapeutic_area") or "",
+            originator=raw.get("originator") or "",
             estimated_loe_us=_parse_month(raw.get("estimated_loe_us")),
             estimated_loe_eu=_parse_month(raw.get("estimated_loe_eu")),
             estimated_loe_in=_parse_month(raw.get("estimated_loe_in")),
@@ -103,6 +103,10 @@ def load(input_path: Path, redis_url: str, flush: bool) -> None:
             fto_risk=raw.get("fto_risk", "medium"),
             notes=raw.get("notes", ""),
             source_url=raw.get("source_url", ""),
+            origin=raw.get("origin", "curated"),
+            aliases=raw.get("aliases") or [],
+            provenance=raw.get("provenance") or {},
+            signals=raw.get("signals") or {},
         )
         save_patent(entry, client=r)
         loaded += 1

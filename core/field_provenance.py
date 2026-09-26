@@ -29,26 +29,26 @@ FIELD_PROVENANCE: dict[str, dict[str, Any]] = {
     "loe": {
         "label": "Loss of exclusivity",
         "status": "estimate",
-        "present": f"'Publicly reported estimates' typed into the patent seed ({SEED_AS_OF}). Blank means treated as off-patent.",
-        "gap": "US dates can be sourced from the FDA Orange Book patent/exclusivity files and Purple Book; EU from EMA authorisation dates + SPC registers; India has no patent API.",
+        "present": "Per molecule and market: US from the FDA Orange/Purple Book and EU from EMA when the scheduled source sync matched the molecule (each date then carries its own source icon); otherwise the curated estimate. Blank means treated as off-patent.",
+        "gap": "EU SPCs and national (non-central) authorisations are not covered; India has no patent API, so India is derived from US/EU status or left as the estimate.",
     },
     "geo_coverage": {
         "label": "Country patent status",
         "status": "estimate",
-        "present": "Templated: each molecule has the same status in all 10 countries.",
-        "gap": "Needs per-country patent/SPC data (EPO OPS for Europe, Orange Book for US); not yet wired.",
+        "present": "US and EU rows follow the sourced LOE dates when available; the other countries keep the curated template.",
+        "gap": "Per-country patent/SPC data (e.g. EPO OPS) is not wired.",
     },
     "fto_risk": {
         "label": "Freedom-to-operate risk",
         "status": "estimate",
-        "present": "Hand-assigned low/medium/high in the patent seed.",
+        "present": "Derived from the Orange Book when matched (compound patent or >1 y exclusivity ⇒ high; formulation/method patents only ⇒ medium; none ⇒ low); otherwise hand-assigned in the seed.",
         "gap": "A real FTO view needs patent claims analysis per market; no automated source.",
     },
     "patents": {
         "label": "Patent list",
         "status": "estimate",
-        "present": "Formulation/process/secondary patents typed for the 10 novel molecules only; generics have none listed.",
-        "gap": "US patents are available from the Orange Book patent file; not yet wired.",
+        "present": "US patents in force from the Orange Book patent file (drug substance, drug product, method of use) when the molecule is matched; other markets from the curated seed.",
+        "gap": "Process patents are not listed in the Orange Book; non-US patents are not sourced.",
     },
     # --- demand ----------------------------------------------------------------
     "disease_prevalence": {
@@ -60,8 +60,8 @@ FIELD_PROVENANCE: dict[str, dict[str, Any]] = {
     "trial_counts": {
         "label": "Clinical trial counts",
         "status": "estimate",
-        "present": "Hand-entered totals in the demand seed; one record cites ClinicalTrials.gov.",
-        "gap": "Can be sourced from the ClinicalTrials.gov v2 API; not yet wired.",
+        "present": "ClinicalTrials.gov v2 counts per molecule (total, phase 3+, started in 3 years, India sites), refreshed weekly by the source sync; the curated seed value until a molecule has been queried.",
+        "gap": "Counts are keyword matches on the intervention; they are not deduplicated by indication.",
     },
     "buyer_activity_score": {
         "label": "Buyer activity",
@@ -78,8 +78,8 @@ FIELD_PROVENANCE: dict[str, dict[str, Any]] = {
     "competitor_anda_count": {
         "label": "Generic competitors",
         "status": "estimate",
-        "present": "Hand-entered ANDA count.",
-        "gap": "Count of approved ANDAs per ingredient is available from the Orange Book products file; not yet wired.",
+        "present": "Active ANDAs for single-ingredient products in the Orange Book (licensed biosimilars from the Purple Book) when matched; otherwise the hand-entered count.",
+        "gap": "Combination products and discontinued ANDAs are not counted.",
     },
     # --- plants ------------------------------------------------------------------
     "talent_depth": {
@@ -103,15 +103,15 @@ FIELD_PROVENANCE: dict[str, dict[str, Any]] = {
     # --- knowledge ------------------------------------------------------------------
     "orange_book": {
         "label": "FDA Orange Book record",
-        "status": "frozen",
-        "present": "Pulled from openFDA on 2026-08-18 for 16 molecules and stored in code.",
-        "gap": "Not refreshed; a fetch job would re-pull it monthly.",
+        "status": "sourced",
+        "present": "The Orange Book data files, fetched on a schedule (Admin → Pipelines). The older openFDA snapshot in code is still used by the process pages.",
+        "gap": "FDA updates the data files monthly.",
     },
     "nsq_alerts": {
         "label": "CDSCO NSQ alerts",
         "status": "sourced",
-        "present": "CDSCO Not-of-Standard-Quality notifications, loaded from the cumulative CSV.",
-        "gap": "The CSV is refreshed by hand; the live CDSCO endpoint is not yet wired.",
+        "present": "CDSCO Not-of-Standard-Quality notifications: the cumulative CSV, checked daily against the live CDSCO table (Admin → Pipelines).",
+        "gap": "Historical months can only be backfilled if CDSCO's month filter answers; the bundled CSV covers Jan 2021 – Jul 2026.",
     },
 }
 

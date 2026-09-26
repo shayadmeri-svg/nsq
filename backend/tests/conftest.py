@@ -12,6 +12,7 @@ import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://nsq@localhost:5432/nsq_test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ["SCHEDULER"] = "off"
 os.environ["SUPERADMIN_EMAIL"] = "root@example.com"
 os.environ["SUPERADMIN_PASSWORD"] = "root-password-1"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

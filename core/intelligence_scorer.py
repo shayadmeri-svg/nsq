@@ -284,6 +284,12 @@ def _molecule_class(patent: Optional[PatentIntelligence]) -> str:
     """Heuristic molecule class from patent therapeutic area / known names."""
     if patent is None:
         return "small_molecule_oral"
+    sig = getattr(patent, "signals", None) or {}
+    if sig.get("modality") == "biologic":
+        return "peptide" if (patent.api_name or "").lower().endswith(("tide", "insulin")) else "mab"
+    forms = ((sig.get("orange_book") or {}).get("dosage_forms") or [])
+    if forms and "inject" in forms[0]:
+        return "small_molecule_injectable"
     t = (patent.therapeutic_area or "").lower()
     api = (patent.api_name or "").lower()
     brand = (patent.brand_name or "").lower()
