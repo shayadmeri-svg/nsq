@@ -8,7 +8,10 @@ from typing import Any, Optional
 
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Crippen, Descriptors, Lipinski, rdMolDescriptors
-from rdkit.Chem.Draw import rdMolDraw2D
+try:  # needs libXrender; the drawing is optional, the chemistry is not
+    from rdkit.Chem.Draw import rdMolDraw2D
+except ImportError:  # pragma: no cover
+    rdMolDraw2D = None
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -88,6 +91,8 @@ def descriptors(mol: Chem.Mol) -> dict[str, Any]:
 
 
 def svg(mol: Chem.Mol, width: int = 320, height: int = 220) -> str:
+    if rdMolDraw2D is None:
+        return ""
     d = rdMolDraw2D.MolDraw2DSVG(width, height)
     opts = d.drawOptions()
     opts.clearBackground = False
