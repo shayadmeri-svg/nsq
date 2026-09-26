@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 import { Legendary, RankBars, TrendBars } from "../../components/charts";
 import { Badge, Card, CardHeader, Empty, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Ring, Stat } from "../../components/ui";
+import { Estimate } from "../../components/ui/Estimate";
 import { fmtMonth, TIER_STYLE, titleCase } from "../../lib/format";
 import { useOrg, useOrgData, VERDICT } from "./common";
 
@@ -47,7 +48,7 @@ export function OrgOverview() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card delay={0.2}>
-          <CardHeader icon={<Sparkles size={16} />} title="Best-fit off-patent molecules" subtitle="Patent expiry × your plant capability" action={<Link to={`/o/${slug}/opportunities`} className="flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">All opportunities <ArrowUpRight size={14} /></Link>} />
+          <CardHeader icon={<Sparkles size={16} />} title={<span className="flex items-center gap-1.5">Best-fit off-patent molecules <Estimate field="loe" /></span>} subtitle="Tracked molecules: patent expiry × your plant capability" action={<Link to={`/o/${slug}/opportunities`} className="flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">All opportunities <ArrowUpRight size={14} /></Link>} />
           <motion.ul variants={listVariants} initial="hidden" animate="show" className="divide-y divide-line px-5 py-2">
             {opp.top.map((m: any) => (
               <motion.li variants={itemVariants} key={m.molecule_key}>

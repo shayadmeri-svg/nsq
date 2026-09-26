@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 import capability_catalog
+import field_provenance
 from process_models import ROUTES, route_metadata
 
 from .. import data, insights
@@ -103,3 +104,9 @@ def data_status(user: User = Depends(current_user)):
         return {"records": r.get("records"), "loaded_at": (r.get("meta") or {}).get("loaded_at"),
                 "frame_built_at": (r.get("frame") or {}).get("built_at"), "ok": r.get("ok", False)}
     return s
+
+
+@router.get("/meta/provenance")
+def meta_provenance(user: User = Depends(current_user)):
+    """Where each displayed number comes from and what is missing (for the UI's disclaimer icons)."""
+    return {"fields": field_provenance.provenance()}

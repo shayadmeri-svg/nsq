@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Badge, Card, CardHeader, Drawer, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Ring, Segmented, Stat } from "../../components/ui";
 import { cn } from "../../lib/cn";
 import { fmtDate } from "../../lib/format";
+import { Estimate } from "../../components/ui/Estimate";
 import { STATUS_STYLE, useOrg, useOrgData, VERDICT } from "./common";
 
 const STAGES = [
@@ -53,7 +54,7 @@ function Checklist({ a }: { a: any }) {
         <Ring value={a.readiness_pct} size={84} stroke={8} color={VERDICT[a.verdict].color}><div><div className="font-display text-lg font-extrabold">{a.readiness_pct}%</div></div></Ring>
         <div className="space-y-1 text-sm">
           <div className="font-semibold">{VERDICT[a.verdict].label}</div>
-          <div className="text-xs text-ink-muted">Assessed on {a.plant_name ?? "no plant"} · EU LOE {a.eu_loe ? fmtDate(a.eu_loe) : "passed / none"} · barrier: {a.eu_patent_barrier}</div>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-ink-muted">Assessed on {a.plant_name ?? "no plant"} · EU LOE {a.eu_loe ? fmtDate(a.eu_loe) : "passed / none"} <Estimate field="loe" /> · barrier: {a.eu_patent_barrier} <Estimate field="geo_coverage" /></div>
           <div className="flex gap-1.5 pt-1">{(["met", "attention", "gap"] as const).map((s) => <span key={s} className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset", STATUS_STYLE[s].cls)}>{a.counts[s]} {STATUS_STYLE[s].label.toLowerCase()}</span>)}</div>
         </div>
       </div>

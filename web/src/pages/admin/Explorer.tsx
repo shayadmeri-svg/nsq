@@ -6,6 +6,36 @@ import { Badge, Button, Card, CardHeader, ErrorNote, PageHeader, PageSkeleton, S
 import { api } from "../../lib/api";
 import { fmtMonth } from "../../lib/format";
 
+function TrackedCoverage({ cov }: { cov: any }) {
+  if (!cov) return null;
+  const pct = cov.alerts ? Math.round((100 * cov.alerts_tracked) / cov.alerts) : 0;
+  const tracked = Object.entries(cov.tracked_counts as Record<string, number>).sort((a, b) => b[1] - a[1]);
+  return (
+    <Card delay={0.08} className="mt-5 p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="font-display text-[15px] font-bold">Tracked vs untracked molecules</h3>
+          <p className="mt-0.5 text-xs text-ink-muted">{cov.alerts_tracked.toLocaleString("en-IN")} of {cov.alerts.toLocaleString("en-IN")} alerts ({pct}%) involve one of the tracked molecules with a patent/regulatory profile. {cov.untracked_total.toLocaleString("en-IN")} other ingredients appear untracked.</p>
+        </div>
+      </div>
+      <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-100">
+        <div className="bg-brand-500 transition-all duration-700" style={{ width: `${pct}%` }} />
+        <div className="flex-1 bg-[repeating-linear-gradient(45deg,#e2e8f0_0,#e2e8f0_4px,#f8fafc_4px,#f8fafc_8px)]" />
+      </div>
+      <div className="mt-4 grid gap-5 md:grid-cols-2">
+        <div>
+          <div className="label mb-2 text-brand-700">Tracked · alerts</div>
+          <div className="flex flex-wrap gap-1.5">{tracked.map(([k, n]) => <Badge key={k} tone="brand">{k.split("_")[0]} · {n}</Badge>)}</div>
+        </div>
+        <div>
+          <div className="label mb-2">Top untracked ingredients · alerts</div>
+          <div className="flex flex-wrap gap-1.5">{cov.untracked.slice(0, 16).map((u: any) => <span key={u.ingredient} className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] capitalize text-ink-soft">{u.ingredient} · {u.alerts}</span>)}</div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function Explorer() {
   const { data, isLoading, error } = useQuery({ queryKey: ["nsq-summary"], queryFn: () => api<any>("/api/nsq/summary") });
   const [q, setQ] = useState("");
@@ -32,6 +62,7 @@ export function Explorer() {
         <Stat label="Products" value={k.products} tone="amber" delay={0.1} />
         <Stat label="Dissolution share" value={k.dissolution_share} decimals={1} suffix="%" tone="rose" delay={0.15} />
       </div>
+      <TrackedCoverage cov={data.coverage} />
       <Card delay={0.1} className="mt-5">
         <CardHeader title="Alerts per month" subtitle="By failure category" />
         <div className="px-3 pb-4 pt-3"><TrendArea data={data.trend} height={280} /><div className="px-3 pt-2"><Legendary items={data.trend.series} /></div></div>

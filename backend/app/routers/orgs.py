@@ -102,7 +102,7 @@ def infrastructure(slug: str, user: User = Depends(current_user), db: Session = 
 @router.get("/{slug}/opportunities")
 def opportunities(slug: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     org = org_for_user(db, slug, user)
-    return insights.org_opportunities(org.plant_ids or [])
+    return insights.org_opportunities(org.plant_ids or [], org.ontology_keys or [])
 
 
 @router.get("/{slug}/opportunities/{molecule_key}")
@@ -152,7 +152,7 @@ class PlantBody(BaseModel):
     notes: str = ""
 
 
-_CERTS = {"WHO_GMP", "EU_GMP", "USFDA", "PICS", "UK_MHRA", "TGA", "HEALTH_CANADA", "PMDA", "ANVISA", "BIOLOGIC_GMP", "CYTOTOXIC_LICENSING", "EU_GMP_ANNEX_1"}
+_CERTS = {"WHO_GMP", "EU_GMP", "USFDA", "PICS", "UK_MHRA", "TGA", "HEALTH_CANADA", "PMDA", "ANVISA", "BIOLOGIC_GMP", "CYTOTOXIC_LICENSING", "EU_GMP_ANNEX_1", "COFEPRIS", "DIGEMID"}
 
 
 def _slug(s: str) -> str:
@@ -180,6 +180,12 @@ def _build_plant(asset_id: str, body: PlantBody, base: Optional[PlantAsset] = No
     })
     if body.approved_forms:
         fields["approved_forms"] = body.approved_forms
+    basis = dict((base.capability_basis if base else {}) or {})
+    for t in valid:
+        basis.setdefault(t, "user")
+    fields["capability_basis"] = {t: basis[t] for t in valid}
+    cert_basis = dict((base.certification_basis if base else {}) or {})
+    fields["certification_basis"] = {c: cert_basis.get(c, "Entered in the app") for c in certs}
     if body.containment_class:
         fields["containment_class"] = body.containment_class
     if body.batch_capacity_kg is not None:

@@ -26,6 +26,8 @@ from intelligence_scorer import (
     score_customer_profile_fit,
 )
 
+import ingredients as ing
+
 from . import data
 
 TOP_CATEGORIES = 6
@@ -103,6 +105,106 @@ def _period(df: pd.DataFrame) -> dict[str, Optional[str]]:
     return {"first": df["Parsed_Date"].min().strftime("%Y-%m"), "last": df["Parsed_Date"].max().strftime("%Y-%m")}
 
 
+_ING_CACHE: dict[str, list[str]] = {}
+_INDEX_HOLDER: dict[str, dict[str, str]] = {}
+
+
+def product_ingredients(name: str) -> list[str]:
+    name = name or ""
+    got = _ING_CACHE.get(name)
+    if got is None:
+        got = ing.extract_ingredients(name)
+        if len(_ING_CACHE) < 50_000:
+            _ING_CACHE[name] = got
+    return got
+
+
+def tracked_index() -> dict[str, str]:
+    return ing.tracked_index(data.cdmo()["patents"])
+
+
+def tracked_for(name: str, index: Optional[dict[str, str]] = None) -> list[str]:
+    """Tracked molecule keys among a product's ingredients."""
+    index = index if index is not None else tracked_index()
+    out: list[str] = []
+    for k in product_ingredients(name):
+        m = ing.match_tracked(k, index)
+        if m and m not in out:
+            out.append(m)
+    return out
+
+
+def ingredient_coverage(df: pd.DataFrame, index: Optional[dict[str, str]] = None, top: int = 25) -> dict[str, Any]:
+    """Split a frame's alerts into tracked molecules vs untracked ingredients."""
+    index = index if index is not None else tracked_index()
+    tracked: dict[str, int] = {}
+    untracked: dict[str, dict[str, Any]] = {}
+    alerts_tracked = 0
+    for _, r in df.iterrows():
+        name = _s(r.get("Product_Name_Canonical")) or _s(r.get("Name of Product"))
+        keys = product_ingredients(name)
+        hit = False
+        for k in keys:
+            m = ing.match_tracked(k, index)
+            if m:
+                tracked[m] = tracked.get(m, 0) + 1
+                hit = True
+            else:
+                u = untracked.setdefault(k, {"ingredient": k, "alerts": 0, "products": {}, "forms": {}, "last": None, "categories": {}})
+                u["alerts"] += 1
+                u["products"][name] = u["products"].get(name, 0) + 1
+                f = _s(r.get("Form type"), "—")
+                u["forms"][f] = u["forms"].get(f, 0) + 1
+                c = _s(r.get("Failure_Category_Primary"), "Uncategorized")
+                u["categories"][c] = u["categories"].get(c, 0) + 1
+                d = r.get("Parsed_Date")
+                if pd.notna(d):
+                    m_ = d.strftime("%Y-%m")
+                    u["last"] = max(u["last"] or m_, m_)
+        alerts_tracked += 1 if hit else 0
+    rows = _fold_spellings(sorted(untracked.values(), key=lambda u: -u["alerts"]))
+    for u in rows:
+        u["products"] = [p for p, _ in sorted(u["products"].items(), key=lambda x: -x[1])[:3]]
+        u["forms"] = [f for f, _ in sorted(u["forms"].items(), key=lambda x: -x[1])[:3]]
+        u["categories"] = [c for c, _ in sorted(u["categories"].items(), key=lambda x: -x[1])[:3]]
+    return {
+        "alerts": int(len(df)),
+        "alerts_tracked": alerts_tracked,
+        "tracked_counts": tracked,
+        "untracked": rows[:top],
+        "untracked_total": len(rows),
+    }
+
+
+def _fold_spellings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge misspelt variants in CDSCO data (guiaphenesin -> guaiphenesin,
+    nofloxacin -> norfloxacin) into the most frequent spelling."""
+    from rapidfuzz import fuzz
+
+    kept: list[dict[str, Any]] = []
+    for u in rows:  # already sorted by alerts desc, so the first spelling wins
+        name = u["ingredient"]
+        target = None
+        if len(name) > 5 and "vitamin" not in name:
+            target = next((k for k in kept
+                           if k["ingredient"][:2] == name[:2]
+                           and abs(len(k["ingredient"]) - len(name)) <= 3
+                           and "vitamin" not in k["ingredient"]
+                           and fuzz.ratio(k["ingredient"], name) >= 88), None)
+        if target is None:
+            u.setdefault("variants", [])
+            kept.append(u)
+            continue
+        target["alerts"] += u["alerts"]
+        target["variants"].append(u["ingredient"])
+        for fld in ("products", "forms", "categories"):
+            for k, v in u[fld].items():
+                target[fld][k] = target[fld].get(k, 0) + v
+        if u["last"] and (not target["last"] or u["last"] > target["last"]):
+            target["last"] = u["last"]
+    return sorted(kept, key=lambda u: -u["alerts"])
+
+
 def issue_row(row: pd.Series) -> dict[str, Any]:
     return {
         "id": _s(row.get("record_id")),
@@ -119,6 +221,8 @@ def issue_row(row: pd.Series) -> dict[str, Any]:
         "mfg_state": _s(row.get("Mfg_State_Ontology")) or _s(row.get("Mfg_State"), "—"),
         "mfg_date": _s(row.get("Manufacturing Date"), "—"),
         "expiry": _s(row.get("Expiry Date"), "—"),
+        "ingredients": product_ingredients(_s(row.get("Product_Name_Canonical")) or _s(row.get("Name of Product"))),
+        "tracked": tracked_for(_s(row.get("Product_Name_Canonical")) or _s(row.get("Name of Product")), _INDEX_HOLDER.get("idx")),
     }
 
 
@@ -141,6 +245,7 @@ def filter_issues(df: pd.DataFrame, q: str = "", category: str = "", form: str =
 
 
 def paginate(df: pd.DataFrame, page: int, size: int) -> dict[str, Any]:
+    _INDEX_HOLDER["idx"] = tracked_index()
     size = max(1, min(size, 200))
     total = int(len(df))
     if not df.empty and "Parsed_Date" in df.columns:
@@ -185,7 +290,23 @@ def platform_summary() -> dict[str, Any]:
         "mfg_states": _counts(df[df["Mfg_State"].astype(str).str.strip() != ""], "Mfg_State", 12),
         "top_manufacturers": top_mfg,
         "latest_alerts": [issue_row(r) for _, r in latest.head(12).iterrows()],
+        "coverage": _platform_coverage(df),
     }
+
+
+_COVERAGE_CACHE: dict[str, Any] = {}
+
+
+def _platform_coverage(df: pd.DataFrame) -> dict[str, Any]:
+    key = f"{len(df)}:{data.frame_source()}"
+    if _COVERAGE_CACHE.get("key") != key:
+        cov = ingredient_coverage(df, top=20)
+        _COVERAGE_CACHE.update(key=key, value={
+            "alerts": cov["alerts"], "alerts_tracked": cov["alerts_tracked"],
+            "tracked_counts": cov["tracked_counts"], "untracked": cov["untracked"],
+            "untracked_total": cov["untracked_total"],
+        })
+    return _COVERAGE_CACHE["value"]
 
 
 def manufacturer_search(q: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -279,19 +400,29 @@ def org_issue_detail(ontology_keys: list[str], issue_id: str) -> Optional[dict[s
 
 def plant_profile(plant) -> dict[str, Any]:
     caps = plant_available_capabilities(plant)
+    basis = plant.capability_basis or {}
     sections = []
+    in_catalog: set[str] = set()
     for sec in capability_catalog.SECTIONS:
         tokens = [c.token for c in sec.capabilities]
+        in_catalog.update(tokens)
         have = [c for c in sec.capabilities if c.token in caps]
         sections.append({
             "id": sec.section_id, "title": sec.title, "icon": sec.icon,
-            "have": [{"token": c.token, "label": c.label} for c in have],
+            "have": [{"token": c.token, "label": c.label, "basis": basis.get(c.token, "derived")} for c in have],
             "total": len(tokens),
             "coverage_pct": round(100 * len(have) / len(tokens)) if tokens else 0,
         })
+    other = sorted(t for t in plant.capabilities if t not in in_catalog)
     d = plant.model_dump(mode="json")
     d["sections"] = sections
+    d["other_capabilities"] = [{"token": t, "label": _label(t), "basis": basis.get(t, "derived")} for t in other]
     d["certifications_active_norm"] = sorted(plant_active_certifications(plant))
+    d["evidence"] = {
+        "stated": sum(1 for v in basis.values() if v == "stated"),
+        "inferred": sum(1 for v in basis.values() if v == "inferred"),
+        "user": sum(1 for v in basis.values() if v == "user"),
+    }
     return d
 
 
@@ -324,9 +455,10 @@ def _label(token: str) -> str:
     return c.label if c else token.replace("_", " ").capitalize()
 
 
-def org_opportunities(plant_ids: list[str], today: Optional[date] = None) -> dict[str, Any]:
+def org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] = None, today: Optional[date] = None) -> dict[str, Any]:
     today = today or date.today()
     m = data.cdmo()
+    coverage = ingredient_coverage(data.org_frame(ontology_keys or []))
     plants = org_plants(plant_ids)
     rows: list[dict[str, Any]] = []
     unlock: dict[str, dict[str, Any]] = {}
@@ -392,6 +524,8 @@ def org_opportunities(plant_ids: list[str], today: Optional[date] = None) -> dic
             "missing_certifications": missing_certs,
             "pillar_gaps": [{"token": t, "label": _label(t)} for t in pillar_missing],
             "warnings": cand.warnings,
+            "tracked": True,
+            "alerts_in_org": coverage["tracked_counts"].get(key, 0),
         }
         rows.append(row)
 
@@ -420,6 +554,8 @@ def org_opportunities(plant_ids: list[str], today: Optional[date] = None) -> dic
         "tiers": tiers,
         "unlocks": unlocks[:12],
         "ready_within_5y": len(ready_soon),
+        "coverage": {k: coverage[k] for k in ("alerts", "alerts_tracked", "untracked_total")},
+        "untracked": coverage["untracked"],
     }
 
 
@@ -477,7 +613,7 @@ def org_eu_export(ontology_keys: list[str], plant_ids: list[str], molecule_keys:
 
 def org_overview(org) -> dict[str, Any]:
     q = org_quality(org.ontology_keys or [])
-    opp = org_opportunities(org.plant_ids or [])
+    opp = org_opportunities(org.plant_ids or [], org.ontology_keys or [])
     eu = org_eu_export(org.ontology_keys or [], org.plant_ids or [])
     plants = org_plants(org.plant_ids or [])
     return {

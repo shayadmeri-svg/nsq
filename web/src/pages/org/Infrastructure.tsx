@@ -1,15 +1,16 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Factory, MapPin, Pencil, Plus, ShieldCheck } from "lucide-react";
+import { Check, ExternalLink, Factory, FileSearch, MapPin, Pencil, Plus, ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import { Badge, Bar, Button, Card, Drawer, Empty, ErrorNote, Field, PageHeader, PageSkeleton } from "../../components/ui";
 import { useToast } from "../../components/ui/toast";
+import { Estimate } from "../../components/ui/Estimate";
 import { post, put } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { titleCase } from "../../lib/format";
 import { useOrg, useOrgData } from "./common";
 
-const CERTS = ["WHO_GMP", "EU_GMP", "USFDA", "PICS", "UK_MHRA", "TGA", "HEALTH_CANADA", "PMDA", "ANVISA", "BIOLOGIC_GMP", "CYTOTOXIC_LICENSING", "EU_GMP_ANNEX_1"];
+const CERTS = ["WHO_GMP", "EU_GMP", "USFDA", "PICS", "UK_MHRA", "TGA", "HEALTH_CANADA", "PMDA", "ANVISA", "BIOLOGIC_GMP", "CYTOTOXIC_LICENSING", "EU_GMP_ANNEX_1", "COFEPRIS", "DIGEMID"];
 const CONTAINMENT = ["standard", "potent", "cytotoxic", "biologic_GMP"];
 
 function PlantEditor({ slug, plant, taxonomy, onClose }: { slug: string; plant: any | null | undefined; taxonomy: any[]; onClose: () => void }) {
@@ -110,6 +111,40 @@ function PlantEditor({ slug, plant, taxonomy, onClose }: { slug: string; plant: 
   );
 }
 
+function CapChip({ label, basis }: { label: string; basis: string }) {
+  return (
+    <span title={basis === "stated" ? "Stated by the reference site" : basis === "inferred" ? "Inferred from a stated dosage form — not evidenced" : basis === "user" ? "Entered in the app" : "Derived"}
+      className={cn("rounded-md px-1.5 py-0.5 text-[11px]", basis === "stated" ? "bg-brand-50 font-medium text-brand-700 ring-1 ring-inset ring-brand-200" : basis === "inferred" ? "border border-dashed border-sky-400 text-sky-700" : "bg-slate-100 text-slate-600")}>
+      {label}
+    </span>
+  );
+}
+
+function ReferencePanel({ p }: { p: any }) {
+  const ref = p.reference;
+  return (
+    <div className="border-b border-line bg-slate-50/60 px-5 py-4 text-xs">
+      <div className="flex items-center gap-1.5 font-semibold text-ink"><FileSearch size={14} className="text-brand-700" /> Modelled on {ref.company} — {ref.site}</div>
+      <p className="mt-1 leading-relaxed text-ink-soft">{ref.summary}</p>
+      {p.annual_capacity?.length > 0 && <div className="mt-2"><span className="font-semibold text-ink">Capacity: </span>{p.annual_capacity.join(" · ")}</div>}
+      {p.equipment_highlights?.length > 0 && <div className="mt-1"><span className="font-semibold text-ink">Equipment: </span>{p.equipment_highlights.join(" · ")}</div>}
+      {Object.keys(p.certification_basis ?? {}).length > 0 && (
+        <div className="mt-1"><span className="font-semibold text-ink">Approvals: </span>{Object.entries(p.certification_basis).map(([c, why]: any) => `${c.replace(/_/g, " ")} (${why})`).join(" · ")}</div>
+      )}
+      {p.certifications_claimed?.length > 0 && (
+        <div className="mt-1 flex flex-wrap items-center gap-1"><span className="font-semibold text-ink">Claimed, not verified: </span>{p.certifications_claimed.map((c: string) => c.replace(/_/g, " ")).join(", ")} <Estimate field="certifications_claimed" /></div>
+      )}
+      {p.inspections?.length > 0 && (
+        <div className="mt-1"><span className="font-semibold text-ink">Inspections: </span>{p.inspections.map((i: any, k: number) => <a key={k} href={i.url} target="_blank" rel="noreferrer" className="mr-2 underline decoration-dotted hover:text-brand-700">{i.date} {i.authority}: {i.outcome}</a>)}</div>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-ink-muted">
+        {(ref.sources ?? []).map((s: any) => <a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline"><ExternalLink size={12} />{s.label}</a>)}
+        <span>retrieved {ref.retrieved_at}</span>
+      </div>
+    </div>
+  );
+}
+
 export function Infrastructure() {
   const { org, slug } = useOrg();
   const { data, isLoading, error } = useOrgData<any>("infrastructure");
@@ -138,17 +173,29 @@ export function Infrastructure() {
             <div className="grid grid-cols-3 divide-x divide-line border-b border-line text-center">
               <div className="px-3 py-3"><div className="label">Containment</div><div className="mt-1 text-sm font-semibold">{titleCase(p.containment_class)}</div></div>
               <div className="px-3 py-3"><div className="label">Forms</div><div className="mt-1 text-sm font-semibold">{p.approved_forms.length}</div></div>
-              <div className="px-3 py-3"><div className="label">Capacity</div><div className="mt-1 text-sm font-semibold">{p.batch_capacity_kg ? `${p.batch_capacity_kg} kg` : "—"}</div></div>
+              <div className="px-3 py-3"><div className="label">Capacity</div><div className="mt-1 truncate px-1 text-sm font-semibold" title={(p.annual_capacity ?? []).join(" · ")}>{p.annual_capacity?.[0] ?? (p.batch_capacity_kg ? `${p.batch_capacity_kg} kg batch` : "—")}</div></div>
             </div>
+            {p.reference?.company && <ReferencePanel p={p} />}
             <div className="space-y-3 p-5">
-              <div className="label">Capability coverage</div>
+              <div className="flex items-center justify-between">
+                <div className="label">Capability coverage</div>
+                <div className="flex items-center gap-3 text-[11px] text-ink-muted">
+                  <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-brand-500" /> stated</span>
+                  <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-sky-500" /> inferred <Estimate field="capability_inferred" align="right" /></span>
+                </div>
+              </div>
               {p.sections.map((s: any) => (
-                <div key={s.id} title={s.have.map((h: any) => h.label).join(", ") || "none"}>
+                <div key={s.id}>
                   <div className="mb-1 flex justify-between text-xs"><span className="font-medium text-ink-soft">{s.title}</span><span className="tabular-nums text-ink-muted">{s.have.length}/{s.total}</span></div>
                   <Bar value={s.coverage_pct} color={s.coverage_pct > 40 ? "#0a9a7d" : s.coverage_pct > 0 ? "#f59e0b" : "#e2e8f0"} />
+                  {s.have.length > 0 && <div className="mt-1.5 flex flex-wrap gap-1">{s.have.map((h: any) => <CapChip key={h.token} label={h.label} basis={h.basis} />)}</div>}
                 </div>
               ))}
+              {p.other_capabilities?.length > 0 && (
+                <div><div className="mb-1 text-xs font-medium text-ink-soft">Other process capabilities</div><div className="flex flex-wrap gap-1">{p.other_capabilities.map((h: any) => <CapChip key={h.token} label={h.label} basis={h.basis} />)}</div></div>
+              )}
               {p.approved_forms.length > 0 && <div className="flex flex-wrap gap-1.5 pt-2">{p.approved_forms.map((f: string) => <Badge key={f}>{titleCase(f)}</Badge>)}</div>}
+              <div className="flex items-center gap-1.5 pt-1 text-[11px] text-ink-muted">Talent depth used in fit scores is an estimate <Estimate field="talent_depth" /></div>
             </div>
           </Card>
         ))}

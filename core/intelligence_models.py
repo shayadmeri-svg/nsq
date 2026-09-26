@@ -141,9 +141,30 @@ class PlantAsset(BaseModel):
     equipment_highlights: list[str] = Field(default_factory=list)
     equipment_trains: list[dict[str, Any]] = Field(default_factory=list)
     notes: str = ""
+    # --- sourcing (demo plants are modelled on a real, publicly documented site)
+    # reference: {"company", "site", "location", "summary", "retrieved_at",
+    #             "sources": [{"label", "url"}]}
+    reference: dict[str, Any] = Field(default_factory=dict)
+    # token -> "stated" (the reference says so) | "inferred" (implied by a
+    # stated dosage form, not evidenced) | "user" (entered in the app)
+    capability_basis: dict[str, str] = Field(default_factory=dict)
+    # cert token -> short evidence string ("stated on company site", ...)
+    certification_basis: dict[str, str] = Field(default_factory=dict)
+    # Standards the reference claims to conform to but no certificate or
+    # inspection record was found for. Not used for scoring.
+    certifications_claimed: list[str] = Field(default_factory=list)
+    annual_capacity: list[str] = Field(default_factory=list)
+    # [{"date", "authority", "outcome", "url"}]
+    inspections: list[dict[str, Any]] = Field(default_factory=list)
 
     def to_redis(self) -> dict[str, str]:
         return {
+            "reference": _json_encode(self.reference),
+            "capability_basis": _json_encode(self.capability_basis),
+            "certification_basis": _json_encode(self.certification_basis),
+            "certifications_claimed": _json_encode(self.certifications_claimed),
+            "annual_capacity": _json_encode(self.annual_capacity),
+            "inspections": _json_encode(self.inspections),
             "asset_id": self.asset_id,
             "site_name": self.site_name,
             "city": self.city,
@@ -191,6 +212,12 @@ class PlantAsset(BaseModel):
             equipment_highlights=_parse_list(data.get("equipment_highlights", "")),
             equipment_trains=_parse_equipment_trains(data.get("equipment_trains", "")),
             notes=data.get("notes", ""),
+            reference=_parse_json(data.get("reference", ""), {}),
+            capability_basis=_parse_json(data.get("capability_basis", ""), {}),
+            certification_basis=_parse_json(data.get("certification_basis", ""), {}),
+            certifications_claimed=_parse_list(data.get("certifications_claimed", "")),
+            annual_capacity=_parse_list(data.get("annual_capacity", "")),
+            inspections=_parse_json(data.get("inspections", ""), []),
         )
 
 
@@ -634,3 +661,15 @@ def _parse_gmp_pillars(raw: str) -> list[GmpPillar]:
         return [GmpPillar(**item) for item in parsed if isinstance(item, dict)]
     except (json.JSONDecodeError, TypeError):
         return []
+
+
+def _parse_json(raw: str, default: Any) -> Any:
+    import json
+
+    if not raw:
+        return default
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default
+    return parsed if isinstance(parsed, type(default)) else default

@@ -7,6 +7,7 @@ import { CompareBars, Donut, Legendary, RankBars, TrendBars } from "../../compon
 import { Badge, Button, Card, CardHeader, Empty, ErrorNote, PageHeader, PageSkeleton, Stat } from "../../components/ui";
 import { api } from "../../lib/api";
 import { fmtMonth } from "../../lib/format";
+import { Link } from "react-router-dom";
 import { useOrg, useOrgData } from "./common";
 import { IssueDrawer } from "./IssueDrawer";
 
@@ -103,7 +104,7 @@ export function Quality() {
             <tbody className={issues.isFetching ? "opacity-60 transition" : "transition"}>
               {issues.data?.items.map((it: any, i: number) => (
                 <motion.tr key={it.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.015 }} onClick={() => nav(`/o/${slug}/quality/${it.id}`)} className="cursor-pointer border-b border-line/70 transition hover:bg-brand-50/40">
-                  <td className="max-w-[280px] px-5 py-3"><div className="truncate font-medium" title={it.product}>{it.product}</div><div className="text-xs text-ink-muted">{it.form}</div></td>
+                  <td className={`max-w-[300px] border-l-[3px] px-5 py-3 ${it.tracked?.length ? "border-brand-500" : "border-transparent"}`}><div className="truncate font-medium" title={it.product}>{it.product}</div><div className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">{it.form}{it.tracked?.length ? it.tracked.map((m: string) => <Link key={m} to={`/o/${slug}/opportunities/${m}`} onClick={(e) => e.stopPropagation()}><Badge tone="brand">Tracked · {m.split("_")[0]}</Badge></Link>) : <span className="rounded-full border border-dashed border-slate-300 px-1.5 text-[10px] text-ink-faint">untracked</span>}</div></td>
                   <td className="max-w-[340px] px-3 py-3 text-ink-soft"><div className="line-clamp-2 text-[13px]">{it.reason}</div></td>
                   <td className="px-3 py-3"><Badge tone="rose">{it.category}</Badge></td>
                   <td className="px-3 py-3 font-mono text-xs">{it.batch}</td>

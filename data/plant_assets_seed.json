@@ -1,5 +1,5 @@
 {
-  "_comment": "Representative mid-tier CDMO asset registry enriched with equipment trains, talent depth, certifications, and experience years for Phase 4 manufacturing-readiness evaluation.",
+  "_comment": "Five demo plants, each modelled on a real, publicly documented Indian site (see each asset's 'reference'). Dosage forms, approvals, capacity and equipment come from the cited page; capability_basis marks tokens 'stated' by the source vs 'inferred' from a stated dosage form. talent_depth and experience years are estimates with no public source. Retrieved 2026-09-26.",
   "assets": [
     {
       "asset_id": "baddi-osd-a",
@@ -7,87 +7,67 @@
       "city": "Baddi",
       "state": "Himachal Pradesh",
       "country": "India",
-      "capabilities": [
-        "wet_granulation",
-        "dry_granulation",
-        "compression",
-        "film_coating",
-        "enteric_coating",
-        "blister_packing",
-        "bottle_packing",
-        "fluid_bed_drying"
-      ],
+      "reference": {
+        "company": "Indoco Remedies Ltd",
+        "site": "Baddi Plant II",
+        "location": "Baddi, Himachal Pradesh",
+        "summary": "Oral solid dosage plant (tablets and capsules) approved by UK-MHRA, EU-GMP and WHO-GMP; capacity 3 billion tablets/capsules.",
+        "retrieved_at": "2026-09-26",
+        "sources": [
+          {
+            "label": "Indoco Remedies — formulation facilities",
+            "url": "https://www.indoco.com/facilities-formulation.asp"
+          }
+        ]
+      },
       "approved_forms": [
         "solid_oral",
-        "enteric_tablet",
-        "uncoated_tablet",
-        "film_coated_tablet"
+        "tablet",
+        "capsule"
       ],
-      "containment_class": "standard",
-      "batch_capacity_kg": 500,
+      "annual_capacity": [
+        "3 billion tablets/capsules"
+      ],
       "certifications": [
-        "WHO_GMP",
-        "EU_GMP"
+        "UK_MHRA",
+        "EU_GMP",
+        "WHO_GMP"
       ],
+      "certifications_active": [
+        "UK_MHRA",
+        "EU_GMP",
+        "WHO_GMP"
+      ],
+      "certification_basis": {
+        "UK_MHRA": "Stated on company facilities page",
+        "EU_GMP": "Stated on company facilities page",
+        "WHO_GMP": "Stated on company facilities page"
+      },
+      "capabilities": [
+        "compression",
+        "wet_granulation",
+        "film_coating",
+        "blister_packing",
+        "bottle_packing"
+      ],
+      "capability_basis": {
+        "compression": "inferred",
+        "wet_granulation": "inferred",
+        "film_coating": "inferred",
+        "blister_packing": "inferred",
+        "bottle_packing": "inferred"
+      },
+      "containment_class": "standard",
+      "batch_capacity_kg": null,
+      "equipment_highlights": [],
+      "equipment_trains": [],
       "small_molecule_experience": true,
       "biologics_experience": false,
+      "notes": "Demo plant modelled on Indoco Baddi Plant II. The source names dosage forms, approvals and capacity only; unit operations are inferred from 'tablets/capsules' and not evidenced.",
       "talent_profile": [
         "formulation",
         "analytical",
         "regulatory"
-      ],
-      "equipment_highlights": [
-        "Rapid mixer granulator (200 L)",
-        "Fluid bed dryer (500 kg/hr)",
-        "Rotary tablet press (45 stations, double-sided)",
-        "Auto-coating pan (500 kg)",
-        "Blister line (Alu-Alu / PVC)",
-        "HPLC / GC analytical suite"
-      ],
-      "notes": "Workhorse oral-solid plant. Best for high-volume tablets, enteric coatings, and extended-release matrices. Not qualified for biologics or cytotoxic oncology.",
-      "equipment_trains": [
-        {
-          "name": "Wet granulation train",
-          "capability": "wet_granulation",
-          "capacity": "200 L",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Dry granulation / roller compaction",
-          "capability": "dry_granulation",
-          "capacity": "100 kg/hr",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Rotary tablet press",
-          "capability": "compression",
-          "capacity": "45 stations",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Enteric / film coating pan",
-          "capability": "enteric_coating",
-          "capacity": "500 kg",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Blister packing line",
-          "capability": "blister_packing",
-          "capacity": "high_speed",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "HPLC / UV analytical suite",
-          "capability": "analytical_qc",
-          "capacity": "full",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        }
       ],
       "talent_depth": {
         "formulation": 85,
@@ -98,87 +78,97 @@
         "sterile_manufacturing": 15,
         "cytotoxic_handling": 10
       },
-      "certifications_active": [
-        "WHO_GMP",
-        "EU_GMP"
-      ],
       "small_molecule_experience_years": 18,
       "biologics_experience_years": 0,
       "api_sourcing_experience": true
     },
     {
       "asset_id": "ahmedabad-osd-liquid",
-      "site_name": "Ahmedabad OSD + Liquid Orals Plant",
-      "city": "Ahmedabad",
-      "state": "Gujarat",
+      "site_name": "Goa OSD + Liquid Orals Plant",
+      "city": "Goa",
+      "state": "Goa",
       "country": "India",
+      "reference": {
+        "company": "Indoco Remedies Ltd",
+        "site": "Goa Plant I",
+        "location": "Goa",
+        "summary": "Solid orals (coated/uncoated tablets), liquid orals and hard gelatin capsules; USFDA, UK-MHRA, TGA-Australia, EU (Malta) and WHO-GMP; 2.4 billion tablets, 5 million bottles, 60 million capsules.",
+        "retrieved_at": "2026-09-26",
+        "sources": [
+          {
+            "label": "Indoco Remedies — formulation facilities",
+            "url": "https://www.indoco.com/facilities-formulation.asp"
+          }
+        ]
+      },
+      "approved_forms": [
+        "solid_oral",
+        "tablet",
+        "film_coated_tablet",
+        "uncoated_tablet",
+        "capsule",
+        "syrup",
+        "suspension"
+      ],
+      "annual_capacity": [
+        "2.4 billion tablets",
+        "5 million bottles (liquid orals)",
+        "60 million capsules"
+      ],
+      "certifications": [
+        "USFDA",
+        "UK_MHRA",
+        "TGA",
+        "EU_GMP",
+        "WHO_GMP"
+      ],
+      "certifications_active": [
+        "USFDA",
+        "UK_MHRA",
+        "TGA",
+        "EU_GMP",
+        "WHO_GMP"
+      ],
+      "certification_basis": {
+        "USFDA": "Stated on company facilities page",
+        "UK_MHRA": "Stated (solid dosages & capsules)",
+        "TGA": "Stated (solid dosages, liquid orals)",
+        "EU_GMP": "Stated as 'EU Malta'",
+        "WHO_GMP": "Stated on company facilities page"
+      },
       "capabilities": [
-        "wet_granulation",
         "compression",
+        "wet_granulation",
         "film_coating",
         "blister_packing",
         "bottle_packing",
-        "liquid_oral_filling",
-        "suspension_manufacturing"
+        "liquid_oral_filling"
       ],
-      "approved_forms": [
-        "solid_oral",
-        "syrup",
-        "suspension",
-        "drops"
-      ],
+      "capability_basis": {
+        "compression": "inferred",
+        "wet_granulation": "inferred",
+        "film_coating": "stated",
+        "blister_packing": "inferred",
+        "bottle_packing": "stated",
+        "liquid_oral_filling": "stated"
+      },
       "containment_class": "standard",
-      "batch_capacity_kg": 350,
-      "certifications": [
-        "WHO_GMP",
-        "USFDA"
+      "batch_capacity_kg": null,
+      "equipment_highlights": [
+        "Vertical flow system",
+        "Monolithic flooring",
+        "HVAC holding 40–65% relative humidity",
+        "Air-conditioned RM and FG stores"
       ],
+      "equipment_trains": [],
       "small_molecule_experience": true,
       "biologics_experience": false,
+      "notes": "Demo plant modelled on Indoco Goa Plant I (asset id kept from the earlier Ahmedabad demo plant). Coated tablets, liquid orals and capsules are stated; granulation and blister packing are inferred.",
       "talent_profile": [
         "formulation",
         "analytical",
         "regulatory",
         "packaging"
-      ],
-      "equipment_highlights": [
-        "High-shear granulator (150 L)",
-        "Multi-station tablet press",
-        "Peristaltic liquid-filling line",
-        "Screw-cap bottle packaging line",
-        "Stability chambers (ICH)",
-        "Complete QC microbiology lab"
-      ],
-      "notes": "Versatile solid + liquid orals plant. USFDA inspected. Suitable for pediatric syrups, suspensions, and conventional tablets.",
-      "equipment_trains": [
-        {
-          "name": "Solid oral train",
-          "capability": "compression",
-          "capacity": "medium",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Liquid oral filling line",
-          "capability": "liquid_oral_filling",
-          "capacity": "bottle",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Suspension manufacturing vessel",
-          "capability": "suspension_manufacturing",
-          "capacity": "500 L",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Microbiology / sterility lab",
-          "capability": "microbiology",
-          "capacity": "full",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        }
       ],
       "talent_depth": {
         "formulation": 75,
@@ -189,10 +179,6 @@
         "sterile_manufacturing": 20,
         "cytotoxic_handling": 10
       },
-      "certifications_active": [
-        "WHO_GMP",
-        "USFDA"
-      ],
       "small_molecule_experience_years": 15,
       "biologics_experience_years": 0,
       "api_sourcing_experience": true
@@ -200,82 +186,99 @@
     {
       "asset_id": "hyderabad-oncology-injectables",
       "site_name": "Hyderabad Oncology + Sterile Injectables Suite",
-      "city": "Hyderabad",
+      "city": "Jadcherla",
       "state": "Telangana",
       "country": "India",
-      "capabilities": [
-        "sterile_liquid",
-        "aseptic_fill",
-        "lyophilization",
-        "terminal_sterilization",
-        "isolator_technology",
-        "vial_capping",
-        "visual_inspection"
-      ],
+      "reference": {
+        "company": "Shilpa Medicare Ltd",
+        "site": "Unit IV (formulations), TSIIC Pharma SEZ, Jadcherla",
+        "location": "Jadcherla, Telangana (~80 km from Hyderabad)",
+        "summary": "Oral solids and injectables for potent products including oncology: 2 commercial tablet lines, 1 capsule line, 2 liquid-lyophilization lines, a third liquid/lyo/dry-powder combi-line under commissioning. USFDA and EU GMP for OSD and injections; ANVISA, COFEPRIS, DIGEMID for injections.",
+        "retrieved_at": "2026-09-26",
+        "sources": [
+          {
+            "label": "Shilpa Medicare — Unit IV Jadcherla",
+            "url": "https://www.vbshilpa.com/formulation-jardchela.php"
+          }
+        ]
+      },
       "approved_forms": [
+        "tablet",
+        "capsule",
         "injection",
         "vial",
         "lyophilized_vial"
       ],
-      "containment_class": "cytotoxic",
-      "batch_capacity_kg": 50,
+      "annual_capacity": [
+        "2 commercial tablet lines",
+        "1 commercial capsule line",
+        "2 liquid-lyophilization lines (+1 combi-line under commissioning)"
+      ],
       "certifications": [
-        "WHO_GMP",
-        "EU_GMP"
+        "USFDA",
+        "EU_GMP",
+        "ANVISA",
+        "COFEPRIS",
+        "DIGEMID"
+      ],
+      "certifications_active": [
+        "USFDA",
+        "EU_GMP",
+        "ANVISA",
+        "COFEPRIS",
+        "DIGEMID"
+      ],
+      "certification_basis": {
+        "USFDA": "Stated for OSD and injections",
+        "EU_GMP": "Stated for OSD and injections",
+        "ANVISA": "Stated for injections",
+        "COFEPRIS": "Stated for injections",
+        "DIGEMID": "Stated for injections"
+      },
+      "capabilities": [
+        "sterile_liquid",
+        "lyophilization",
+        "aseptic_fill",
+        "vial_filling",
+        "compression",
+        "potent_containment",
+        "sterility_testing"
+      ],
+      "capability_basis": {
+        "sterile_liquid": "stated",
+        "lyophilization": "stated",
+        "aseptic_fill": "inferred",
+        "vial_filling": "inferred",
+        "compression": "stated",
+        "potent_containment": "stated",
+        "sterility_testing": "inferred"
+      },
+      "containment_class": "cytotoxic",
+      "batch_capacity_kg": null,
+      "equipment_highlights": [],
+      "equipment_trains": [],
+      "inspections": [
+        {
+          "date": "2025-11",
+          "authority": "USFDA",
+          "outcome": "Inspection concluded with 8 observations (Form 483)",
+          "url": "https://www.indianpharmapost.com/regulatory/shilpa-medicare-receives-8-observations-from-usfda-for-unit-4-at-jadcherla-18322"
+        },
+        {
+          "date": "2025-11",
+          "authority": "USFDA",
+          "outcome": "Inspection completed (company disclosure)",
+          "url": "https://www.business-standard.com/markets/capital-market-news/shilpa-medicare-s-unit-iv-completes-usfda-inspection-125112200237_1.html"
+        }
       ],
       "small_molecule_experience": true,
       "biologics_experience": false,
+      "notes": "Demo plant modelled on Shilpa Medicare Unit IV. Isolator technology and cytotoxic licensing were in the earlier demo profile but are not stated by the source, so they were removed.",
       "talent_profile": [
         "sterile_manufacturing",
         "analytical",
         "regulatory",
         "validation"
-      ],
-      "equipment_highlights": [
-        "RABS restricted-access barrier system",
-        "Isolator filling line (vials)",
-        "Lyophilizer (300 L shelf)",
-        "Autoclave / depyrogenation tunnel",
-        "100% camera-based visual inspection",
-        "Endotoxin / sterility testing suite"
-      ],
-      "notes": "Specialty injectables suite with cytotoxic containment. Can handle small-molecule oncology injectables and lyophilized products. Not equipped for monoclonal antibodies or peptide biologics.",
-      "equipment_trains": [
-        {
-          "name": "RABS isolator filling line",
-          "capability": "aseptic_fill",
-          "capacity": "vials",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Lyophilizer",
-          "capability": "lyophilization",
-          "capacity": "300 L shelf",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Terminal sterilization tunnel",
-          "capability": "terminal_sterilization",
-          "capacity": "continuous",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Visual inspection line",
-          "capability": "visual_inspection",
-          "capacity": "100%",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Sterility / endotoxin lab",
-          "capability": "sterility_testing",
-          "capacity": "full",
-          "readiness_level": "commercial",
-          "gmp_status": "validated"
-        }
       ],
       "talent_depth": {
         "formulation": 50,
@@ -286,84 +289,85 @@
         "sterile_manufacturing": 90,
         "cytotoxic_handling": 85
       },
-      "certifications_active": [
-        "WHO_GMP",
-        "EU_GMP"
-      ],
       "small_molecule_experience_years": 12,
       "biologics_experience_years": 0,
       "api_sourcing_experience": false
     },
     {
       "asset_id": "pune-pilot-rnd",
-      "site_name": "Pune Pilot / R&D Scale-Up Center",
-      "city": "Pune",
-      "state": "Maharashtra",
+      "site_name": "Ahmedabad Pilot / R&D Scale-Up Center",
+      "city": "Ahmedabad",
+      "state": "Gujarat",
       "country": "India",
-      "capabilities": [
-        "wet_granulation",
-        "dry_granulation",
-        "compression",
-        "film_coating",
-        "analytical_development",
-        "process_validation",
-        "stability_testing"
-      ],
+      "reference": {
+        "company": "Piramal Pharma Solutions",
+        "site": "Pharmaceutical Development Services, Pharma SEZ",
+        "location": "Ahmedabad, Gujarat",
+        "summary": "OSD development (IR, MR bilayer, mini tablets, tablets-in-capsule, MUPS, capsules) at 50 g–50 kg for Phase I/II; hot-melt extrusion, nano mill, Xcelodose 600S, Buchi S300 spray dryer; pilot plant of 14 processing units; handles potent compounds with OEL down to 1 µg/m³; accredited by MPA Sweden, Fimea Finland and USFDA.",
+        "retrieved_at": "2026-09-26",
+        "sources": [
+          {
+            "label": "Piramal Pharma Solutions — PDS Ahmedabad",
+            "url": "https://www.piramalpharmasolutions.com/facilities/piramal-pharmaceutical-development-services-ahmedabad"
+          }
+        ]
+      },
       "approved_forms": [
         "solid_oral",
-        "enteric_tablet",
+        "tablet",
+        "capsule",
         "pilot_batch"
       ],
-      "containment_class": "potent",
-      "batch_capacity_kg": 25,
-      "certifications": [
-        "WHO_GMP"
+      "annual_capacity": [
+        "Development scale 50 g – 50 kg (Phase I/II supply)",
+        "Pilot plant: 14 processing units"
       ],
+      "certifications": [
+        "USFDA",
+        "EU_GMP"
+      ],
+      "certifications_active": [
+        "USFDA",
+        "EU_GMP"
+      ],
+      "certification_basis": {
+        "USFDA": "Stated accreditation",
+        "EU_GMP": "Accredited by MPA Sweden and Fimea Finland (EU authorities)"
+      },
+      "capabilities": [
+        "hot_melt_extrusion",
+        "spray_drying",
+        "potent_containment",
+        "analytical_development",
+        "compression",
+        "wet_granulation",
+        "film_coating"
+      ],
+      "capability_basis": {
+        "hot_melt_extrusion": "stated",
+        "spray_drying": "stated",
+        "potent_containment": "stated",
+        "analytical_development": "inferred",
+        "compression": "inferred",
+        "wet_granulation": "inferred",
+        "film_coating": "inferred"
+      },
+      "containment_class": "potent",
+      "batch_capacity_kg": 50,
+      "equipment_highlights": [
+        "Hot melt extrusion",
+        "Nano mill",
+        "Xcelodose 600S micro-dosing (600 capsules/h)",
+        "Buchi S300 spray dryer"
+      ],
+      "equipment_trains": [],
       "small_molecule_experience": true,
       "biologics_experience": false,
+      "notes": "Demo plant modelled on Piramal PDS Ahmedabad (asset id kept from the earlier Pune demo plant). Development scale only — not a commercial site.",
       "talent_profile": [
         "formulation",
         "analytical",
         "process_development"
-      ],
-      "equipment_highlights": [
-        "Bench-top high-shear granulator",
-        "Single-punch / 8-station R&D press",
-        "Mini coating pan",
-        "UPLC / dissolution testing",
-        "Thermal / XRD characterization suite",
-        "GMP-compliant pilot suites"
-      ],
-      "notes": "Fast scale-up and tech-transfer hub. Potent-containment capable for early oncology / hormone programs. Not a commercial biologics facility.",
-      "equipment_trains": [
-        {
-          "name": "R&D high-shear granulator",
-          "capability": "wet_granulation",
-          "capacity": "bench",
-          "readiness_level": "pilot",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "R&D tablet press",
-          "capability": "compression",
-          "capacity": "8 station",
-          "readiness_level": "pilot",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "Mini coating pan",
-          "capability": "film_coating",
-          "capacity": "pilot",
-          "readiness_level": "pilot",
-          "gmp_status": "validated"
-        },
-        {
-          "name": "UPLC / dissolution / thermal suite",
-          "capability": "analytical_development",
-          "capacity": "full",
-          "readiness_level": "pilot",
-          "gmp_status": "validated"
-        }
       ],
       "talent_depth": {
         "formulation": 90,
@@ -374,9 +378,6 @@
         "sterile_manufacturing": 20,
         "cytotoxic_handling": 50
       },
-      "certifications_active": [
-        "WHO_GMP"
-      ],
       "small_molecule_experience_years": 10,
       "biologics_experience_years": 0,
       "api_sourcing_experience": true
@@ -384,57 +385,72 @@
     {
       "asset_id": "mumbai-biologics-placeholder",
       "site_name": "Mumbai Biologics Development Center",
-      "city": "Mumbai",
+      "city": "Navi Mumbai",
       "state": "Maharashtra",
       "country": "India",
-      "capabilities": [
-        "cell_culture_pilot",
-        "protein_a_pilot",
-        "analytical_development",
-        "formulation_development"
-      ],
+      "reference": {
+        "company": "Reliance Life Sciences Pvt Ltd",
+        "site": "Dhirubhai Ambani Life Sciences Centre",
+        "location": "Navi Mumbai, Maharashtra",
+        "summary": "20-acre campus; stainless-steel microbial and mammalian bioreactors for drug substance with fill-finish for vials (liquid and lyophilized), pre-filled syringes and cartridges; a second facility with single-use bioreactors; plasma proteins at commercial scale. The company states the facilities 'conform to Indian FDA, WHO-GMP, EMEA and USFDA standards'.",
+        "retrieved_at": "2026-09-26",
+        "sources": [
+          {
+            "label": "Reliance Life Sciences — infrastructure",
+            "url": "https://www.rellife.com/web/lifesciences/infrastructure"
+          }
+        ]
+      },
       "approved_forms": [
-        "pilot_batch"
+        "vial",
+        "lyophilized_vial",
+        "prefilled_syringe",
+        "cartridge"
       ],
-      "containment_class": "biologic_GMP",
-      "batch_capacity_kg": 5,
+      "annual_capacity": [],
       "certifications": [],
-      "small_molecule_experience": false,
+      "certifications_active": [],
+      "certifications_claimed": [
+        "WHO_GMP",
+        "EU_GMP",
+        "USFDA"
+      ],
+      "certification_basis": {},
+      "capabilities": [
+        "stainless_bioreactor",
+        "single_use_bioreactor",
+        "cell_culture",
+        "vial_filling",
+        "pfs_filling",
+        "cartridge_filling",
+        "lyophilization",
+        "aseptic_fill"
+      ],
+      "capability_basis": {
+        "stainless_bioreactor": "stated",
+        "single_use_bioreactor": "stated",
+        "cell_culture": "stated",
+        "vial_filling": "stated",
+        "pfs_filling": "stated",
+        "cartridge_filling": "stated",
+        "lyophilization": "stated",
+        "aseptic_fill": "inferred"
+      },
+      "containment_class": "biologic_GMP",
+      "batch_capacity_kg": null,
+      "equipment_highlights": [
+        "Stainless-steel microbial and mammalian bioreactors",
+        "Single-use bioreactors",
+        "Fill-finish: vials, PFS, cartridges"
+      ],
+      "equipment_trains": [],
+      "small_molecule_experience": true,
       "biologics_experience": true,
+      "notes": "Demo plant modelled on Reliance Life Sciences, Navi Mumbai. The source claims conformance to WHO-GMP/EMEA/USFDA standards but names no certificate or inspection, so no certification is treated as active.",
       "talent_profile": [
         "bioprocess",
         "analytical",
         "regulatory"
-      ],
-      "equipment_highlights": [
-        "Single-use bioreactor (50 L)",
-        "Protein A chromatography skid (pilot)",
-        "Viral clearance suite (planned)",
-        "ELISA / bioassay lab"
-      ],
-      "notes": "Early-stage biologics capability only. No commercial scale. Any mAb program scored against this site will show a large capability gap unless partnered or outsourced.",
-      "equipment_trains": [
-        {
-          "name": "Single-use bioreactor",
-          "capability": "cell_culture",
-          "capacity": "50 L",
-          "readiness_level": "pilot",
-          "gmp_status": "development"
-        },
-        {
-          "name": "Protein A chromatography skid",
-          "capability": "protein_a",
-          "capacity": "pilot",
-          "readiness_level": "pilot",
-          "gmp_status": "development"
-        },
-        {
-          "name": "ELISA / cell-based bioassay lab",
-          "capability": "bioassay",
-          "capacity": "pilot",
-          "readiness_level": "pilot",
-          "gmp_status": "development"
-        }
       ],
       "talent_depth": {
         "formulation": 30,
@@ -445,7 +461,6 @@
         "sterile_manufacturing": 40,
         "cytotoxic_handling": 20
       },
-      "certifications_active": [],
       "small_molecule_experience_years": 0,
       "biologics_experience_years": 3,
       "api_sourcing_experience": false
