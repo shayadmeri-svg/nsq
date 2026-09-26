@@ -29,6 +29,7 @@ from . import data, insights, sites
 
 _MON = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1)}
 _lock = threading.Lock()
+MIN_STATE_ALERTS = 20
 _geo_cache: dict[str, Any] = {}
 
 
@@ -69,6 +70,9 @@ def apply_filters(df: pd.DataFrame, f: dict[str, Any]) -> pd.DataFrame:
         vals = [v for v in (f.get(key) or []) if v]
         if vals:
             m &= df[col].isin(vals)
+    auth = f.get("authenticity") or ""
+    if auth and "_spurious" in df.columns:
+        m &= df["_spurious"] if auth == "spurious" else ~df["_spurious"]
     if f.get("since"):
         m &= df["_month"] >= f["since"]
     if f.get("until"):
@@ -132,34 +136,49 @@ def cube(f: dict[str, Any]) -> dict[str, Any]:
     if n == 0:
         return {"empty": True, "kpis": {"alerts": 0}}
     d = df.assign(_mfr=_mfr_label(df))
+    # Company rankings use only alerts attributable to the named maker: a
+    # spurious (counterfeit) batch carries a company's name it did not make.
+    spur = d["_spurious"] if "_spurious" in d.columns else pd.Series(False, index=d.index)
+    da = d[~spur]
     ing_rows = []
-    for mfr, prod in zip(d["_mfr"], d["Name of Product"].astype(str)):
+    for mfr, prod in zip(da["_mfr"], da["Name of Product"].astype(str)):
         for i in insights.product_ingredients(prod)[:3]:
             ing_rows.append((mfr, i))
     ing = pd.DataFrame(ing_rows, columns=["_mfr", "_ing"]) if ing_rows else pd.DataFrame(columns=["_mfr", "_ing"])
-    states = d.groupby("_state").agg(alerts=("record_id", "size"), manufacturers=("_mfr", "nunique"),
-                                     dissolution=("Is_Dissolution", "sum")).sort_values("alerts", ascending=False)
+    states = d.groupby("_state").agg(alerts=("record_id", "size"), dissolution=("Is_Dissolution", "sum")).sort_values("alerts", ascending=False)
+    makers = da.groupby("_state")["_mfr"].nunique()
+    att_alerts = da.groupby("_state").size()
+    states["manufacturers"] = makers.reindex(states.index).fillna(0).astype(int)
+    states["attributable"] = att_alerts.reindex(states.index).fillna(0).astype(int)
+    nat_rate = len(da) / max(int(da["_mfr"].nunique()), 1)
     return {
         "empty": False,
         "kpis": {
-            "alerts": n, "manufacturers": int(d["_mfr"].nunique()), "products": int(d["Product_Name_Canonical"].nunique()),
+            "alerts": n, "manufacturers": int(da["_mfr"].nunique()), "spurious": int(spur.sum()), "products": int(d["Product_Name_Canonical"].nunique()),
             "states": int((states.index != "Unknown").sum()), "labs": int(d["Reporting by Lab/State"].nunique()),
             "dissolution_share": round(100 * float(d["Is_Dissolution"].astype(bool).mean()), 1),
             "cdsco_share": round(100 * float((d["_src"] == "CDSCO lab").mean()), 1),
         },
         "period": insights._period(d),
         "trend": insights._month_series(d, "Failure_Category_Primary", top=7),
+        # Raw counts follow where samples were drawn and how many plants a state
+        # has; per-maker intensity (indexed to the national average) is the
+        # fairer comparison. Small states are left out of the index.
         "states": [{"name": s, "count": int(r.alerts), "manufacturers": int(r.manufacturers),
+                    "per_maker": round(r.attributable / r.manufacturers, 2) if r.manufacturers else None,
+                    "intensity": (round((r.attributable / r.manufacturers) / nat_rate, 2)
+                                  if r.manufacturers and r.attributable >= MIN_STATE_ALERTS else None),
                     "dissolution_pct": round(100 * r.dissolution / max(r.alerts, 1), 1)} for s, r in states.iterrows()],
+        "national_per_maker": round(nat_rate, 2),
         "categories": insights._counts(d, "Failure_Category_Primary", 20),
         "forms": insights._counts(d, "Form type", 12),
         "drug_types": insights._counts(d, "Drug type", 12),
         "labs": insights._counts(d, "Reporting by Lab/State", 15),
         "sources": insights._counts(d, "_src", 4),
         "top_products": insights._counts(d, "Product_Name_Canonical", 12),
-        "top_manufacturers": [{"name": k, "count": int(v)} for k, v in d["_mfr"].value_counts().head(15).items()],
+        "top_manufacturers": [{"name": k, "count": int(v)} for k, v in da["_mfr"].value_counts().head(15).items()],
         "heat_form_lab": _matrix(d, "Form type", "Reporting by Lab/State", 10, 10),
-        "heat_mfr_reason": _matrix(d, "_mfr", "Failure_Category_Primary", int(f.get("top_mfr") or 15), 12),
+        "heat_mfr_reason": _matrix(da, "_mfr", "Failure_Category_Primary", int(f.get("top_mfr") or 15), 12),
         "heat_mfr_molecule": _matrix(ing, "_mfr", "_ing", 15, 12),
         "sankey_state": _sankey(d, ["_state", "Drug type", "Failure_Category_Primary"], [8, 6, 6]),
         "sankey_molecule": _sankey(d.assign(_ing=d["Name of Product"].astype(str).map(lambda p: (insights.product_ingredients(p) or ["unknown"])[0])),
@@ -176,14 +195,22 @@ LEDGER_COLS = {
     "reason": ("NSQ Result", "NSQ result"), "form": ("Form type", "Form"), "drug_type": ("Drug type", "Drug type"),
     "lab": ("Reporting by Lab/State", "Testing lab"), "source": ("_src", "Lab type"), "mfg": ("Manufacturing Date", "Mfg"),
     "exp": ("Expiry Date", "Exp"), "website": ("Mfg_Website", "Website"), "product_key": ("Product_Ontology_Key", "Product key"),
-    "company_key": ("Mfg_Ontology_Key", "Company key"), "science": ("Scientific context research", "Scientific context"),
-    "regulation": ("Regulatory guidelines research", "Regulatory guideline"), "record": ("record_id", "Record id"),
+    "company_key": ("Mfg_Ontology_Key", "Company key"), "flag": ("_flag", "Authenticity"), "record": ("record_id", "Record id"),
 }
-DEFAULT_COLS = ["month", "product", "company", "state", "category", "reason", "form", "lab"]
+# The old branch's "Scientific context research" / "Regulatory guidelines
+# research" columns were filled from a per-ingredient template (or generic
+# boilerplate), not researched per alert, so they are not offered here.
+DEFAULT_COLS = ["month", "product", "company", "state", "category", "reason", "form", "lab", "flag"]
+SPURIOUS_FLAG = "Declared spurious: the maker on the label may not be the real maker"
+
+
+def _with_flag(df: pd.DataFrame) -> pd.DataFrame:
+    spur = df["_spurious"] if "_spurious" in df.columns else pd.Series(False, index=df.index)
+    return df.assign(_flag=spur.map({True: SPURIOUS_FLAG, False: ""}))
 
 
 def ledger(f: dict[str, Any], cols: list[str], sort: str, desc: bool, page: int, size: int) -> dict[str, Any]:
-    df = apply_filters(base_frame(), f)
+    df = _with_flag(apply_filters(base_frame(), f))
     cols = [c for c in cols if c in LEDGER_COLS] or DEFAULT_COLS
     sort_col = LEDGER_COLS.get(sort, LEDGER_COLS["month"])[0]
     df = df.sort_values(sort_col, ascending=not desc, na_position="last", kind="stable")
@@ -197,7 +224,7 @@ def ledger(f: dict[str, Any], cols: list[str], sort: str, desc: bool, page: int,
 
 
 def ledger_csv(f: dict[str, Any], cols: list[str], sort: str, desc: bool) -> str:
-    df = apply_filters(base_frame(), f)
+    df = _with_flag(apply_filters(base_frame(), f))
     cols = [c for c in cols if c in LEDGER_COLS] or DEFAULT_COLS
     df = df.sort_values(LEDGER_COLS.get(sort, LEDGER_COLS["month"])[0], ascending=not desc, na_position="last")
     out = df[[LEDGER_COLS[c][0] for c in cols]].rename(columns={LEDGER_COLS[c][0]: LEDGER_COLS[c][1] for c in cols})
@@ -280,7 +307,9 @@ def insights_view() -> dict[str, Any]:
 
 
 def _insights_view() -> dict[str, Any]:
-    df = base_frame()
+    full = base_frame()
+    spur = full[full["_spurious"]] if "_spurious" in full.columns else full.iloc[0:0]
+    df = full[~full["_spurious"]] if "_spurious" in full.columns else full
     d = df.assign(_mfr=_mfr_label(df))
     rep = d["Reporting Month & Year"].map(_ym)
     mfg = d["Manufacturing Date"].map(_ym)
@@ -400,6 +429,13 @@ def _insights_view() -> dict[str, Any]:
         "fda_overlap": fda_overlap,
         "whitespace": ws[:25],
         "seasonality": {"categories": focus_cats, "rows": season},
+        "spurious": {
+            "alerts": int(len(spur)), "share": round(100 * len(spur) / max(len(full), 1), 2),
+            "products": [{"name": str(k), "count": int(v)} for k, v in spur["Product_Name_Canonical"].fillna(spur["Name of Product"]).value_counts().head(10).items()],
+            "labs": [{"name": str(k), "count": int(v)} for k, v in spur["Reporting by Lab/State"].value_counts().head(8).items()],
+            "drug_types": [{"name": str(k), "count": int(v)} for k, v in spur["Drug type"].fillna("Unknown").value_counts().head(8).items()],
+            "by_year": [{"name": str(k), "count": int(v)} for k, v in spur["Parsed_Date"].dt.year.value_counts().sort_index().items()],
+        },
     }
 
 

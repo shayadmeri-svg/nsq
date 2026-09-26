@@ -8,8 +8,8 @@ import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
 
-export type Filters = { focus: string; drug_type: string[]; form: string[]; category: string[]; state: string[]; source: string[]; since: string; until: string; q: string };
-export const EMPTY: Filters = { focus: "all", drug_type: [], form: [], category: [], state: [], source: [], since: "", until: "", q: "" };
+export type Filters = { focus: string; drug_type: string[]; form: string[]; category: string[]; state: string[]; source: string[]; since: string; until: string; q: string; authenticity: string };
+export const EMPTY: Filters = { focus: "all", drug_type: [], form: [], category: [], state: [], source: [], since: "", until: "", q: "", authenticity: "" };
 
 export function qs(f: Filters, extra: Record<string, string | string[] | number | boolean> = {}) {
   const p = new URLSearchParams();
@@ -18,6 +18,7 @@ export function qs(f: Filters, extra: Record<string, string | string[] | number 
   if (f.since) p.set("since", f.since);
   if (f.until) p.set("until", f.until);
   if (f.q) p.set("q", f.q);
+  if (f.authenticity) p.set("authenticity", f.authenticity);
   for (const [k, v] of Object.entries(extra)) (Array.isArray(v) ? v : [v]).forEach((x) => p.append(k, String(x)));
   return p.toString();
 }
@@ -26,7 +27,7 @@ export function FilterBar({ f, set }: { f: Filters; set: (f: Filters) => void })
   const { data } = useQuery({ queryKey: ["pg-facets"], queryFn: () => api<any>("/api/playground/facets"), staleTime: 300_000 });
   const [q, setQ] = useState(f.q);
   useEffect(() => { const t = setTimeout(() => q !== f.q && set({ ...f, q }), 350); return () => clearTimeout(t); }, [q]); // eslint-disable-line
-  const active = f.drug_type.length + f.form.length + f.category.length + f.state.length + f.source.length + (f.since ? 1 : 0) + (f.until ? 1 : 0) + (f.q ? 1 : 0) + (f.focus !== "all" ? 1 : 0);
+  const active = f.drug_type.length + f.form.length + f.category.length + f.state.length + f.source.length + (f.since ? 1 : 0) + (f.until ? 1 : 0) + (f.q ? 1 : 0) + (f.focus !== "all" ? 1 : 0) + (f.authenticity ? 1 : 0);
   return (
     <Card className="sticky top-2 z-30 p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -43,6 +44,9 @@ export function FilterBar({ f, set }: { f: Filters; set: (f: Filters) => void })
         <select className="input h-9 w-28 text-xs" value={f.until} onChange={(e) => set({ ...f, until: e.target.value })}>
           <option value="">To</option>{(data?.months ?? []).map((m: string) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
         </select>
+        <select className="input h-9 w-36 text-xs" value={f.authenticity ?? ""} onChange={(e) => set({ ...f, authenticity: e.target.value })} title="Spurious = declared spurious; the maker on the label may not be the real maker">
+          <option value="">All batches</option><option value="genuine">Exclude spurious</option><option value="spurious">Spurious only</option>
+        </select>
         <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-ink-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product or manufacturer…" className="input h-9 w-56 pl-8 text-xs" /></div>
         {active > 0 && <button onClick={() => { setQ(""); set(EMPTY); }} className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink"><X size={12} /> Clear {active}</button>}
       </div>
@@ -56,6 +60,7 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
   const [topMfr, setTopMfr] = useState(15);
   const [heat, setHeat] = useState<"mfr_reason" | "mfr_molecule" | "form_lab">("mfr_reason");
   const [flow, setFlow] = useState<"state" | "molecule">("state");
+  const [mapMetric, setMapMetric] = useState<"alerts" | "intensity">("intensity");
   const cube = useQuery({ queryKey: ["pg-cube", f, topMfr], queryFn: () => api<any>(`/api/playground/cube?${qs(f, { top_mfr: topMfr })}`), placeholderData: keepPreviousData });
   const geo = useQuery({ queryKey: ["pg-geo"], queryFn: () => api<any>("/api/playground/geo/india"), staleTime: Infinity, retry: false });
   const d = cube.data;
@@ -69,7 +74,7 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
     <div className={cn("space-y-5 transition-opacity", cube.isFetching && "opacity-70")}>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <Stat label="Alerts" value={k.alerts} hint={`${fmtMonth(d.period.first)} – ${fmtMonth(d.period.last)}`} />
-        <Stat label="Manufacturers" value={k.manufacturers} tone="indigo" delay={0.03} hint={`${k.products.toLocaleString("en-IN")} products`} />
+        <Stat label="Manufacturers" value={k.manufacturers} tone="indigo" delay={0.03} hint={`${k.products.toLocaleString("en-IN")} products${k.spurious ? ` · ${k.spurious} spurious not attributed` : ""}`} />
         <Stat label="States" value={k.states} tone="amber" delay={0.06} hint={`${k.labs} testing labs`} />
         <Stat label="Dissolution share" value={k.dissolution_share} decimals={1} suffix="%" tone="rose" delay={0.09} />
         <Stat label="Found by CDSCO labs" value={k.cdsco_share} decimals={1} suffix="%" tone="brand" delay={0.12} hint="rest by state labs" />
@@ -77,8 +82,12 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
 
       <div className="grid gap-5 xl:grid-cols-[1.15fr_1fr]">
         <Card delay={0.05}>
-          <CardHeader title="Where the failing batches were made" subtitle="Alerts by manufacturing state — click a state to filter everything" />
-          <div className="p-4">{geo.data ? <IndiaMap geo={geo.data} values={d.states} selected={f.state} onPick={(s) => set({ ...f, state: toggle(f.state, s) })} /> : geo.error ? <div className="p-6 text-sm text-ink-muted">State boundaries not loaded in Redis.</div> : <Skeleton className="h-[460px]" />}</div>
+          <CardHeader title="Where the failing batches were made"
+            subtitle={mapMetric === "alerts" ? "Raw alert count by manufacturing state. Click a state to filter everything." : `Alerts per flagged maker vs the national average (${d.national_per_maker}). 1.0 = average; states with fewer than 20 alerts are grey.`}
+            action={<Segmented value={mapMetric} onChange={setMapMetric} options={[{ value: "intensity", label: "Per maker" }, { value: "alerts", label: "Raw count" }]} />} />
+          <div className="p-4">{geo.data ? <IndiaMap geo={geo.data} metricLabel={mapMetric === "alerts" ? "alerts" : "× national rate"}
+            values={mapMetric === "alerts" ? d.states : d.states.map((s: any) => ({ ...s, count: s.intensity ?? 0 }))} selected={f.state} onPick={(s) => set({ ...f, state: toggle(f.state, s) })} /> : geo.error ? <div className="p-6 text-sm text-ink-muted">State boundaries not loaded in Redis.</div> : <Skeleton className="h-[460px]" />}
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">NSQ alerts follow where regulators draw samples and how many plants a state has, so raw counts are not failure rates. "Per maker" compares states on repeat intensity instead. No public count of licensed units per state is loaded, so neither view is a true rate.</p></div>
         </Card>
         <Card delay={0.08}>
           <CardHeader title="Alerts per month" subtitle="By failure category" />
@@ -158,7 +167,7 @@ export function Ledger({ f }: { f: Filters }) {
           <tbody>
             {d?.rows.map((r: any, i: number) => (
               <tr key={i} className="border-b border-line/60 align-top hover:bg-slate-50">
-                {d.cols.map((c: any) => <td key={c.key} className={cn("px-3 py-2", ["science", "regulation", "manufacturer", "reason"].includes(c.key) ? "min-w-[260px] max-w-[420px]" : "max-w-[240px] truncate")} title={r[c.key]}>{c.key === "category" ? <Badge tone="rose">{r[c.key]}</Badge> : r[c.key] || "—"}</td>)}
+                {d.cols.map((c: any) => <td key={c.key} className={cn("px-3 py-2", ["manufacturer", "reason"].includes(c.key) ? "min-w-[260px] max-w-[420px]" : "max-w-[240px] truncate")} title={r[c.key]}>{c.key === "category" ? <Badge tone="rose">{r[c.key]}</Badge> : c.key === "flag" ? (r.flag ? <Badge tone="indigo">Spurious</Badge> : <span className="text-ink-faint">—</span>) : r[c.key] || "—"}</td>)}
               </tr>
             ))}
           </tbody>

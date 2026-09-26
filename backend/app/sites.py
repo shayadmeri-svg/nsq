@@ -90,6 +90,7 @@ def build_directory(df: pd.DataFrame) -> list[dict[str, Any]]:
     rec = _index((_source("fda_recalls")[1] or {}).get("data", {}))
     if df.empty:
         return []
+    df = data.attributable(df)
     d = df[["Manufactured By", "Mfg_Company_Canonical", "Mfg_Ontology_Key", "Mfg_City", "Mfg_State", "Form type",
             "Name of Product", "Failure_Category_Primary", "Parsed_Date"]].copy()
     d["pin"] = d["Manufactured By"].astype(str).map(_pincode)

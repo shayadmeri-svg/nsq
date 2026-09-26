@@ -67,7 +67,7 @@ export function InsightsTab() {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
-          <CardHeader title="A few manufacturers carry most of the problem" subtitle="Manufacturers grouped by how many alerts they have" />
+          <CardHeader title="A few manufacturers carry most of the problem" subtitle={`Manufacturers grouped by how many alerts they have · ${d.spurious.alerts} spurious batches excluded`} />
           <div className="p-4">
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={conc}><XAxis dataKey="tier" fontSize={11} /><YAxis yAxisId="l" fontSize={10} width={36} /><YAxis yAxisId="r" orientation="right" fontSize={10} width={36} tickFormatter={(v) => `${v}%`} /><Tooltip {...tip} />
@@ -75,7 +75,7 @@ export function InsightsTab() {
             </ResponsiveContainer>
           </div>
           <Takeaway>
-            {top && <><b>{top.manufacturers}</b> manufacturers with 10 or more alerts account for <b>{top.alert_share}%</b> of all NSQ alerts. </>}
+            {top && <><b>{top.manufacturers}</b> manufacturers with 10 or more alerts account for <b>{top.alert_share}%</b> of alerts attributable to a maker. </>}
             {d.repeat.repeat_share}% of alerts repeat the same product with the same failure at the same maker, so the corrective action didn't hold.
           </Takeaway>
           <div className="max-h-72 overflow-auto border-t border-line scrollbar-thin">
@@ -90,6 +90,16 @@ export function InsightsTab() {
           {hub && <Takeaway>PIN <b>{hub.pin}</b> ({hub.city || hub.state}) alone has <b>{hub.sites}</b> sites with alerts and {hub.alerts} alerts. Cluster-level interventions such as shared testing labs or state-led GMP audits reach many makers at once.</Takeaway>}
         </Card>
       </div>
+
+      <Card>
+        <CardHeader title="Spurious batches" subtitle="Declared spurious by the testing lab. They are listed under the company printed on the label, which often did not make them, so they are kept out of every company ranking." />
+        <div className="grid gap-5 p-5 md:grid-cols-3">
+          <div><div className="label mb-2">Products</div><RankBars rows={d.spurious.products} color="#7c3aed" /></div>
+          <div><div className="label mb-2">Therapeutic class</div><RankBars rows={d.spurious.drug_types} color="#7c3aed" /></div>
+          <div><div className="label mb-2">Found by</div><RankBars rows={d.spurious.labs} color="#0ea5e9" /></div>
+        </div>
+        <Takeaway><b>{d.spurious.alerts}</b> alerts ({d.spurious.share}%) are spurious. Some are counterfeits of real brands; others are the label maker's own product spiked with an undeclared drug. Either way the named company is not a confirmed source, so they appear here and in the Ledger (Authenticity column) but not in rankings.</Takeaway>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>

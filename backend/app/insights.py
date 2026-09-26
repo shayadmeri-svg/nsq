@@ -218,6 +218,7 @@ def issue_row(row: pd.Series) -> dict[str, Any]:
         "lab": _s(row.get("Reporting by Lab/State"), "—"),
         "source": _s(row.get("Reporting Source"), "—"),
         "manufacturer": _s(row.get("Mfg_Company_Canonical")) or _s(row.get("Mfg_Company"), "—"),
+        "spurious": bool(row.get("_spurious", False)),
         "mfg_state": _s(row.get("Mfg_State_Ontology")) or _s(row.get("Mfg_State"), "—"),
         "mfg_date": _s(row.get("Manufacturing Date"), "—"),
         "expiry": _s(row.get("Expiry Date"), "—"),
@@ -262,7 +263,8 @@ def platform_summary() -> dict[str, Any]:
     per = _period(df)
     last_month = per["last"]
     latest = df[df["Parsed_Date"].dt.strftime("%Y-%m") == last_month] if last_month else df.iloc[0:0]
-    mfg = df.groupby("Mfg_Ontology_Key").agg(
+    att = data.attributable(df)
+    mfg = att.groupby("Mfg_Ontology_Key").agg(
         alerts=("record_id", "size"),
         name=("Mfg_Company_Canonical", "first"),
         state=("Mfg_State_Ontology", "first"),
@@ -276,7 +278,8 @@ def platform_summary() -> dict[str, Any]:
     return {
         "kpis": {
             "alerts": int(len(df)),
-            "manufacturers": int(df["Mfg_Ontology_Key"].nunique()),
+            "manufacturers": int(att["Mfg_Ontology_Key"].nunique()),
+            "spurious": int(len(df) - len(att)),
             "products": int(df["Product_Ontology_Key"].nunique()) if "Product_Ontology_Key" in df else None,
             "latest_month": last_month,
             "latest_month_alerts": int(len(latest)),
@@ -310,7 +313,7 @@ def _platform_coverage(df: pd.DataFrame) -> dict[str, Any]:
 
 
 def manufacturer_search(q: str, limit: int = 20) -> list[dict[str, Any]]:
-    df = data.frame()
+    df = data.attributable(data.frame())
     g = df.groupby("Mfg_Ontology_Key").agg(
         alerts=("record_id", "size"), name=("Mfg_Company_Canonical", "first"),
         city=("Mfg_City", "first"), state=("Mfg_State_Ontology", "first"),
@@ -337,7 +340,8 @@ def org_quality(ontology_keys: list[str]) -> dict[str, Any]:
     if df.empty:
         return {"empty": True, "kpis": {"alerts": 0}, "period": _period(df)}
 
-    rank_series = national["Mfg_Ontology_Key"].value_counts()
+    # Ranks count only alerts attributable to the maker (spurious fakes excluded).
+    rank_series = data.attributable(national)["Mfg_Ontology_Key"].value_counts()
     ranks = [int(rank_series.index.get_loc(k)) + 1 for k in ontology_keys if k in rank_series.index]
     cat_org = df["Failure_Category_Primary"].value_counts(normalize=True)
     cat_nat = national["Failure_Category_Primary"].value_counts(normalize=True)
@@ -364,6 +368,7 @@ def org_quality(ontology_keys: list[str]) -> dict[str, Any]:
             "national_rank": min(ranks) if ranks else None,
             "manufacturers_ranked": int(len(rank_series)),
             "top_category": str(df["Failure_Category_Primary"].value_counts().index[0]),
+            "spurious": int(df["_spurious"].sum()) if "_spurious" in df.columns else 0,
         },
         "period": _period(df),
         "trend": _month_series(df, "Failure_Category_Primary", top=5),

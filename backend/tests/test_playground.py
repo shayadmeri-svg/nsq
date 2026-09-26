@@ -32,3 +32,22 @@ def test_playground_open_to_members_but_plants_scoped(client, root):
     m = client.get("/api/playground/molecule/paracetamol").json()
     ids = {p["asset_id"] for p in m["plants"]}
     assert "baddi-osd-a" in ids  # the org's own plant (and unowned demo plants)
+
+
+def test_spurious_kept_out_of_rankings(root):
+    import pandas as pd
+    from app import data, playground
+    df = data.mark_spurious(pd.DataFrame({"NSQ Result": ["Assay fails", "Declared Spurious", "Batch not been manufactured by us"],
+                                          "Manufactured By": ["A", "B", "C"]}))
+    assert df["_spurious"].tolist() == [False, True, True]
+    assert "science" not in playground.LEDGER_COLS and "regulation" not in playground.LEDGER_COLS
+    sp = root.get("/api/playground/ledger?authenticity=spurious&cols=flag&size=10").json()
+    assert all(r["flag"] for r in sp["rows"])
+    c = root.get("/api/playground/cube").json()
+    frame = data.frame()
+    spur_makers = set(frame[frame["_spurious"]]["Mfg_Company_Canonical"]) - set(frame[~frame["_spurious"]]["Mfg_Company_Canonical"])
+    assert not spur_makers & {m["name"] for m in c["top_manufacturers"]}
+    assert all(s["intensity"] is None or s["intensity"] > 0 for s in c["states"]) and c["national_per_maker"] > 0
+    ins = root.get("/api/playground/insights").json()
+    assert ins["spurious"]["alerts"] == int(frame["_spurious"].sum())
+    assert root.get("/api/playground/cube?authenticity=bogus").status_code == 422

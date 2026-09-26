@@ -55,7 +55,7 @@ export function Quality() {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="Alerts" value={k.alerts} icon={<Activity size={18} />} tone="rose" hint={`${k.last_12m} in the last 12 months`} />
         <Stat label="Products affected" value={k.products} icon={<Layers size={18} />} tone="amber" delay={0.05} hint={`${k.batches} distinct batches`} />
-        <Stat label="Share of all-India alerts" value={k.national_share_pct} decimals={2} suffix="%" icon={<Trophy size={18} />} tone="indigo" delay={0.1} hint={`Rank #${k.national_rank} of ${k.manufacturers_ranked.toLocaleString("en-IN")}`} />
+        <Stat label="Share of all-India alerts" value={k.national_share_pct} decimals={2} suffix="%" icon={<Trophy size={18} />} tone="indigo" delay={0.1} hint={`Rank #${k.national_rank} of ${k.manufacturers_ranked.toLocaleString("en-IN")}${k.spurious ? ` · ${k.spurious} spurious not ranked` : ""}`} />
         <Stat label="Top failure" value={k.top_category} tone="brand" delay={0.15} hint="most common reason in your alerts" />
       </div>
 
@@ -106,7 +106,7 @@ export function Quality() {
                 <motion.tr key={it.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.015 }} onClick={() => nav(`/o/${slug}/quality/${it.id}`)} className="cursor-pointer border-b border-line/70 transition hover:bg-brand-50/40">
                   <td className={`max-w-[300px] border-l-[3px] px-5 py-3 ${it.tracked?.length ? "border-brand-500" : "border-transparent"}`}><div className="truncate font-medium" title={it.product}>{it.product}</div><div className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">{it.form}{it.tracked?.length ? it.tracked.map((m: string) => <Link key={m} to={`/o/${slug}/opportunities/${m}`} onClick={(e) => e.stopPropagation()}><Badge tone="brand">Tracked · {m.split("_")[0]}</Badge></Link>) : <span className="rounded-full border border-dashed border-slate-300 px-1.5 text-[10px] text-ink-faint">untracked</span>}</div></td>
                   <td className="max-w-[340px] px-3 py-3 text-ink-soft"><div className="line-clamp-2 text-[13px]">{it.reason}</div></td>
-                  <td className="px-3 py-3"><Badge tone="rose">{it.category}</Badge></td>
+                  <td className="px-3 py-3"><Badge tone="rose">{it.category}</Badge>{it.spurious && <div className="mt-1" title="Declared spurious: the maker on the label may not be the real maker. Not counted in your rank."><Badge tone="indigo">Spurious</Badge></div>}</td>
                   <td className="px-3 py-3 font-mono text-xs">{it.batch}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right text-xs text-ink-muted">{fmtMonth(it.month)}</td>
                 </motion.tr>

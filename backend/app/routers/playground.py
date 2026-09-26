@@ -20,9 +20,10 @@ router = APIRouter(prefix="/api/playground", tags=["playground"])
 
 def _filters(focus: str = "all", drug_type: list[str] = Query(default=[]), form: list[str] = Query(default=[]),
              category: list[str] = Query(default=[]), state: list[str] = Query(default=[]), source: list[str] = Query(default=[]),
-             since: str = "", until: str = "", q: str = "", top_mfr: int = Query(15, ge=5, le=30)) -> dict[str, Any]:
+             since: str = "", until: str = "", q: str = "", top_mfr: int = Query(15, ge=5, le=30),
+             authenticity: str = Query("", pattern="^(|genuine|spurious)$")) -> dict[str, Any]:
     return {"focus": focus, "drug_type": drug_type, "form": form, "category": category, "state": state, "source": source,
-            "since": since, "until": until, "q": q, "top_mfr": top_mfr}
+            "since": since, "until": until, "q": q, "top_mfr": top_mfr, "authenticity": authenticity}
 
 
 @router.get("/facets")

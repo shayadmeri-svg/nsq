@@ -9,6 +9,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -36,6 +37,28 @@ def redis_client() -> redis.Redis:
     return redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=5)
 
 
+# CDSCO lists a batch "declared spurious" under the manufacturer printed on its
+# label. Often that company has told the regulator it never made the batch (a
+# counterfeit); sometimes the label maker is the culprit (e.g. an Ayurvedic
+# product spiked with an allopathic drug). Either way attribution is
+# unconfirmed, so these rows never count in company rankings and are flagged.
+SPURIOUS_RE = re.compile(r"spurious|not\s+been\s+manufactured\s+by|not\s+manufactured\s+by|disown", re.I)
+
+
+def mark_spurious(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "_spurious" in df.columns:
+        return df
+    txt = df.get("NSQ Result", pd.Series("", index=df.index)).astype(str) + " " + \
+        df.get("Manufactured By", pd.Series("", index=df.index)).astype(str)
+    df["_spurious"] = txt.str.contains(SPURIOUS_RE)
+    return df
+
+
+def attributable(df: pd.DataFrame) -> pd.DataFrame:
+    """Alerts that can fairly be attributed to the named manufacturer."""
+    return df[~df["_spurious"]] if "_spurious" in df.columns else df
+
+
 def _build_frame() -> tuple[pd.DataFrame, str]:
     df = data_loader.load_enriched_frame()
     if df is not None and not df.empty:
@@ -56,6 +79,7 @@ def frame() -> pd.DataFrame:
             df, source = _build_frame()
             if "Parsed_Date" in df.columns:
                 df["Parsed_Date"] = pd.to_datetime(df["Parsed_Date"], errors="coerce")
+            df = mark_spurious(df)
             _frame = (time.monotonic() + settings.frame_ttl_s, df, source)
         return _frame[1]
 
