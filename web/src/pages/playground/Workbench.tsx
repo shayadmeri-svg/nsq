@@ -117,6 +117,63 @@ function FitRanking({ moleculeKey, onScore }: { moleculeKey: string; onScore: (i
   );
 }
 
+const NEED_TONE: Record<string, "rose" | "amber" | "indigo" | "sky" | "slate"> = {
+  hazardous: "rose", hydrogenation: "amber", cryogenic: "indigo", pressure: "amber", organometallic: "rose",
+  high_temperature: "amber", pd_coupling: "sky", chlorinated_solvent: "slate",
+};
+
+function Synthesis({ moleculeKey }: { moleculeKey: string }) {
+  const q = useQuery({ queryKey: ["synthesis", moleculeKey], enabled: !!moleculeKey,
+    queryFn: () => api<any>(`/api/playground/molecule/${moleculeKey}/synthesis`) });
+  const [all, setAll] = useState(false);
+  const s = q.data;
+  if (!s || q.error) return null;
+  const top = (o: Record<string, number> | undefined) => Object.entries(o ?? {}).map(([k, n]) => `${k} (${n})`).join(" · ") || "—";
+  return (
+    <Card>
+      <CardHeader title="How it's made — Open Reaction Database"
+        subtitle={!s.available ? "Not loaded yet" : !s.found ? "No reaction in the ORD makes this molecule" : `${s.reactions} reactions from ${s.sources} patents / papers${s.yield_median != null ? ` · median yield ${s.yield_median}%` : ""}`} />
+      {!s.available ? <div className="p-5 text-xs text-ink-muted">Run <code>just fetch-ord</code> on a laptop (downloads ~1.3 GB once, scans in 10–20 min), then <code>just push-signals</code>.</div>
+        : !s.found ? <div className="p-5 text-xs text-ink-muted">Patents and papers in the ORD don't report this molecule as a product (or its structure isn't known yet). Biologics are not covered.</div> : (
+          <div className="p-5">
+            <div className="label mb-1.5">What the routes ask of an API plant</div>
+            {s.needs.length === 0 ? <div className="text-xs text-ink-muted">Nothing special: ambient-pressure reactions between −20 and 150 °C, no flagged reagents.</div> : (
+              <div className="grid gap-2 md:grid-cols-2">{s.needs.map((n: any) => (
+                <div key={n.key} className="rounded-lg border border-line p-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-2"><Badge tone={NEED_TONE[n.key] ?? "slate"}>{n.label}</Badge><span className="tabular-nums text-ink-muted">{n.share_pct}% of reactions</span></div>
+                  {n.equipment && <div className="mt-1 text-ink-soft">{n.equipment}</div>}
+                </div>
+              ))}</div>
+            )}
+            {Object.keys(s.hazards ?? {}).length > 0 && <div className="mt-2 text-xs"><span className="text-ink-muted">Hazardous reagents seen: </span>{top(s.hazards)}</div>}
+            <div className="mt-3 grid gap-x-6 gap-y-1 text-xs md:grid-cols-2">
+              <div><span className="text-ink-muted">Temperatures: </span>{s.temp_c ? `${s.temp_c.min} to ${s.temp_c.max} °C (median ${s.temp_c.median}, ${s.temp_c.n} reported)` : "not reported"}</div>
+              <div><span className="text-ink-muted">Solvents: </span>{top(s.solvents)}</div>
+              <div><span className="text-ink-muted">Catalysts: </span>{top(s.catalysts)}</div>
+              <div><span className="text-ink-muted">Reagents: </span>{top(s.reagents)}</div>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-left text-ink-muted"><th className="py-1 font-medium">From</th><th className="font-medium">Conditions</th><th className="font-medium">Reactants → product</th><th className="font-medium">Needs</th></tr></thead>
+                <tbody>{(all ? s.examples : s.examples.slice(0, 8)).map((r: any) => (
+                  <tr key={r.id} className="border-t border-line align-top">
+                    <td className="py-1.5 pr-3">{r.patent ? <a className="text-brand-700 hover:underline" href={`https://patents.google.com/patent/${r.patent.replace(/[^A-Z0-9]/gi, "")}`} target="_blank" rel="noreferrer">{r.patent}</a>
+                      : r.doi ? <a className="text-brand-700 hover:underline" href={`https://doi.org/${r.doi}`} target="_blank" rel="noreferrer">{r.doi}</a> : <span className="text-ink-muted">{r.dataset}</span>}</td>
+                    <td className="pr-3 tabular-nums text-ink-soft">{[r.temp_c != null && `${r.temp_c} °C`, r.pressure_bar != null && `${r.pressure_bar} bar`, r.atmosphere && r.atmosphere.toLowerCase(), r.hours != null && `${r.hours} h`, r.yield != null && `${r.yield}% yield`].filter(Boolean).join(" · ") || "—"}{r.solvents?.length ? <div className="text-ink-muted">{r.solvents.join(", ")}</div> : null}</td>
+                    <td className="max-w-md pr-3 text-ink-muted"><span className="line-clamp-2 break-all">{[...(r.reactants ?? []), ...(r.reagents ?? []), ...(r.catalysts ?? [])].slice(0, 6).join(" + ")}</span></td>
+                    <td className="pr-1"><div className="flex flex-wrap gap-1">{r.needs.map((n: string) => <Badge key={n} tone={NEED_TONE[n] ?? "slate"}>{n.replace("_", " ")}</Badge>)}</div></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              {s.examples.length > 8 && <button className="mt-1 text-xs text-brand-700 hover:underline" onClick={() => setAll(!all)}>{all ? "fewer" : `all ${s.examples.length} examples`}</button>}
+            </div>
+            <p className="mt-3 text-[11px] text-ink-faint">{s.note} Data: {s.licence}.</p>
+          </div>
+        )}
+    </Card>
+  );
+}
+
 export function Workbench({ initial }: { initial?: string }) {
   const list = useQuery({ queryKey: ["pg-world", ""], queryFn: () => api<any>("/api/playground/world") });
   const [key, setKey] = useState(initial ?? "");
@@ -252,6 +309,8 @@ export function Workbench({ initial }: { initial?: string }) {
           <FitRanking moleculeKey={key} onScore={(id) => { setPlant(`reg:${id}`); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
 
           <MakersCard moleculeKey={key} />
+
+          <Synthesis moleculeKey={key} />
 
           {(d.orange_book_curated || d.pharmacopeia) && (
             <div className="grid gap-5 xl:grid-cols-2">

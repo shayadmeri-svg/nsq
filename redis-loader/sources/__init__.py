@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import api_filings, cdsco_plants, health_signals, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, pubchem, purple_book
+from . import api_filings, cdsco_plants, health_signals, ord, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, pubchem, purple_book
 from .common import Ctx
 
 CDSCO_META = {
@@ -34,6 +34,7 @@ SOURCES: dict[str, dict[str, Any]] = {
     "fda_inspections": {**fda_inspections.META, "run": fda_inspections.run, "group": "sites", "min_interval_days": 7},
     "fda_dmf": {**api_filings.DMF, "run": api_filings.run_dmf, "group": "molecules", "min_interval_days": 30},
     "edqm_cep": {**api_filings.CEP, "run": api_filings.run_cep, "group": "molecules", "min_interval_days": 7},
+    "ord": {**ord.META, "run": ord.run, "group": "chemistry", "min_interval_days": 30},
     "nfhs": {**health_signals.NFHS, "run": health_signals.run_nfhs, "group": "demand"},
     "idsp": {**health_signals.IDSP, "run": health_signals.run_idsp, "group": "demand", "min_interval_days": 3},
     "comtrade": {**health_signals.COMTRADE, "run": health_signals.run_comtrade, "group": "demand", "min_interval_days": 30},

@@ -61,3 +61,17 @@ def test_signals_missing(admin, monkeypatch):
     monkeypatch.setattr(signals, "_load", lambda name: {})
     assert admin.get("/api/playground/signals/nfhs", headers=H).json() == {"available": False}
     assert admin.get("/api/playground/signals/trade", params={"flow": "sideways"}, headers=H).status_code == 422
+
+
+def test_synthesis_endpoint(admin, monkeypatch):
+    from app import signals
+
+    ordj = {"retrieved_at": "2026-09-28", "records": 1, "licence": "CC BY-SA 4.0 — Open Reaction Database",
+            "needs": {"hydrogenation": "Hydrogenation (H₂ under pressure, Pd/C, Raney Ni)"},
+            "data": {"paracetamol": {"name": "Paracetamol", "reactions": 2, "sources": 1, "needs": {"hydrogenation": {"reactions": 1, "share_pct": 50.0}},
+                                     "hazards": {}, "temp_c": {"min": 25, "median": 32.5, "max": 40, "n": 2}, "yield_median": 88,
+                                     "solvents": {"Methanol": 1}, "catalysts": {}, "reagents": {}, "examples": [{"id": "r1", "needs": ["hydrogenation"]}]}}}
+    monkeypatch.setattr(signals, "_load", lambda name: ordj if name == "ord" else {})
+    s = admin.get("/api/playground/molecule/paracetamol/synthesis", headers=H).json()
+    assert s["found"] and s["reactions"] == 2 and s["needs"][0]["key"] == "hydrogenation" and "H₂" in s["needs"][0]["equipment"]
+    assert admin.get("/api/playground/molecule/nothing/synthesis", headers=H).json() == {"available": True, "found": False, "meta": signals._meta(ordj)}

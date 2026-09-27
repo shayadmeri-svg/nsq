@@ -146,3 +146,11 @@ def signals_trade(hs: str = Query("", pattern=r"^(|\d{4})$"), flow: str = Query(
     from .. import signals
 
     return signals.trade(hs, flow)
+
+
+@router.get("/molecule/{key}/synthesis")
+def molecule_synthesis(key: str, user: User = Depends(current_user)):
+    """How the molecule is made: reactions from the Open Reaction Database."""
+    from .. import signals
+
+    return signals.synthesis(key)

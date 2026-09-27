@@ -184,3 +184,33 @@ def trade(hs: str = "", flow: str = "export") -> dict[str, Any]:
             "china_api_share": china, "mode": d.get("mode"), "meta": _meta(d),
             "note": "US$ million, as reported by India (exports FOB, imports CIF). HS codes are product classes — 3004 is all dosed "
                     "medicines, 2941 all antibiotics — not single molecules."}
+
+
+# ------------------------------------------------------------------------------------------ Open Reaction Database
+
+_EQUIPMENT = {
+    "hydrogenation": "Hydrogenator / pressure reactor rated for H₂, catalyst filtration, flameproof (zone 1) area",
+    "cryogenic": "Cryogenic reactor (−20 to −90 °C) with liquid-nitrogen or thermal-fluid chilling",
+    "high_temperature": "Hot-oil heated reactor (≥ 150 °C)",
+    "pressure": "Pressure-rated reactor (> 2 bar)",
+    "organometallic": "Moisture-free, nitrogen-blanketed reactors; pyrophoric reagent handling",
+    "hazardous": "Containment and quench systems for azide / cyanide / phosgene / hydride reagents",
+    "pd_coupling": "Metal scavenging and ICH Q3D residual-palladium testing",
+    "chlorinated_solvent": "Chlorinated-solvent recovery and emission control",
+}
+
+
+def synthesis(key: str) -> dict[str, Any]:
+    d = _load("ord")
+    rows = d.get("data") or {}
+    if not rows:
+        return {"available": False}
+    m = rows.get(key)
+    labels = d.get("needs") or {}
+    if not m:
+        return {"available": True, "found": False, "meta": _meta(d)}
+    return {"available": True, "found": True, **m,
+            "needs": [{"key": k, "label": labels.get(k, k), "equipment": _EQUIPMENT.get(k), **v} for k, v in (m.get("needs") or {}).items()],
+            "meta": _meta(d), "licence": d.get("licence"),
+            "note": "Reactions whose product is this molecule (salts and stereo forms included), from patents and papers in the "
+                    "Open Reaction Database. They show routes that have been used, not the route any one maker runs."}

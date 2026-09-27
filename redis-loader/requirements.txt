@@ -9,3 +9,6 @@ openpyxl>=3.1
 # cdsco_plants: CDSCO's WHO-GMP list is a PDF
 pdfplumber>=0.11
 xlrd>=2.0
+# ord: Open Reaction Database scan (Parquet reactions, RDKit matching)
+ord-schema>=0.8
+rdkit>=2024.3
