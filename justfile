@@ -298,9 +298,11 @@ fetch-fda-sites: (fetch-source "fda_establishments") (fetch-source "fda_import_a
 #   just push-plant-registry ec2-user@ec2-….compute-1.amazonaws.com ~/.ssh/key.pem
 
 # CDSCO SUGAM sites + WHO-GMP PDF -> data/sources/cdsco_plants.json (+ .csv)
-fetch-plants FILE="": _plant-deps (fetch-source "cdsco_plants" FILE)
+fetch-plants FILE="": _plant-deps
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py cdsco_plants {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
 # EU GMP certificates + non-compliance statements for India (~1,050 documents, ~15 min first run; later runs fetch only new ones)
-fetch-eudragmdp: (fetch-source "eudragmdp")
+fetch-eudragmdp:
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py eudragmdp
 # Both, in order (the app merges them into one registry)
 fetch-plant-registry: fetch-plants fetch-eudragmdp
 

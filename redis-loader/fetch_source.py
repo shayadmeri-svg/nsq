@@ -13,6 +13,7 @@ Exit codes: 0 ok, 1 error, 2 source unreachable, 3 unchanged since last fetch
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 import traceback
@@ -35,7 +36,7 @@ def run_one(name: str, args) -> int:
     # also keeps publishers' abuse detection (FDA) from blocking the server.
     min_days = spec.get("min_interval_days", 0)
     last = (read_manifest().get(name) or {}).get("last_success")
-    if min_days and last and not args.force and not args.from_file:
+    if min_days and last and not args.force and not args.from_file and not os.environ.get("NSQ_IGNORE_INTERVAL"):
         from datetime import datetime, timezone
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() / 86400
         if age < min_days:
