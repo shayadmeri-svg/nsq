@@ -25,6 +25,7 @@ import requests
 import ingredients as ing
 
 from . import data, insights
+from .config import settings
 
 TIMEOUT = 12
 HEADERS = {"User-Agent": "nsq-platform/2.0 (medicine lookup)", "Accept": "application/json"}
@@ -234,7 +235,10 @@ def _num(v: Any) -> Optional[float]:
 
 
 def pubchem(name: str) -> Optional[dict[str, Any]]:
-    from sources import pubchem as pc  # redis-loader/sources (on sys.path)
+    import sys
+    if str(settings.loader_dir) not in sys.path:
+        sys.path.insert(0, str(settings.loader_dir))
+    from sources import pubchem as pc  # redis-loader/sources
     names = [name, *_NAME_ALIASES.get(_fold(name), [])]
     r = pc.lookup(names)
     return r if r.get("found") else None
