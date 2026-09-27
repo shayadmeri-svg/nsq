@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Info } from "lucide-react";
+import { ExternalLink, Globe2, Info, Maximize2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge, Card, CardHeader, ErrorNote, PageSkeleton, Segmented } from "../../components/ui";
 import { WorldMap } from "../../components/viz";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtDate } from "../../lib/format";
+import { ExpandedProvider, type Section } from "../../components/ui/Expanded";
 
 type Metric = "strictness" | "pics" | "exclusivity" | "linkage" | "molecule";
 const STATUS_COLOR: Record<string, string> = { off_patent: "#10b996", loe_pending: "#f59e0b", patented: "#e11d48" };
@@ -16,6 +17,7 @@ export function RegulatoryMap() {
   const [metric, setMetric] = useState<Metric>("strictness");
   const [molecule, setMolecule] = useState("");
   const [picked, setPicked] = useState<string | null>("IN");
+  const [active, setActive] = useState<string | null>(null);
   const { data: d, isLoading, error } = useQuery({ queryKey: ["pg-world", molecule], queryFn: () => api<any>(`/api/playground/world?molecule=${encodeURIComponent(molecule)}`) });
   const eu = useMemo(() => new Set<string>(d?.eu_members ?? []), [d]);
   if (isLoading) return <PageSkeleton />;
@@ -48,13 +50,33 @@ export function RegulatoryMap() {
   const byRegion = REGION_ORDER.map((r) => ({ region: r, codes: Object.keys(d.markets).filter((c) => d.markets[c].region === r) })).filter((r) => r.codes.length);
   const yes = (v: any) => (v == null ? <span className="text-ink-faint">check</span> : v === true ? "Yes" : v === false ? "No" : v);
 
+  const sections: Section[] = [{ id: "compare", title: "Side by side", icon: <Globe2 size={16} />, subtitle: "India vs the markets Indian generics export to — click a row to pick it on the map", render: () => (
+    <div className="-m-5 overflow-x-auto bg-white md:-m-6">
+      <table className="w-full min-w-[1100px] text-xs">
+        <thead className="sticky top-0 z-10"><tr className="border-b border-line bg-slate-50 text-left text-[10.5px] uppercase tracking-wider text-ink-muted">
+          <th className="sticky left-0 bg-slate-50 px-4 py-2.5">Market</th>{d.fields.filter((f: any) => f.key !== "regulator").map((f: any) => <th key={f.key} className="px-3 py-2.5">{f.label}</th>)}</tr></thead>
+        <tbody>
+          {byRegion.map((r) => [
+            <tr key={r.region}><td colSpan={d.fields.length + 1} className="bg-slate-50/50 px-4 py-1.5 text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">{r.region}</td></tr>,
+            ...r.codes.map((c) => { const m = d.markets[c]; return (
+              <tr key={c} onClick={() => { setPicked(c); setActive(null); }} className={cn("cursor-pointer border-b border-line/60 align-top hover:bg-slate-50", picked === c && "bg-brand-50/40", c === "IN" && "font-semibold")}>
+                <td className="sticky left-0 whitespace-nowrap bg-white px-4 py-2">{m.name}<div className="font-normal text-ink-faint">{m.regulator}</div></td>
+                {d.fields.filter((f: any) => f.key !== "regulator").map((f: any) => <td key={f.key} className="min-w-[130px] px-3 py-2 text-ink-soft">{yes(m[f.key])}</td>)}
+              </tr>); }),
+          ])}
+        </tbody>
+      </table>
+    </div>
+  ) }];
+
   return (
+    <ExpandedProvider sections={sections} active={active} onActive={setActive} title="Regulation map">
     <div className="space-y-5">
       <Card>
-        <CardHeader title="Generic-medicine regulation by market" subtitle="How hard each market is to enter, and what blocks a generic — click a country"
-          action={<Segmented value={metric} onChange={setMetric} options={[{ value: "strictness", label: "Stringency" }, { value: "pics", label: "PIC/S GMP" }, { value: "exclusivity", label: "Data exclusivity" }, { value: "linkage", label: "Patent linkage" }, { value: "molecule", label: "A molecule" }]} />} />
-        <div className="grid gap-4 p-4 xl:grid-cols-[1.9fr_1fr]">
-          <div>
+        <CardHeader title="Generic-medicine regulation by market" subtitle="How hard each market is to enter, and what blocks a generic — click a country" />
+        <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
+          <div className="min-w-0">
+            <div className="mb-3"><Segmented value={metric} onChange={setMetric} options={[{ value: "strictness", label: "Stringency" }, { value: "pics", label: "PIC/S GMP" }, { value: "exclusivity", label: "Data exclusivity" }, { value: "linkage", label: "Patent linkage" }, { value: "molecule", label: "A molecule" }]} /></div>
             {metric === "molecule" && (
               <select className="input mb-3 h-9 w-72 text-sm" value={molecule} onChange={(e) => setMolecule(e.target.value)}>
                 <option value="">Pick a tracked molecule…</option>{d.molecules.map((m: any) => <option key={m.key} value={m.key}>{m.name}</option>)}
@@ -67,14 +89,14 @@ export function RegulatoryMap() {
           </div>
           <div>
             {sel ? (
-              <div className="max-h-[560px] overflow-auto rounded-2xl border border-line p-4 scrollbar-thin">
+              <div className="rounded-2xl border border-line p-4">
                 <div className="flex items-start justify-between gap-2"><div><div className="font-display text-lg font-bold">{sel.name}</div><div className="text-xs text-ink-muted">{sel.regulator} · {sel.region}</div></div><Badge tone="indigo">stringency {sel.strictness}/5</Badge></div>
                 <dl className="mt-3 space-y-2 text-xs">
-                  {d.fields.filter((f: any) => f.key !== "regulator").map((f: any) => (
+                  {d.fields.filter((f: any) => f.key !== "regulator").slice(0, 5).map((f: any) => (
                     <div key={f.key}><dt className="text-[10.5px] font-semibold uppercase tracking-wider text-ink-faint">{f.label}</dt><dd className="font-medium text-ink-soft">{f.key === "pics_member" ? yes(sel.pics_member) : f.key === "patent_linkage" ? yes(sel.patent_linkage) : yes(sel[f.key])}</dd></div>
                   ))}
                 </dl>
-                {sel.notes && <div className="mt-3 rounded-lg bg-slate-50 p-2.5 text-[11.5px] text-ink-soft">{sel.notes}</div>}
+                <button onClick={() => setActive("compare")} className="mt-3 text-left text-xs font-medium text-brand-700 hover:underline">All {d.fields.length - 1} rules for {sel.name}, side by side with every market ↗</button>
                 {counts && <div className="mt-3"><div className="label mb-1.5">Tracked molecules here ({d.molecule_total})</div>
                   <div className="flex flex-wrap gap-1.5">{Object.entries(counts).filter(([k]) => k !== "export_eligible").map(([k, v]: any) => <span key={k} className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white" style={{ background: STATUS_COLOR[k] ?? "#64748b" }}>{k.replace("_", " ")} {v}</span>)}
                     {counts.export_eligible != null && <Badge tone="brand">export-eligible {counts.export_eligible}</Badge>}</div></div>}
@@ -114,29 +136,18 @@ export function RegulatoryMap() {
         })}
       </div>
 
-      <Card>
-        <CardHeader title="Side by side" subtitle="India vs the markets Indian generics export to — grouped by region" />
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead><tr className="border-y border-line bg-slate-50/70 text-left text-[10.5px] uppercase tracking-wider text-ink-muted">
-              <th className="px-4 py-2.5">Market</th>{d.fields.filter((f: any) => f.key !== "regulator").map((f: any) => <th key={f.key} className="px-3 py-2.5">{f.label}</th>)}</tr></thead>
-            <tbody>
-              {byRegion.map((r) => [
-                <tr key={r.region}><td colSpan={d.fields.length + 1} className="bg-slate-50/50 px-4 py-1.5 text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">{r.region}</td></tr>,
-                ...r.codes.map((c) => { const m = d.markets[c]; return (
-                  <tr key={c} onClick={() => setPicked(c)} className={cn("cursor-pointer border-b border-line/60 align-top hover:bg-slate-50", picked === c && "bg-brand-50/40", c === "IN" && "font-semibold")}>
-                    <td className="whitespace-nowrap px-4 py-2">{m.name}<div className="font-normal text-ink-faint">{m.regulator}</div></td>
-                    {d.fields.filter((f: any) => f.key !== "regulator").map((f: any) => <td key={f.key} className="min-w-[120px] px-3 py-2 text-ink-soft">{f.key === "pics_member" || f.key === "patent_linkage" ? yes(m[f.key]) : yes(m[f.key])}</td>)}
-                  </tr>); }),
-              ])}
-            </tbody>
-          </table>
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <div className="font-display text-[15px] font-bold">Side by side</div>
+          <div className="text-xs text-ink-muted">India vs the {Object.keys(d.markets).length - 1} markets Indian generics export to — every rule, grouped by region</div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-5 py-3 text-[11px] text-ink-muted">
+        <button onClick={() => setActive("compare")} className="inline-flex items-center gap-1.5 rounded-xl bg-night-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-night-700"><Maximize2 size={13} /> Compare all markets</button>
+        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 text-[11px] text-ink-muted">
           <span className="flex items-center gap-1"><Info size={12} /> {d.disclaimer} Compiled {d.as_of}.</span>
-          {Object.values(d.sources).map((s: any) => <a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 text-brand-700 hover:underline">{s.label}<ExternalLink size={10} /></a>)}
+          {Object.values(d.sources).map((s2: any) => <a key={s2.url} href={s2.url} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 text-brand-700 hover:underline">{s2.label}<ExternalLink size={10} /></a>)}
         </div>
       </Card>
     </div>
+    </ExpandedProvider>
   );
 }

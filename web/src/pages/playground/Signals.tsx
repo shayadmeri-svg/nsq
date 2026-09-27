@@ -7,6 +7,7 @@ import { Badge, Card, CardHeader, ErrorNote, Segmented, Skeleton, Stat } from ".
 import { IndiaMap } from "../../components/viz";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { ExpandedProvider, type Section } from "../../components/ui/Expanded";
 
 const nf = (n: number | null | undefined, d = 0) => (n == null ? "—" : n.toLocaleString("en-IN", { maximumFractionDigits: d }));
 
@@ -26,7 +27,20 @@ function Change({ v, invert = false }: { v: number | null | undefined; invert?: 
 
 // ------------------------------------------------------------------------------------ NFHS
 
+function DistrictTable({ d, rows }: { d: any; rows: any[] }) {
+  return (
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 bg-white"><tr className="text-left text-ink-muted"><th className="py-1.5 font-medium">District</th><th className="font-medium">State</th><th className="text-right font-medium">{d.round}</th>{d.previous_round && <th className="text-right font-medium">vs {d.previous_round}</th>}</tr></thead>
+      <tbody>{rows.map((r: any) => (
+        <tr key={r.state + r.district} className="border-t border-line"><td className="py-1.5">{r.district}</td><td className="text-ink-muted">{r.state}</td>
+          <td className="text-right font-semibold tabular-nums">{r.value}%</td>{d.previous_round && <td className="text-right"><Change v={r.change} /></td>}</tr>
+      ))}</tbody>
+    </table>
+  );
+}
+
 function Burden({ geo }: { geo: any }) {
+  const [openAll, setOpenAll] = useState<string | null>(null);
   const [ind, setInd] = useState("sugar_women");
   const [rnd, setRnd] = useState("");
   const [state, setState] = useState("");
@@ -34,12 +48,15 @@ function Burden({ geo }: { geo: any }) {
     queryFn: () => api<any>(`/api/playground/signals/nfhs?${new URLSearchParams({ ind, round: rnd, state })}`) });
   const d = q.data;
   const label = d?.indicators?.find((i: any) => i.key === d.indicator)?.label ?? "";
+  const burdenSections: Section[] = d?.available ? [{ id: "districts", title: `${label} — every district`, icon: <HeartPulse size={16} />, subtitle: `${d.round}${d.previous_round ? ` vs ${d.previous_round}` : ""}${state ? ` · ${state}` : ""} · highest first`,
+    render: () => <div className="max-w-3xl rounded-2xl bg-white p-4 ring-1 ring-inset ring-line"><DistrictTable d={d} rows={d.districts} /></div> }] : [];
   const groups = useMemo(() => {
     const g: Record<string, any[]> = {};
     for (const i of d?.indicators ?? []) (g[i.group] ??= []).push(i);
     return g;
   }, [d]);
   return (
+    <ExpandedProvider sections={burdenSections} active={openAll} onActive={setOpenAll} title="Disease burden">
     <Card>
       <CardHeader icon={<HeartPulse size={16} />} title="Disease burden by district — NFHS"
         subtitle={d?.available ? `${label} · ${d.round}${d.previous_round ? ` vs ${d.previous_round}` : ""}${d.india != null ? ` · India ${d.india}%` : ""}` : "National Family Health Survey fact sheets"} />
@@ -62,15 +79,8 @@ function Burden({ geo }: { geo: any }) {
             </div>
             <div>
               <div className="label mb-1.5">Highest districts{state ? ` in ${state}` : ""} <span className="font-normal normal-case text-ink-faint">· {nf(d.districts_total)} districts</span></div>
-              <div className="max-h-[430px] overflow-auto">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-white"><tr className="text-left text-ink-muted"><th className="py-1 font-medium">District</th><th className="font-medium">State</th><th className="text-right font-medium">{d.round}</th>{d.previous_round && <th className="text-right font-medium">vs {d.previous_round}</th>}</tr></thead>
-                  <tbody>{d.districts.slice(0, 60).map((r: any) => (
-                    <tr key={r.state + r.district} className="border-t border-line"><td className="py-1">{r.district}</td><td className="text-ink-muted">{r.state}</td>
-                      <td className="text-right font-semibold tabular-nums">{r.value}%</td>{d.previous_round && <td className="text-right"><Change v={r.change} /></td>}</tr>
-                  ))}</tbody>
-                </table>
-              </div>
+              <DistrictTable d={d} rows={d.districts.slice(0, 12)} />
+              {d.districts_total > 12 && <button onClick={() => setOpenAll("districts")} className="mt-2 text-xs font-medium text-brand-700 hover:underline">All {nf(d.districts_total)} districts{state ? ` in ${state}` : ""} ↗</button>}
               {d.risers?.length > 0 && <div className="mt-3"><div className="label mb-1">Biggest rises since {d.previous_round}</div>
                 <div className="flex flex-wrap gap-1">{d.risers.map((r: any) => <Badge key={r.state + r.district} tone="rose">{r.district} +{r.change}</Badge>)}</div></div>}
             </div>
@@ -79,19 +89,23 @@ function Burden({ geo }: { geo: any }) {
         </div>
       )}
     </Card>
+    </ExpandedProvider>
   );
 }
 
 // ------------------------------------------------------------------------------------ IDSP
 
 function Outbreaks({ geo }: { geo: any }) {
+  const [openAll, setOpenAll] = useState<string | null>(null);
   const [weeks, setWeeks] = useState<"8" | "13" | "26" | "52">("26");
   const [disease, setDisease] = useState("");
   const [state, setState] = useState("");
   const q = useQuery({ queryKey: ["sig-idsp", weeks, disease, state], placeholderData: keepPreviousData,
     queryFn: () => api<any>(`/api/playground/signals/outbreaks?${new URLSearchParams({ weeks, disease, state })}`) });
   const d = q.data;
+  const obSections: Section[] = d?.available ? [{ id: "latest", title: "Latest outbreak reports", icon: <Activity size={16} />, subtitle: `${d.latest.length} most recent in this selection`, render: () => <LatestReports d={d} /> }] : [];
   return (
+    <ExpandedProvider sections={obSections} active={openAll} onActive={setOpenAll} title="Outbreaks">
     <Card>
       <CardHeader icon={<Activity size={16} />} title="Outbreaks — IDSP weekly reports"
         subtitle={d?.available ? `${d.weeks.length} weeks (${d.weeks[0]} → ${d.weeks[d.weeks.length - 1]})${disease ? ` · ${disease}` : ""}${state ? ` · ${state}` : ""}` : "Integrated Disease Surveillance Programme"} />
@@ -130,19 +144,25 @@ function Outbreaks({ geo }: { geo: any }) {
               <RankBars rows={d.districts.map((x: any) => ({ name: `${x.district}, ${x.state}`, count: x.outbreaks }))} color="#e11d48" />
             </div>
           </div>
-          <details className="mt-4 text-xs">
-            <summary className="cursor-pointer text-brand-700">Latest {d.latest.length} reports</summary>
-            <table className="mt-2 w-full">
+          <button onClick={() => setOpenAll("latest")} className="mt-4 text-xs font-medium text-brand-700 hover:underline">Latest {d.latest.length} reports ↗</button>
+          <p className="mt-3 text-[11px] text-ink-faint">{d.note}</p>
+        </div>
+      )}
+    </Card>
+    </ExpandedProvider>
+  );
+}
+
+function LatestReports({ d }: { d: any }) {
+  return (
+    <div className="rounded-2xl bg-white p-4 text-xs ring-1 ring-inset ring-line">
+            <table className="w-full">
               <tbody>{d.latest.map((r: any, i: number) => (
                 <tr key={(r.id ?? "") + i} className="border-t border-line"><td className="py-1 pr-2 tabular-nums text-ink-muted">{r.reported ?? r.start ?? r.week}</td><td className="pr-2">{r.district}, {r.state}</td>
                   <td className="pr-2">{r.disease}</td><td className="pr-2 text-right tabular-nums">{r.cases} cases{r.deaths ? ` · ${r.deaths} deaths` : ""}</td><td className="text-ink-muted">{r.status}</td></tr>
               ))}</tbody>
             </table>
-          </details>
-          <p className="mt-3 text-[11px] text-ink-faint">{d.note}</p>
-        </div>
-      )}
-    </Card>
+    </div>
   );
 }
 

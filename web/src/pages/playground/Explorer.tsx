@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Columns3, Download, Search, SlidersHorizontal, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Columns3, Download, Factory, FlaskConical, Grid3x3, Package, Pill, Search, ShieldAlert, SlidersHorizontal, Stethoscope, Waypoints, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Legendary, RankBars, TrendArea } from "../../components/charts";
 import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton, Stat } from "../../components/ui";
@@ -7,6 +7,7 @@ import { Heatmap, IndiaMap, MultiSelect, SankeyChart } from "../../components/vi
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
+import { ExpandedProvider, Tile, type Section } from "../../components/ui/Expanded";
 
 export type Filters = { focus: string; drug_type: string[]; form: string[]; category: string[]; state: string[]; source: string[]; since: string; until: string; q: string; authenticity: string };
 export const EMPTY: Filters = { focus: "all", drug_type: [], form: [], category: [], state: [], source: [], since: "", until: "", q: "", authenticity: "" };
@@ -61,6 +62,7 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
   const [heat, setHeat] = useState<"mfr_reason" | "mfr_molecule" | "form_lab">("mfr_reason");
   const [flow, setFlow] = useState<"state" | "molecule">("state");
   const [mapMetric, setMapMetric] = useState<"alerts" | "intensity">("intensity");
+  const [active, setActive] = useState<string | null>(null);
   const cube = useQuery({ queryKey: ["pg-cube", f, topMfr], queryFn: () => api<any>(`/api/playground/cube?${qs(f, { top_mfr: topMfr })}`), placeholderData: keepPreviousData });
   const geo = useQuery({ queryKey: ["pg-geo"], queryFn: () => api<any>("/api/playground/geo/india"), staleTime: Infinity, retry: false });
   const d = cube.data;
@@ -70,7 +72,40 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
   const k = d.kpis;
   const hm = heat === "mfr_reason" ? d.heat_mfr_reason : heat === "mfr_molecule" ? d.heat_mfr_molecule : d.heat_form_lab;
 
+  const breakdowns = [
+    { id: "categories", title: "Failure categories", hint: "Click to filter", icon: <ShieldAlert size={14} />, rows: d.categories, color: "#e11d48", onClick: (n: string) => set({ ...f, category: toggle(f.category, n) }) },
+    { id: "forms", title: "Dosage forms", hint: "Click to filter", icon: <Pill size={14} />, rows: d.forms, color: "#f59e0b", onClick: (n: string) => set({ ...f, form: toggle(f.form, n) }) },
+    { id: "classes", title: "Therapeutic class", hint: "Click to filter", icon: <Stethoscope size={14} />, rows: d.drug_types, color: "#10b996", onClick: (n: string) => set({ ...f, drug_type: toggle(f.drug_type, n) }) },
+    { id: "makers", title: "Most-flagged manufacturers", hint: "Click to search", icon: <Factory size={14} />, rows: d.top_manufacturers, color: "#f59e0b", onClick: (n: string) => set({ ...f, q: n }) },
+    { id: "products", title: "Most-flagged products", hint: "Brand and strength as labelled", icon: <Package size={14} />, rows: d.top_products, color: "#8b5cf6", onClick: undefined },
+    { id: "labs", title: "Testing labs", hint: "Who found them", icon: <FlaskConical size={14} />, rows: d.labs, color: "#0ea5e9", onClick: undefined },
+  ];
+  const cells: { row: string; col: string; v: number }[] = [];
+  (d.heat_mfr_reason?.rows ?? []).forEach((r: string, i: number) => (d.heat_mfr_reason.cols ?? []).forEach((c: string, j: number) => cells.push({ row: r, col: c, v: d.heat_mfr_reason.values[i][j] })));
+  const hot = cells.sort((a, b2) => b2.v - a.v)[0];
+  const hmPreview: number[] = (d.heat_mfr_reason?.values ?? []).slice(0, 6).flatMap((r: number[]) => r.slice(0, 12).concat(Array(Math.max(0, 12 - r.length)).fill(0)));
+  const hmMax = Math.max(1, ...hmPreview);
+  const sections: Section[] = [
+    ...breakdowns.map((b) => ({ id: b.id, title: b.title, icon: b.icon, subtitle: b.hint, render: () => <div className="max-w-3xl"><RankBars rows={b.rows} color={b.color} onClick={b.onClick ? (n: string) => { b.onClick!(n); setActive(null); } : undefined} /></div> })),
+    { id: "heatmap", title: "Heatmap", icon: <Grid3x3 size={16} />, subtitle: "Where problems concentrate — darker = more alerts", render: () => (
+      <div>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Segmented value={heat} onChange={setHeat} options={[{ value: "mfr_reason", label: "Maker × failure" }, { value: "mfr_molecule", label: "Maker × molecule" }, { value: "form_lab", label: "Form × testing lab" }]} />
+          {heat === "mfr_reason" && <select className="input h-9 w-28 text-xs" value={topMfr} onChange={(e) => setTopMfr(Number(e.target.value))}>{[10, 15, 20, 25, 30].map((n) => <option key={n} value={n}>Top {n}</option>)}</select>}
+        </div>
+        <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line"><Heatmap m={hm} rowLabel={heat === "form_lab" ? "Form" : "Manufacturer"} onCol={heat === "mfr_reason" ? (c) => { set({ ...f, category: toggle(f.category, c) }); setActive(null); } : undefined} onRow={heat !== "form_lab" ? (r) => { set({ ...f, q: r }); setActive(null); } : undefined} /></div>
+      </div>
+    ) },
+    { id: "flow", title: "How alerts flow", icon: <Waypoints size={16} />, subtitle: flow === "state" ? "Manufacturing state → therapeutic class → failure" : "Therapeutic class → molecule → failure", render: () => (
+      <div>
+        <div className="mb-4"><Segmented value={flow} onChange={setFlow} options={[{ value: "state", label: "State flow" }, { value: "molecule", label: "Molecule flow" }]} /></div>
+        <div className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-line"><SankeyChart data={flow === "state" ? d.sankey_state : d.sankey_molecule} height={620} /></div>
+      </div>
+    ) },
+  ];
+
   return (
+    <ExpandedProvider sections={sections} active={active} onActive={setActive} title="NSQ explorer" subtitle={`${k.alerts.toLocaleString("en-IN")} alerts in view`}>
     <div className={cn("space-y-5 transition-opacity", cube.isFetching && "opacity-70")}>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <Stat label="Alerts" value={k.alerts} hint={`${fmtMonth(d.period.first)} – ${fmtMonth(d.period.last)}`} />
@@ -99,33 +134,29 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
         </Card>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card delay={0.1}><CardHeader title="Failure categories" subtitle="Click to filter" /><div className="p-5"><RankBars rows={d.categories.slice(0, 12)} color="#e11d48" onClick={(n) => set({ ...f, category: toggle(f.category, n) })} /></div></Card>
-        <Card delay={0.12}><CardHeader title="Dosage forms" /><div className="p-5"><RankBars rows={d.forms} color="#f59e0b" onClick={(n) => set({ ...f, form: toggle(f.form, n) })} /></div></Card>
-        <Card delay={0.14}><CardHeader title="Therapeutic class" /><div className="p-5"><RankBars rows={d.drug_types} color="#10b996" onClick={(n) => set({ ...f, drug_type: toggle(f.drug_type, n) })} /></div></Card>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {breakdowns.map((b) => (
+          <Tile key={b.id} id={b.id} clickable={false} title={b.title} subtitle={b.hint} icon={b.icon}>
+            <RankBars rows={b.rows.slice(0, 5)} color={b.color} onClick={b.onClick} />
+            {b.rows.length > 5 && <button onClick={() => setActive(b.id)} className="mt-2 text-xs font-medium text-brand-700 hover:underline">All {b.rows.length} ↗</button>}
+          </Tile>
+        ))}
       </div>
 
-      <Card delay={0.1}>
-        <CardHeader title="Heatmap" subtitle="Where problems concentrate — darker = more alerts"
-          action={<div className="flex flex-wrap items-center gap-2">
-            <Segmented value={heat} onChange={setHeat} options={[{ value: "mfr_reason", label: "Maker × failure" }, { value: "mfr_molecule", label: "Maker × molecule" }, { value: "form_lab", label: "Form × testing lab" }]} />
-            {heat === "mfr_reason" && <select className="input h-9 w-28 text-xs" value={topMfr} onChange={(e) => setTopMfr(Number(e.target.value))}>{[10, 15, 20, 25, 30].map((n) => <option key={n} value={n}>Top {n}</option>)}</select>}
-          </div>} />
-        <div className="p-5"><Heatmap m={hm} rowLabel={heat === "form_lab" ? "Form" : "Manufacturer"} onCol={heat === "mfr_reason" ? (c) => set({ ...f, category: toggle(f.category, c) }) : undefined} onRow={heat !== "form_lab" ? (r) => set({ ...f, q: r }) : undefined} /></div>
-      </Card>
-
-      <Card delay={0.1}>
-        <CardHeader title="How alerts flow" subtitle={flow === "state" ? "Manufacturing state → therapeutic class → failure" : "Therapeutic class → molecule → failure"}
-          action={<Segmented value={flow} onChange={setFlow} options={[{ value: "state", label: "State flow" }, { value: "molecule", label: "Molecule flow" }]} />} />
-        <div className="p-4"><SankeyChart data={flow === "state" ? d.sankey_state : d.sankey_molecule} /></div>
-      </Card>
-
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card delay={0.1}><CardHeader title="Most-flagged manufacturers" subtitle="Click to search" /><div className="p-5"><RankBars rows={d.top_manufacturers} color="#f59e0b" onClick={(n) => set({ ...f, q: n })} /></div></Card>
-        <Card delay={0.12}><CardHeader title="Most-flagged products" /><div className="p-5"><RankBars rows={d.top_products} color="#8b5cf6" /></div></Card>
-        <Card delay={0.14}><CardHeader title="Testing labs" /><div className="p-5"><RankBars rows={d.labs} color="#0ea5e9" /></div></Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Tile id="heatmap" title="Heatmap — where problems concentrate" icon={<Grid3x3 size={14} />} subtitle="Maker × failure, maker × molecule, form × testing lab">
+          <div className="text-xs text-ink-muted">Hottest cell</div>
+          <div className="mt-0.5 text-sm font-semibold">{hot ? `${hot.row} × ${hot.col}` : "—"} <span className="font-display text-lg font-extrabold text-rose-600">{hot?.v ?? ""}</span></div>
+          <div className="mt-3 grid grid-cols-12 gap-0.5">{hmPreview.map((v, i) => <div key={i} className="aspect-square rounded-[3px]" style={{ background: v ? `rgba(225,29,72,${0.12 + 0.88 * (v / hmMax)})` : "#f1f5f9" }} />)}</div>
+        </Tile>
+        <Tile id="flow" title="How alerts flow" icon={<Waypoints size={14} />} subtitle="State → therapeutic class → failure, or class → molecule → failure">
+          <div className="space-y-1.5">{(d.sankey_state?.links ?? []).slice().sort((x: any, y: any) => y.value - x.value).slice(0, 4).map((l: any, i: number) => (
+            <div key={i} className="flex items-center justify-between gap-2 text-xs"><span className="truncate">{d.sankey_state.nodes[l.source]?.name} → {d.sankey_state.nodes[l.target]?.name}</span><b className="tabular-nums">{l.value}</b></div>
+          ))}</div>
+        </Tile>
       </div>
     </div>
+    </ExpandedProvider>
   );
 }
 

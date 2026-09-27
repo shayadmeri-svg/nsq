@@ -1,10 +1,11 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ExternalLink, FlaskConical } from "lucide-react";
+import { ExternalLink, Factory, FlaskConical, Gauge, Globe2, Maximize2, ScrollText, ShieldAlert, TrendingUp, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
 import { RankBars, TrendBars } from "../../components/charts";
 import { Badge, Bar, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
 import { Estimate } from "../../components/ui/Estimate";
+import { ExpandedProvider, Figure, Frame, Tile, type Section } from "../../components/ui/Expanded";
 import { api } from "../../lib/api";
 import { MakersCard, RegistryBadges } from "./Plants";
 import { cn } from "../../lib/cn";
@@ -55,7 +56,7 @@ function PlantSearch({ onPick }: { onPick: (id: string) => void }) {
   const r = useQuery({ queryKey: ["plant-search", dq], enabled: dq.length >= 2, queryFn: () => api<any>(`/api/plants?${new URLSearchParams({ q: dq, size: "8", sort: "name" })}`) });
   return (
     <div className="relative">
-      <input className="input h-10 w-72" placeholder="Score any registry plant — type a name or PIN" value={q}
+      <input className="input h-10 w-60" placeholder="Score any plant — name or PIN" value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} />
       {open && dq.length >= 2 && (
         <div className="absolute z-20 mt-1 max-h-80 w-[28rem] overflow-auto rounded-lg border border-line bg-white p-1 shadow-lg">
@@ -73,7 +74,7 @@ function PlantSearch({ onPick }: { onPick: (id: string) => void }) {
   );
 }
 
-function FitRanking({ moleculeKey, onScore }: { moleculeKey: string; onScore: (id: string) => void }) {
+function FitRanking({ moleculeKey, onScore, bare }: { moleculeKey: string; onScore: (id: string) => void; bare?: boolean }) {
   const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "us_fda">("");
   const [state, setState] = useState("");
   const [limit, setLimit] = useState(15);
@@ -82,8 +83,7 @@ function FitRanking({ moleculeKey, onScore }: { moleculeKey: string; onScore: (i
   const f = useQuery({ queryKey: ["plant-facets"], queryFn: () => api<any>("/api/plants/facets") });
   const m = r.data;
   return (
-    <Card>
-      <CardHeader title="Plant fit across the registry" subtitle={m ? `Every plant scored for ${m.molecule.dosage_form || m.molecule.forms?.join(", ") || "this molecule"}${m.molecule.segregated?.length ? ` · needs a separate ${m.molecule.segregated.join(" / ")} block` : ""} — ${m.scored?.toLocaleString()} plants` : "Loading…"} />
+    <Frame bare={bare} title="Plant fit across the registry" subtitle={m ? `Every plant scored for ${m.molecule.dosage_form || m.molecule.forms?.join(", ") || "this molecule"}${m.molecule.segregated?.length ? ` · needs a separate ${m.molecule.segregated.join(" / ")} block` : ""} — ${m.scored?.toLocaleString()} plants` : "Loading…"}>
       {r.error && <div className="p-5"><ErrorNote error={r.error} /></div>}
       {m && !m.molecule.forms?.length ? <div className="p-5 text-xs text-ink-muted">The molecule's dosage form is not known, so plants cannot be scored against it — add it in the molecule's Regulatory tab.</div> : m && (
         <div className="p-5">
@@ -113,7 +113,7 @@ function FitRanking({ moleculeKey, onScore }: { moleculeKey: string; onScore: (i
           </div>
         </div>
       )}
-    </Card>
+    </Frame>
   );
 }
 
@@ -122,7 +122,7 @@ const NEED_TONE: Record<string, "rose" | "amber" | "indigo" | "sky" | "slate"> =
   high_temperature: "amber", pd_coupling: "sky", chlorinated_solvent: "slate",
 };
 
-function Synthesis({ moleculeKey }: { moleculeKey: string }) {
+function Synthesis({ moleculeKey, bare }: { moleculeKey: string; bare?: boolean }) {
   const q = useQuery({ queryKey: ["synthesis", moleculeKey], enabled: !!moleculeKey,
     queryFn: () => api<any>(`/api/playground/molecule/${moleculeKey}/synthesis`) });
   const [all, setAll] = useState(false);
@@ -130,9 +130,8 @@ function Synthesis({ moleculeKey }: { moleculeKey: string }) {
   if (!s || q.error) return null;
   const top = (o: Record<string, number> | undefined) => Object.entries(o ?? {}).map(([k, n]) => `${k} (${n})`).join(" · ") || "—";
   return (
-    <Card>
-      <CardHeader title="How it's made — Open Reaction Database"
-        subtitle={!s.available ? "Not loaded yet" : !s.found ? "No reaction in the ORD makes this molecule" : `${s.reactions} reactions from ${s.sources} patents / papers${s.yield_median != null ? ` · median yield ${s.yield_median}%` : ""}`} />
+    <Frame bare={bare} title="How it's made — Open Reaction Database"
+        subtitle={!s.available ? "Not loaded yet" : !s.found ? "No reaction in the ORD makes this molecule" : `${s.reactions} reactions from ${s.sources} patents / papers${s.yield_median != null ? ` · median yield ${s.yield_median}%` : ""}`}>
       {!s.available ? <div className="p-5 text-xs text-ink-muted">Run <code>just fetch-ord</code> on a laptop (downloads ~1.3 GB once, scans in 10–20 min), then <code>just push-signals</code>.</div>
         : !s.found ? <div className="p-5 text-xs text-ink-muted">Patents and papers in the ORD don't report this molecule as a product (or its structure isn't known yet). Biologics are not covered.</div> : (
           <div className="p-5">
@@ -170,7 +169,273 @@ function Synthesis({ moleculeKey }: { moleculeKey: string }) {
             <p className="mt-3 text-[11px] text-ink-faint">{s.note} Data: {s.licence}.</p>
           </div>
         )}
-    </Card>
+    </Frame>
+  );
+}
+
+// ------------------------------------------------------------------------------ dossier: tiles and their expanded views
+
+const nfx = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("en-IN"));
+const MARKET_TONE: Record<string, "brand" | "amber" | "rose"> = { off_patent: "brand", loe_pending: "amber" };
+
+function Identity({ d }: { d: any }) {
+  const p = d.patent, r = d.regulatory;
+  const offNow = (p.geo_coverage ?? []).filter((g: any) => g.market_status === "off_patent").length;
+  const chips: [string, string, string?][] = [
+    [p.therapeutic_area, "slate"], [[r?.dosage_form, r?.strength].filter(Boolean).join(" · "), "slate"],
+    [p.fto_risk ? `FTO ${p.fto_risk}` : "", p.fto_risk === "high" ? "rose" : p.fto_risk === "medium" ? "amber" : "brand"],
+    [offNow ? `off-patent in ${offNow} markets` : "", "brand"], [d.nsq ? `${d.nsq.alerts} NSQ alerts` : "", "rose"],
+    [r?.te_code ? `TE ${r.te_code}` : "", "indigo"],
+  ];
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3 px-1">
+      <div className="min-w-0">
+        <div className="font-display text-2xl font-extrabold tracking-tight">{p.api_name}</div>
+        <div className="text-xs text-ink-muted">{[p.brand_name, p.originator].filter(Boolean).join(" · ")}</div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">{chips.filter(([t]) => t).map(([t, tone]) => <Badge key={t} tone={tone as any}>{t}</Badge>)}</div>
+    </div>
+  );
+}
+
+function ScoreDetail({ d }: { d: any }) {
+  return (
+    <div className="max-w-4xl space-y-4">
+      <div className="grid gap-3 md:grid-cols-2">{Object.entries(d.score.explanation ?? {}).map(([k, v]: any) => (
+        <div key={k} className="rounded-xl bg-white p-4 text-sm ring-1 ring-inset ring-line"><div className="label mb-1 capitalize">{k}</div><div className="text-ink-soft">{v}</div></div>
+      ))}</div>
+      {d.score.warnings?.length > 0 && <div className="flex flex-wrap gap-1">{d.score.warnings.map((x: string) => <Badge key={x} tone="amber">{x}</Badge>)}</div>}
+      <div className="rounded-xl bg-white p-4 ring-1 ring-inset ring-line text-xs"><FitParts detail={d.score.plant_fit_detail} /></div>
+    </div>
+  );
+}
+
+function PassportTile({ d }: { d: any }) {
+  const r = d.regulatory;
+  const mono = [["IP", r?.ip_2026_monograph], ["Ph. Eur.", r?.ph_eur_monograph], ["USP", r?.usp_monograph]];
+  return (
+    <Tile id="passport" title="Regulatory passport" icon={<ScrollText size={14} />} subtitle={r?.rld ? `RLD ${r.rld}` : "no reference drug on record"} accent="#6366f1">
+      <div className="grid grid-cols-3 gap-2">
+        <Figure value={r?.te_code || "—"} label="TE code" />
+        <Figure value={r?.bcs_class?.replace("BCS ", "") || "—"} label="BCS class" />
+        <Figure value={<span className="capitalize">{r?.readiness || "—"}</span>} label="readiness" />
+      </div>
+      <div className="mt-3 flex gap-1.5">{mono.map(([k, v]) => <span key={k} className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-medium", v ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-ink-faint line-through")}>{k}</span>)}</div>
+    </Tile>
+  );
+}
+
+function PassportDetail({ d }: { d: any }) {
+  const r = d.regulatory;
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-x-10 rounded-2xl bg-white p-5 ring-1 ring-inset ring-line md:grid-cols-2">
+        <div>
+          <Field k="US LOE" v={<span className="flex items-center gap-1">{fmtDate(d.patent.estimated_loe_us)}<Estimate field="loe" prov={d.patent.provenance?.loe_us} /></span>} />
+          <Field k="EU LOE" v={<span className="flex items-center gap-1">{fmtDate(d.patent.estimated_loe_eu)}<Estimate field="loe" prov={d.patent.provenance?.loe_eu} /></span>} />
+          <Field k="India LOE" v={fmtDate(d.patent.estimated_loe_in)} />
+          <Field k="FTO risk" v={<span className="flex items-center gap-1 capitalize">{d.patent.fto_risk}<Estimate field="fto_risk" prov={d.patent.provenance?.fto_risk} /></span>} />
+          <Field k="Therapeutic area" v={d.patent.therapeutic_area} />
+          <Field k="Market size" v={d.patent.market_size_usd_bn ? `$${d.patent.market_size_usd_bn} bn` : null} />
+        </div>
+        <div>
+          <Field k="Reference drug (RLD)" v={r?.rld} />
+          <Field k="RLD holder" v={r?.rld_applicant} />
+          <Field k="TE code" v={r?.te_code} />
+          <Field k="Dosage form / strength" v={[r?.dosage_form, r?.strength].filter(Boolean).join(" · ")} />
+          <Field k="BCS class" v={r?.bcs_class} />
+          <Field k="Readiness" v={r?.readiness} />
+        </div>
+      </div>
+      <div>
+        <div className="label mb-2">Pharmacopoeia monographs</div>
+        <div className="grid gap-3 md:grid-cols-3">{[["IP", r?.ip_2026_monograph], ["Ph. Eur.", r?.ph_eur_monograph], ["USP", r?.usp_monograph]].map(([k, v]) => (
+          <div key={k} className={cn("rounded-xl p-3 text-xs", v ? "bg-emerald-50 text-emerald-900" : "bg-white text-ink-faint ring-1 ring-inset ring-line")}><b>{k}</b><div className="mt-1">{v || "not listed"}</div></div>
+        ))}</div>
+        {(r?.exclusivity ?? []).length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{r.exclusivity.map((x: any, i: number) => <Badge key={i} tone={x.expiry_date && new Date(x.expiry_date) > new Date() ? "rose" : "slate"}>{x.type} · {fmtDate(x.expiry_date)}</Badge>)}</div>}
+        {(r?.analytical_specs ?? []).length > 0 && <div className="mt-3 text-xs text-ink-soft"><b>Key tests:</b> {r.analytical_specs.join(" · ")}</div>}
+      </div>
+      {d.orange_book_curated && (
+        <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
+          <div className="label mb-2">FDA Orange Book (curated record)</div>
+          <Field k="TE codes" v={(d.orange_book_curated.te_codes ?? []).join(", ")} />
+          <Field k="RLD applicant" v={d.orange_book_curated.rld_applicant} />
+          <Field k="Application / approval" v={`${d.orange_book_curated.rld_app_number} · ${d.orange_book_curated.rld_approval_date}`} />
+          <Field k="Dosage forms" v={(d.orange_book_curated.dosage_forms ?? []).join(", ")} />
+          <Field k="Strengths" v={(d.orange_book_curated.strengths ?? []).join(", ")} />
+          <Field k="Marketing status" v={(d.orange_book_curated.marketing_statuses ?? []).join(", ")} />
+          {d.orange_book_curated.provenance?.reference_url && <a href={d.orange_book_curated.provenance.reference_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-brand-700 hover:underline">Source (retrieved {d.orange_book_curated.provenance.retrieved_at}) <ExternalLink size={11} /></a>}
+        </div>
+      )}
+      {d.pharmacopeia && (
+        <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-inset ring-line">
+          <div className="px-5 pt-4"><div className="label">IP vs Ph. Eur. vs USP</div><p className="mt-0.5 text-xs text-ink-muted">Method by method — where an Indian-spec batch may not meet the export spec</p></div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-xs"><thead><tr className="border-y border-line bg-slate-50/70 text-left text-[10px] uppercase tracking-wider text-ink-muted"><th className="px-4 py-2">Test</th><th className="px-4 py-2">IP 2026</th><th className="px-4 py-2">Ph. Eur.</th><th className="px-4 py-2">USP</th><th className="px-4 py-2">Verdict</th></tr></thead>
+              <tbody>{d.pharmacopeia.map((row: any) => (
+                <tr key={row.section} className="border-b border-line/60 align-top">
+                  <td className="px-4 py-2.5 font-semibold capitalize">{row.section}</td>
+                  {["IP 2026", "Ph. Eur.", "USP"].map((ph) => <td key={ph} className="max-w-[260px] px-4 py-2.5 text-ink-soft">{row.methods[ph]?.raw_text ?? <span className="text-ink-faint">—</span>}</td>)}
+                  <td className="px-4 py-2.5"><Badge tone={row.significance === "NSQ_RELEVANT" ? "rose" : row.significance === "EQUIVALENT" ? "brand" : "slate"}>{String(row.significance).replace(/_/g, " ").toLowerCase()}</Badge><div className="mt-1 text-ink-muted">{row.rationale}</div></td>
+                </tr>))}</tbody></table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MarketsTile({ d }: { d: any }) {
+  const g = d.patent.geo_coverage ?? [];
+  const c = { off: g.filter((x: any) => x.market_status === "off_patent").length, pend: g.filter((x: any) => x.market_status === "loe_pending").length };
+  const blocked = g.length - c.off - c.pend;
+  return (
+    <Tile id="markets" title="Where it can be sold" icon={<Globe2 size={14} />} subtitle={`${g.length} markets checked`} accent="#10b996">
+      <div className="grid grid-cols-3 gap-2">
+        <Figure value={c.off} label="off-patent" tone="#0a9a7d" /><Figure value={c.pend} label="LOE pending" tone="#d97706" /><Figure value={blocked} label="blocked" tone={blocked ? "#e11d48" : undefined} />
+      </div>
+      {g.length > 0 && <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="bg-brand-500" style={{ width: `${(100 * c.off) / g.length}%` }} /><div className="bg-amber-400" style={{ width: `${(100 * c.pend) / g.length}%` }} /><div className="bg-rose-400" style={{ width: `${(100 * blocked) / g.length}%` }} />
+      </div>}
+    </Tile>
+  );
+}
+
+function MarketsDetail({ d }: { d: any }) {
+  return (
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{(d.patent.geo_coverage ?? []).map((g: any) => (
+      <div key={g.country_code} className="rounded-xl bg-white p-3 text-xs ring-1 ring-inset ring-line">
+        <div className="flex items-center justify-between"><span className="font-semibold">{g.country_name}</span><Badge tone={MARKET_TONE[g.market_status] ?? "rose"}>{g.market_status.replace("_", " ")}</Badge></div>
+        <div className="mt-1 text-ink-muted">{[g.loe_date && `LOE ${fmtDate(g.loe_date)}`, g.patent_barrier && g.patent_barrier !== "none" && `barrier: ${g.patent_barrier}`, g.export_eligible && "export eligible"].filter(Boolean).join(" · ") || "—"}</div>
+        {g.notes && <div className="mt-1 text-ink-faint">{g.notes}</div>}
+      </div>
+    ))}</div>
+  );
+}
+
+function DemandTile({ d }: { d: any }) {
+  const m = d.demand, cx = d.complexity;
+  return (
+    <Tile id="demand" title="Demand & complexity" icon={<TrendingUp size={14} />} subtitle={m?.disease_area || "no demand profile"} accent="#f59e0b">
+      <div className="grid grid-cols-3 gap-2">
+        <Figure value={m ? `${m.trial_count_phase_3_plus}` : "—"} label="Ph 3+ trials" />
+        <Figure value={m?.competitor_anda_count ?? "—"} label="generic rivals" />
+        <Figure value={`${cx.process_complexity_score}/10`} label="process complexity" />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1">{m?.growth_trend && <Badge>{m.growth_trend} trial activity</Badge>}{m?.cluster && <Badge>{m.cluster}</Badge>}{cx.sterility_required && <Badge tone="sky">sterile</Badge>}</div>
+    </Tile>
+  );
+}
+
+function DemandDetail({ d }: { d: any }) {
+  const cx = d.complexity;
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
+        <div className="label mb-2">Demand</div>
+        <Field k="Trials (total / Ph 3+)" v={d.demand ? `${d.demand.trial_count_total} / ${d.demand.trial_count_phase_3_plus}` : null} />
+        <Field k="Trend" v={d.demand?.growth_trend} />
+        <Field k="Cluster" v={d.demand?.cluster} />
+        <Field k="Generic competitors" v={d.demand?.competitor_anda_count} />
+        <Field k="Prevalence India / global" v={d.demand && (d.demand.disease_prevalence_india_millions || d.demand.disease_prevalence_global_millions) ? `${d.demand.disease_prevalence_india_millions} M / ${d.demand.disease_prevalence_global_millions} M` : null} />
+        <Field k="Buyer activity / momentum" v={d.demand ? `${d.demand.buyer_activity_score} / ${d.demand.market_momentum_score}` : null} />
+      </div>
+      <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
+        <div className="label mb-2">Manufacturing complexity · {titleCase(cx.modality)} · {titleCase(cx.drug_form)}{cx.sterility_required ? " · sterile" : ""}</div>
+        <div className="space-y-2">
+          {[["Process", cx.process_complexity_score], ["Analytical", cx.analytical_complexity_score], ["Biologic", cx.biologic_complexity_score]].map(([k, v]: any) => (
+            <div key={k} className="text-xs"><div className="flex justify-between"><span>{k}</span><b>{v}/10</b></div><div className="mt-1 h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${v * 10}%` }} /></div></div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-1">{(cx.critical_quality_attributes ?? []).map((c: string) => <Badge key={c}>{c.replace(/_/g, " ")}</Badge>)}</div>
+        <div className="mt-2 flex flex-wrap gap-1">{(cx.gmp_pillars ?? []).filter((p: any) => p.applies).map((p: any) => <Badge key={p.pillar_id} tone="indigo">{p.title}</Badge>)}</div>
+      </div>
+    </div>
+  );
+}
+
+function NsqTile({ d }: { d: any }) {
+  const n = d.nsq;
+  if (!n) return (
+    <Tile title="NSQ record — all India" icon={<ShieldAlert size={14} />} subtitle="No CDSCO alert names this molecule" accent="#cbd5e1">
+      <div className="text-xs text-ink-muted">Nothing failed testing in the alerts since 2021.</div>
+    </Tile>
+  );
+  const vals = n.trend?.series?.[0]?.values ?? [];
+  const max = Math.max(1, ...vals);
+  return (
+    <Tile id="nsq" title="NSQ record — all India" icon={<ShieldAlert size={14} />} subtitle={n.categories?.[0] ? `mostly ${n.categories[0].name.toLowerCase()}` : undefined} accent="#e11d48">
+      <div className="grid grid-cols-2 gap-2"><Figure value={n.alerts} label="alerts" tone="#e11d48" /><Figure value={n.manufacturers} label="manufacturers" /></div>
+      {vals.length > 1 && <div className="mt-3 flex h-8 items-end gap-px">{vals.slice(-24).map((v: number, i: number) => <div key={i} className="flex-1 rounded-sm bg-rose-300" style={{ height: `${Math.max(4, (100 * v) / max)}%` }} />)}</div>}
+    </Tile>
+  );
+}
+
+function NsqDetail({ d }: { d: any }) {
+  const n = d.nsq;
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line"><div className="label mb-2">Alerts per month</div><TrendBars data={n.trend} height={240} /></div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line"><div className="label mb-2">Why it fails</div><RankBars rows={n.categories} color="#e11d48" /></div>
+        <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line"><div className="label mb-2">Who makes the failing batches</div><RankBars rows={n.top_manufacturers} color="#f59e0b" /></div>
+        <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line"><div className="label mb-2">Where they are made</div><RankBars rows={n.states} color="#6366f1" /><div className="label mb-2 mt-4">Forms</div><RankBars rows={n.forms} color="#0a9a7d" /></div>
+      </div>
+    </div>
+  );
+}
+
+function FitTile({ moleculeKey }: { moleculeKey: string }) {
+  const r = useQuery({ queryKey: ["fit-rank", moleculeKey, "", "", 15], enabled: !!moleculeKey, placeholderData: keepPreviousData,
+    queryFn: () => api<any>(`/api/playground/molecule/${moleculeKey}/plant-fit?${new URLSearchParams({ cert: "", state: "", limit: "15" })}`) });
+  const m = r.data;
+  const bands = m?.bands ?? {};
+  const tot = Object.values(bands).reduce((a: number, b: any) => a + (b as number), 0) || 1;
+  const col: Record<string, string> = { "80+": "#0a9a7d", "60–79": "#38bdf8", "40–59": "#f59e0b", "<40": "#cbd5e1" };
+  return (
+    <Tile id="fit" title="Plant fit across the registry" icon={<Factory size={14} />} subtitle={m ? `${m.scored?.toLocaleString()} plants scored for ${m.molecule.forms?.join(", ") || "—"}` : "Loading…"}>
+      {!m ? <Skeleton className="h-20" /> : !m.molecule.forms?.length ? <div className="text-xs text-ink-muted">Dosage form unknown — can't score plants.</div> : (<>
+        <div className="flex h-2 overflow-hidden rounded-full">{Object.entries(bands).map(([b, n]: any) => <div key={b} title={`${b}: ${n}`} style={{ width: `${(100 * n) / tot}%`, background: col[b] }} />)}</div>
+        <div className="mt-1 flex justify-between text-[10px] text-ink-muted">{Object.entries(bands).map(([b, n]: any) => <span key={b}>{b} · {nfx(n)}</span>)}</div>
+        <ol className="mt-3 space-y-1">{m.items.slice(0, 3).map((p: any) => (
+          <li key={p.id} className="flex items-center justify-between gap-2 text-xs"><span className="truncate"><b className="mr-1.5 tabular-nums">{Math.round(p.fit)}</b>{p.name}</span><span className="shrink-0 text-ink-faint">{p.state}</span></li>
+        ))}</ol>
+      </>)}
+    </Tile>
+  );
+}
+
+function MakersTile({ moleculeKey }: { moleculeKey: string }) {
+  const { data: m } = useQuery({ queryKey: ["makers", moleculeKey], queryFn: () => api<any>(`/api/plants/for-molecule/${moleculeKey}`), enabled: !!moleculeKey });
+  return (
+    <Tile id="makers" title="Who can make it" icon={<Users size={14} />} subtitle="Plant registry · API filings">
+      {!m ? <Skeleton className="h-20" /> : (
+        <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+          <Figure value={nfx(m.api_makers_total + (m.listed_total ?? 0))} label="API makers" />
+          <Figure value={nfx(m.made_total)} label="made it (NSQ)" tone={m.made_total ? "#e11d48" : undefined} />
+          <Figure value={nfx(m.capable_total)} label="can make the form" />
+          <Figure value={nfx(m.capable_fda ?? 0)} label="…US FDA" />
+          <Figure value={nfx(m.dmf_total ?? 0)} label="US DMFs" />
+          <Figure value={nfx(m.cep_total ?? 0)} label="CEPs" />
+        </div>
+      )}
+    </Tile>
+  );
+}
+
+function SynthesisTile({ moleculeKey }: { moleculeKey: string }) {
+  const { data: s } = useQuery({ queryKey: ["synthesis", moleculeKey], enabled: !!moleculeKey, queryFn: () => api<any>(`/api/playground/molecule/${moleculeKey}/synthesis`) });
+  return (
+    <Tile id={s?.found ? "synthesis" : undefined} title="How it's made" icon={<FlaskConical size={14} />}
+      subtitle={!s ? "Loading…" : !s.available ? "Open Reaction Database not loaded" : !s.found ? "No published reaction makes it" : `${s.reactions} reactions · ${s.sources} patents / papers`}>
+      {!s ? <Skeleton className="h-20" /> : !s.found ? <div className="text-xs text-ink-muted">{s.available ? "Biologics and molecules without a known structure are not covered." : "Run just fetch-ord, then just push-signals."}</div> : (
+        <div className="space-y-2">
+          {s.needs.length === 0 ? <div className="text-xs text-ink-muted">No special equipment in the published routes.</div>
+            : <div className="flex flex-wrap gap-1">{s.needs.slice(0, 5).map((n: any) => <Badge key={n.key} tone={NEED_TONE[n.key] ?? "slate"}>{n.label.split(" (")[0]} · {n.share_pct}%</Badge>)}</div>}
+          <div className="truncate text-[11px] text-ink-muted">{s.temp_c ? `${s.temp_c.min} to ${s.temp_c.max} °C · ` : ""}{Object.keys(s.solvents ?? {}).slice(0, 3).join(", ")}</div>
+        </div>
+      )}
+    </Tile>
   );
 }
 
@@ -191,24 +456,40 @@ export function Workbench({ initial }: { initial?: string }) {
   const d = q.data;
   const radial = useMemo(() => d ? PILLARS.map(([k, , c]) => ({ name: k, value: Math.round(d.score[`${k === "plant" ? "plant_fit" : k === "patent" ? "patent_readiness" : k === "regulatory" ? "regulatory_clarity" : "demand_attractiveness"}_score`]), fill: c })) : [], [d]);
 
+  const [active, setActive] = useState<string | null>(null);
+  const open = (id: string) => setActive(id);
+  const sections: Section[] = d ? [
+    { id: "score", title: "Why these scores", icon: <Gauge size={16} />, subtitle: "Each pillar's explanation and the plant fit part by part", render: () => <ScoreDetail d={d} /> },
+    { id: "passport", title: "Regulatory passport", icon: <ScrollText size={16} />, subtitle: d.patent.brand_name ? `${d.patent.brand_name} · ${d.patent.originator}` : d.patent.originator, render: () => <PassportDetail d={d} /> },
+    { id: "markets", title: "Where it can be sold", icon: <Globe2 size={16} />, subtitle: "Patent status per country", render: () => <MarketsDetail d={d} /> },
+    { id: "demand", title: "Demand & complexity", icon: <TrendingUp size={16} />, subtitle: d.demand?.disease_area, render: () => <DemandDetail d={d} /> },
+    ...(d.nsq ? [{ id: "nsq", title: "NSQ record — all India", icon: <ShieldAlert size={16} />, subtitle: `${d.nsq.alerts} alerts across ${d.nsq.manufacturers} manufacturers`, render: () => <NsqDetail d={d} /> }] : []),
+    { id: "fit", title: "Plant fit across the registry", icon: <Factory size={16} />, subtitle: "Every plant scored for this molecule's form", render: () => <FitRanking bare moleculeKey={key} onScore={(id) => { setPlant(`reg:${id}`); }} /> },
+    { id: "makers", title: "Who can make it", icon: <Users size={16} />, subtitle: "API makers, plants that made it, plants permitted to make the form, API filings", render: () => <MakersCard bare moleculeKey={key} /> },
+    { id: "synthesis", title: "How it's made", icon: <FlaskConical size={16} />, subtitle: "Reactions from the Open Reaction Database", render: () => <Synthesis bare moleculeKey={key} /> },
+  ] : [];
+
   return (
-    <div className="space-y-5">
-      <Card className="flex flex-wrap items-center gap-3 p-4">
-        <FlaskConical size={18} className="text-brand-700" />
-        <select className="input h-10 w-72" value={key} onChange={(e) => setKey(e.target.value)}>{list.data?.molecules.map((m: any) => <option key={m.key} value={m.key}>{m.name}</option>)}</select>
-        {d?.plants?.length > 0 && <select className="input h-10 w-72" value={d.plant_id ?? ""} onChange={(e) => setPlant(e.target.value)}>{d.plants.map((p: any) => <option key={p.asset_id} value={p.asset_id}>{p.kind === "registry" ? "Registry plant: " : "Scored for: "}{p.name}</option>)}</select>}
+    <ExpandedProvider sections={sections} active={active} onActive={setActive} title={d?.patent.api_name ?? "Molecule"} subtitle={d?.patent.therapeutic_area}>
+    <div className="space-y-4">
+      <Card className="flex flex-wrap items-center gap-3 p-3">
+        <FlaskConical size={18} className="ml-1 text-brand-700" />
+        <select className="input h-10 w-64" value={key} onChange={(e) => setKey(e.target.value)}>{list.data?.molecules.map((m: any) => <option key={m.key} value={m.key}>{m.name}</option>)}</select>
+        {d?.plants?.length > 0 && <select className="input h-10 w-64" value={d.plant_id ?? ""} onChange={(e) => setPlant(e.target.value)}>{d.plants.map((p: any) => <option key={p.asset_id} value={p.asset_id}>{p.kind === "registry" ? "Registry plant: " : "Scored for: "}{p.name}</option>)}</select>}
         <PlantSearch onPick={(id) => setPlant(`reg:${id}`)} />
-        {d && <span className="text-xs text-ink-muted">{d.patent.origin === "curated" ? "Curated profile" : d.patent.origin === "manual" ? "Added in the app" : "Built from public sources"} · {(d.patent.signals?.sources ?? []).length} sources</span>}
+        {d && <span className="ml-auto text-[11px] text-ink-muted">{d.patent.origin === "curated" ? "Curated profile" : d.patent.origin === "manual" ? "Added in the app" : "Built from public sources"} · {(d.patent.signals?.sources ?? []).length} sources</span>}
       </Card>
       {q.error && <ErrorNote error={q.error} />}
       {!d ? <Skeleton className="h-96" /> : (
-        <div className={cn("space-y-5 transition-opacity", q.isFetching && "opacity-70")}>
-          <div className="grid gap-5 xl:grid-cols-[1fr_1.3fr]">
-            <Card>
-              <CardHeader title="Four-pillar score" subtitle="Total = weighted average of the four pillar scores. The weights change the total only, not the pillars." />
-              <div className="grid grid-cols-[1fr_1fr] gap-4 p-5">
+        <div className={cn("space-y-4 transition-opacity", q.isFetching && "opacity-70")}>
+          <Identity d={d} />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            <Card className="flex flex-col">
+              <CardHeader title="Four-pillar score" subtitle="Weighted average of the pillars — the weights move the total only"
+                action={<button className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-brand-700 hover:bg-brand-50" onClick={() => open("score")}><Maximize2 size={12} /> Why</button>} />
+              <div className="grid flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] items-center gap-4 p-5">
                 <div className="relative">
-                  <ResponsiveContainer width="100%" height={220}>
+                  <ResponsiveContainer width="100%" height={200}>
                     <RadialBarChart innerRadius="48%" outerRadius="100%" data={radial} startAngle={90} endAngle={-270}>
                       <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
                       <RadialBar dataKey="value" background cornerRadius={6} />
@@ -225,127 +506,23 @@ export function Workbench({ initial }: { initial?: string }) {
                   {Object.values(w).every((x) => x === 0) && <div className="text-[11px] text-amber-700">All weights are 0 — the default weights are used.</div>}
                 </div>
               </div>
-              <div className="space-y-1.5 border-t border-line p-5 text-xs">
-                {Object.entries(d.score.explanation ?? {}).map(([k, v]: any) => <div key={k}><b className="capitalize">{k}:</b> <span className="text-ink-soft">{v}</span></div>)}
-                {d.score.warnings?.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{d.score.warnings.map((x: string) => <Badge key={x} tone="amber">{x}</Badge>)}</div>}
-                <FitParts detail={d.score.plant_fit_detail} />
-              </div>
+              {d.score.warnings?.length > 0 && <div className="flex flex-wrap gap-1 border-t border-line px-5 py-3">{d.score.warnings.map((x: string) => <Badge key={x} tone="amber">{x}</Badge>)}</div>}
             </Card>
-
-            <Card>
-              <CardHeader title="Regulatory passport" subtitle={d.patent.brand_name ? `${d.patent.brand_name} · ${d.patent.originator}` : d.patent.originator} />
-              <div className="grid gap-x-6 p-5 md:grid-cols-2">
-                <div>
-                  <Field k="US LOE" v={<span className="flex items-center gap-1">{fmtDate(d.patent.estimated_loe_us)}<Estimate field="loe" prov={d.patent.provenance?.loe_us} /></span>} />
-                  <Field k="EU LOE" v={<span className="flex items-center gap-1">{fmtDate(d.patent.estimated_loe_eu)}<Estimate field="loe" prov={d.patent.provenance?.loe_eu} /></span>} />
-                  <Field k="India LOE" v={fmtDate(d.patent.estimated_loe_in)} />
-                  <Field k="FTO risk" v={<span className="flex items-center gap-1 capitalize">{d.patent.fto_risk}<Estimate field="fto_risk" prov={d.patent.provenance?.fto_risk} /></span>} />
-                  <Field k="Therapeutic area" v={d.patent.therapeutic_area} />
-                  <Field k="Market size" v={d.patent.market_size_usd_bn ? `$${d.patent.market_size_usd_bn} bn` : null} />
-                </div>
-                <div>
-                  <Field k="Reference drug (RLD)" v={d.regulatory?.rld} />
-                  <Field k="RLD holder" v={d.regulatory?.rld_applicant} />
-                  <Field k="TE code" v={d.regulatory?.te_code} />
-                  <Field k="Dosage form / strength" v={[d.regulatory?.dosage_form, d.regulatory?.strength].filter(Boolean).join(" · ")} />
-                  <Field k="BCS class" v={d.regulatory?.bcs_class} />
-                  <Field k="Readiness" v={d.regulatory?.readiness} />
-                </div>
-              </div>
-              <div className="border-t border-line px-5 py-3">
-                <div className="label mb-2">Pharmacopoeia monographs</div>
-                <div className="grid gap-2 md:grid-cols-3">{[["IP", d.regulatory?.ip_2026_monograph], ["Ph. Eur.", d.regulatory?.ph_eur_monograph], ["USP", d.regulatory?.usp_monograph]].map(([k, v]) => (
-                  <div key={k} className={cn("rounded-lg p-2.5 text-[11px]", v ? "bg-emerald-50 text-emerald-900" : "bg-slate-50 text-ink-faint")}><b>{k}</b><div className="line-clamp-3">{v || "not listed"}</div></div>
-                ))}</div>
-                {(d.regulatory?.exclusivity ?? []).length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{d.regulatory.exclusivity.map((x: any, i: number) => <Badge key={i} tone={x.expiry_date && new Date(x.expiry_date) > new Date() ? "rose" : "slate"}>{x.type} · {fmtDate(x.expiry_date)}</Badge>)}</div>}
-                {(d.regulatory?.analytical_specs ?? []).length > 0 && <div className="mt-3 text-[11px] text-ink-soft"><b>Key tests:</b> {d.regulatory.analytical_specs.join(" · ")}</div>}
-              </div>
-            </Card>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-3">
-            <Card>
-              <CardHeader title="Where it can be sold" subtitle="Per-country patent status" />
-              <div className="space-y-1.5 p-5">{(d.patent.geo_coverage ?? []).map((g: any) => (
-                <div key={g.country_code} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5 text-xs">
-                  <span className="font-medium">{g.country_name}</span>
-                  <span className="flex items-center gap-2"><span className="text-ink-muted">{g.loe_date ? fmtDate(g.loe_date) : ""}</span><Badge tone={g.market_status === "off_patent" ? "brand" : g.market_status === "loe_pending" ? "amber" : "rose"}>{g.market_status.replace("_", " ")}</Badge></span>
-                </div>))}</div>
-            </Card>
-            <Card>
-              <CardHeader title="Demand" subtitle={d.demand?.disease_area} />
-              <div className="p-5">
-                <Field k="Trials (total / Ph 3+)" v={d.demand ? `${d.demand.trial_count_total} / ${d.demand.trial_count_phase_3_plus}` : null} />
-                <Field k="Trend" v={d.demand?.growth_trend} />
-                <Field k="Cluster" v={d.demand?.cluster} />
-                <Field k="Generic competitors" v={d.demand?.competitor_anda_count} />
-                <Field k="Prevalence India / global" v={d.demand && (d.demand.disease_prevalence_india_millions || d.demand.disease_prevalence_global_millions) ? `${d.demand.disease_prevalence_india_millions} M / ${d.demand.disease_prevalence_global_millions} M` : null} />
-                <Field k="Buyer activity / momentum" v={d.demand ? `${d.demand.buyer_activity_score} / ${d.demand.market_momentum_score}` : null} />
-              </div>
-            </Card>
-            <Card>
-              <CardHeader title="Manufacturing complexity" subtitle={`${titleCase(d.complexity.modality)} · ${titleCase(d.complexity.drug_form)}${d.complexity.sterility_required ? " · sterile" : ""}`} />
-              <div className="space-y-2 p-5">
-                {[["Process", d.complexity.process_complexity_score], ["Analytical", d.complexity.analytical_complexity_score], ["Biologic", d.complexity.biologic_complexity_score]].map(([k, v]: any) => (
-                  <div key={k} className="text-xs"><div className="flex justify-between"><span>{k}</span><b>{v}/10</b></div><div className="mt-1 h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${v * 10}%` }} /></div></div>
-                ))}
-                <div className="flex flex-wrap gap-1 pt-2">{(d.complexity.critical_quality_attributes ?? []).map((c: string) => <Badge key={c}>{c.replace(/_/g, " ")}</Badge>)}</div>
-                <div className="flex flex-wrap gap-1 pt-1">{(d.complexity.gmp_pillars ?? []).filter((p: any) => p.applies).map((p: any) => <Badge key={p.pillar_id} tone="indigo">{p.title}</Badge>)}</div>
-              </div>
-            </Card>
-          </div>
-
-          {d.nsq && (
-            <Card>
-              <CardHeader title="CDSCO NSQ record — all of India" subtitle={`${d.nsq.alerts} alerts across ${d.nsq.manufacturers} manufacturers`} />
-              <div className="grid gap-4 p-5 lg:grid-cols-[1.4fr_1fr_1fr]">
-                <TrendBars data={d.nsq.trend} height={180} />
-                <div><div className="label mb-2">Why it fails</div><RankBars rows={d.nsq.categories} color="#e11d48" /></div>
-                <div><div className="label mb-2">Who makes the failing batches</div><RankBars rows={d.nsq.top_manufacturers} color="#f59e0b" /></div>
-              </div>
-            </Card>
-          )}
-
-          <FitRanking moleculeKey={key} onScore={(id) => { setPlant(`reg:${id}`); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
-
-          <MakersCard moleculeKey={key} />
-
-          <Synthesis moleculeKey={key} />
-
-          {(d.orange_book_curated || d.pharmacopeia) && (
-            <div className="grid gap-5 xl:grid-cols-2">
-              {d.orange_book_curated && (
-                <Card>
-                  <CardHeader title="FDA Orange Book (curated record)" subtitle={d.orange_book_curated.provenance?.source_ref} />
-                  <div className="p-5">
-                    <Field k="TE codes" v={(d.orange_book_curated.te_codes ?? []).join(", ")} />
-                    <Field k="RLD applicant" v={d.orange_book_curated.rld_applicant} />
-                    <Field k="Application / approval" v={`${d.orange_book_curated.rld_app_number} · ${d.orange_book_curated.rld_approval_date}`} />
-                    <Field k="Dosage forms" v={(d.orange_book_curated.dosage_forms ?? []).join(", ")} />
-                    <Field k="Strengths" v={(d.orange_book_curated.strengths ?? []).join(", ")} />
-                    <Field k="Marketing status" v={(d.orange_book_curated.marketing_statuses ?? []).join(", ")} />
-                    {d.orange_book_curated.provenance?.reference_url && <a href={d.orange_book_curated.provenance.reference_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-brand-700 hover:underline">Source (retrieved {d.orange_book_curated.provenance.retrieved_at}) <ExternalLink size={11} /></a>}
-                  </div>
-                </Card>
-              )}
-              {d.pharmacopeia && (
-                <Card>
-                  <CardHeader title="IP vs Ph. Eur. vs USP" subtitle="Method-by-method comparison — where an Indian-spec batch may not meet the export spec" />
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-[11px]"><thead><tr className="border-y border-line bg-slate-50/70 text-left text-[10px] uppercase tracking-wider text-ink-muted"><th className="px-3 py-2">Test</th><th className="px-3 py-2">IP 2026</th><th className="px-3 py-2">Ph. Eur.</th><th className="px-3 py-2">USP</th><th className="px-3 py-2">Verdict</th></tr></thead>
-                      <tbody>{d.pharmacopeia.map((r: any) => (
-                        <tr key={r.section} className="border-b border-line/60 align-top">
-                          <td className="px-3 py-2 font-semibold capitalize">{r.section}</td>
-                          {["IP 2026", "Ph. Eur.", "USP"].map((ph) => <td key={ph} className="max-w-[200px] px-3 py-2 text-ink-soft">{r.methods[ph]?.raw_text ?? <span className="text-ink-faint">—</span>}</td>)}
-                          <td className="px-3 py-2"><Badge tone={r.significance === "NSQ_RELEVANT" ? "rose" : r.significance === "EQUIVALENT" ? "brand" : "slate"}>{String(r.significance).replace(/_/g, " ").toLowerCase()}</Badge><div className="mt-1 text-ink-muted">{r.rationale}</div></td>
-                        </tr>))}</tbody></table>
-                  </div>
-                </Card>
-              )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <PassportTile d={d} />
+              <MarketsTile d={d} />
+              <DemandTile d={d} />
+              <NsqTile d={d} />
             </div>
-          )}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <FitTile moleculeKey={key} />
+            <MakersTile moleculeKey={key} />
+            <SynthesisTile moleculeKey={key} />
+          </div>
         </div>
       )}
     </div>
+    </ExpandedProvider>
   );
 }

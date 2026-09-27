@@ -2,7 +2,6 @@ import { Compass, Cpu, Factory, FlaskConical, Globe2, HeartPulse, Lightbulb, Map
 import { motion } from "motion/react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { PageHeader } from "../../components/ui";
 import { cn } from "../../lib/cn";
 import { EMPTY, Explorer, FilterBar, Ledger, type Filters } from "./Explorer";
 import { InsightsTab } from "./Insights";
@@ -29,21 +28,29 @@ export function Playground() {
   const { tab = "explore" } = useParams();
   const nav = useNavigate();
   const [f, setF] = useState<Filters>(EMPTY);
+  const cur = TABS.find((t) => t.id === tab) ?? TABS[0];
   return (
     <>
-      <PageHeader eyebrow={<span className="flex items-center gap-1.5"><Compass size={13} /> Playground</span>} title="Explore everything"
-        subtitle="The exploratory views from the original analytics and simulator apps, rebuilt on live platform data — plus new cross-cutting analytics. National CDSCO data and public sources; nothing here is organisation-private." />
-      <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-white p-1.5 ring-1 ring-inset ring-line scrollbar-thin">
-        {TABS.map((t) => {
-          const on = tab === t.id;
-          return (
-            <button key={t.id} onClick={() => nav(`/playground/${t.id}`)} title={t.hint}
-              className={cn("relative flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-[13px] font-medium transition", on ? "text-white" : "text-ink-soft hover:bg-slate-50")}>
-              {on && <motion.span layoutId="pg-tab" className="absolute inset-0 rounded-xl bg-night-900" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
-              <t.icon size={15} className="relative" /><span className="relative">{t.label}</span>
-            </button>
-          );
-        })}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-700"><Compass size={13} /> Playground</div>
+          <h1 className="mt-0.5 font-display text-2xl font-extrabold tracking-tight">{cur.label}</h1>
+          <p className="text-xs text-ink-muted">{cur.hint}</p>
+        </div>
+        <div className="flex items-center gap-1 rounded-2xl bg-white p-1.5 ring-1 ring-inset ring-line">
+          {TABS.map((t) => {
+            const on = tab === t.id;
+            return (
+              <button key={t.id} onClick={() => nav(`/playground/${t.id}`)} title={`${t.label} — ${t.hint}`} aria-label={t.label}
+                className={cn("group relative flex h-10 items-center justify-center gap-2 rounded-xl text-[13px] font-medium transition", on ? "px-3.5 text-white" : "w-10 text-ink-soft hover:bg-slate-50 hover:text-ink")}>
+                {on && <motion.span layoutId="pg-tab" className="absolute inset-0 rounded-xl bg-night-900" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+                <t.icon size={17} className="relative" />
+                {on && <span className="relative whitespace-nowrap">{t.label}</span>}
+                {!on && <span className="pointer-events-none absolute top-full z-30 mt-2 hidden whitespace-nowrap rounded-lg bg-night-900 px-2.5 py-1.5 text-xs text-white shadow-lift group-hover:block">{t.label}</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
       {(tab === "explore" || tab === "ledger") && <div className="mb-5"><FilterBar f={f} set={setF} /></div>}
       <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>

@@ -12,6 +12,7 @@ import { api } from "../../lib/api";
 import { BasisLegend, CoverageSections } from "../../components/capabilities";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
+import { ExpandedProvider, Frame, type Section } from "../../components/ui/Expanded";
 
 type Rate = { key: string; label: string; plants: number; plants_with_nsq: number; alerts: number; share_with_nsq: number | null; alerts_per_100_plants: number | null };
 type Labels = { capabilities: Record<string, string>; segregated: Record<string, string> };
@@ -60,7 +61,7 @@ export function RegistryBadges({ p }: { p: any }) {
 
 // ---------------------------------------------------------------------------------- rates
 
-function RatesCard({ s: all, onPick }: { s: any; onPick: (dim: string, key: string) => void }) {
+function RatesCard({ s: all, onPick, limit, onExpand, bare }: { s: any; onPick: (dim: string, key: string) => void; limit?: number; onExpand?: () => void; bare?: boolean }) {
   const [finished, setFinished] = useState(false);
   const fin = useQuery({ queryKey: ["plants-summary", "finished"], queryFn: () => api<any>("/api/plants/summary?exclude_api_only=true"), enabled: finished });
   const s = finished && fin.data ? fin.data : all;
@@ -71,9 +72,8 @@ function RatesCard({ s: all, onPick }: { s: any; onPick: (dim: string, key: stri
   const max = Math.max(1, ...rows.map(val));
   const overall = s.plants ? (100 * s.with_nsq) / s.plants : 0;
   return (
-    <Card delay={0.1}>
-      <CardHeader title="Who fails, per plant that can make it"
-        subtitle={<span>Registry plants grouped by what they are permitted to make, and how many had NSQ alerts. Dashed line: all registry plants ({nf(overall, 1)}% with alerts). Click a row to list those plants.</span>} />
+    <Frame bare={bare} title="Who fails, per plant that can make it"
+        subtitle={<span>Registry plants grouped by what they are permitted to make, and how many had NSQ alerts. Dashed line: all registry plants ({nf(overall, 1)}% with alerts). Click a row to list those plants.</span>}>
       <div className="px-5 pb-5 pt-3">
         <div className="mb-4 flex flex-wrap gap-2">
           <Segmented value={dim} onChange={setDim} options={[{ value: "capabilities", label: "Dosage form" }, { value: "segregated", label: "Segregated block" }, { value: "states", label: "State" }, { value: "tiers", label: "Certification" }, { value: "breadth", label: "Breadth" }]} />
@@ -88,7 +88,7 @@ function RatesCard({ s: all, onPick }: { s: any; onPick: (dim: string, key: stri
           <span className="text-right">Plants</span><span /><span className="text-right">{metric === "share" ? "With NSQ" : "Alerts/100"}</span>
         </div>
         <div className="space-y-1.5">
-          {rows.map((r) => (
+          {rows.slice(0, limit ?? rows.length).map((r) => (
             <button key={r.key} onClick={() => onPick(dim, r.key)} disabled={dim === "tiers" || dim === "breadth"}
               className="grid w-full grid-cols-[minmax(0,1.7fr)_60px_minmax(0,1.6fr)_72px] items-center gap-3 rounded-lg px-1 py-1 text-left text-[13px] hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent">
               <span className="font-medium leading-snug text-ink-soft" title={r.label}>{r.label}</span>
@@ -103,9 +103,10 @@ function RatesCard({ s: all, onPick }: { s: any; onPick: (dim: string, key: stri
             </button>
           ))}
         </div>
+        {limit && rows.length > limit && onExpand && <button onClick={onExpand} className="mt-2 w-full rounded-lg py-2 text-center text-xs font-medium text-brand-700 hover:bg-brand-50">All {rows.length} rows ↗</button>}
         <p className="mt-4 text-[11.5px] leading-relaxed text-ink-muted">{finished ? `Leaving out ${s.api_only_plants} API-only plants. ` : ""}{s.caveat} Small groups swing a lot: read rates on fewer than ~30 plants as hints.</p>
       </div>
-    </Card>
+    </Frame>
   );
 }
 
@@ -282,6 +283,18 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
 
 // ---------------------------------------------------------------------------------- page
 
+function AboutDetail({ s }: { s: any }) {
+  return (
+    <div className="max-w-3xl space-y-4 text-[13.5px] leading-relaxed text-ink-soft">
+      <p><b>WHO-GMP certified units</b> ({nf(s.who_gmp)}): CDSCO's list of plants certified for export certificates (COPP), with the "category of drugs permitted" for each — dosage forms, separate blocks for beta-lactams, cephalosporins, hormones or cytotoxics, and certificate dates.</p>
+      <p><b>Approved manufacturing sites</b> (SUGAM, {nf(s.sugam)}): licence number, form (Form 28 = Schedule C: sterile and biological products), own or loan licence, and the brand owner making there on loan.</p>
+      <p><b>EU GMP (EudraGMDP)</b>{s.meta?.eudragmdp ? ` — ${nf(s.meta.eudragmdp.eu_sites)} Indian sites, ${nf(s.meta.eudragmdp.eu_added)} not on CDSCO's lists` : " — not fetched yet"}: certificates from EU / EEA inspections, each listing the approved operations in the EU's coded format (e.g. 1.1.1.2 lyophilisates, 1.6.1 sterility testing, 3.1 API synthesis) — marked "stated" on the plant — and statements of non-compliance with what failed. Sites of one company at one PIN are kept apart when their plot numbers differ.</p>
+      <p><b>US FDA inspections</b>{s.meta?.fda_inspections ? ` — ${nf(s.meta.fda_inspections.fda_sites)} Indian drug sites, ${nf(s.meta.fda_inspections.fda_added)} not on the other lists` : " — not fetched yet"}: FDA's classification of each inspection — NAI (clean), VAI (observations, fixed voluntarily), OAI (official action: warning letter or import alert). "US FDA" on a plant means its latest GMP inspection was NAI or VAI within 5 years and it is not on Import Alert 66-40. Clinical / bioequivalence study inspections are left out{s.meta?.fda_inspections?.fda_clinical_only ? ` (${nf(s.meta.fda_inspections.fda_clinical_only)} study-only sites)` : ""}. FDA's inspection records have no postcode, so the site's FDA registration supplies it where one exists; import-alert firms are matched by name and place. FDA does not state dosage forms, so FDA-only plants list none.</p>
+      <p><b>NSQ link</b>: an NSQ "Manufactured By" site is joined to a plant on company name and PIN code ({nf(s.match_kinds?.site ?? 0)} exact, {nf(s.match_kinds?.site_fuzzy ?? 0)} near-identical names), or on company and state when either side has no PIN ({nf(s.match_kinds?.company ?? 0)}).</p>
+    </div>
+  );
+}
+
 export function Plants() {
   const [params, setParams] = useSearchParams();
   const summary = useQuery({ queryKey: ["plants-summary"], queryFn: () => api<any>("/api/plants/summary") });
@@ -295,12 +308,13 @@ export function Plants() {
   const [nsq, setNsq] = useState<"" | "yes" | "no">("");
   const [sort, setSort] = useState<"nsq" | "forms" | "name">("nsq");
   const [page, setPage] = useState(1);
+  const [active, setActive] = useState<string | null>(null);
   const open = params.get("plant") ?? undefined;
   const setOpen = (id?: string) => { const n = new URLSearchParams(params); if (id) n.set("plant", id); else n.delete("plant"); setParams(n, { replace: true }); };
   useEffect(() => { const t = setTimeout(() => { setDq(q); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
   const list = useQuery({
     queryKey: ["plants", dq, state, capability, segregated, cert, nsq, sort, page],
-    queryFn: () => api<any>(`/api/plants?${new URLSearchParams({ q: dq, state, capability, segregated, cert, nsq, sort, page: String(page), size: "25" })}`),
+    queryFn: () => api<any>(`/api/plants?${new URLSearchParams({ q: dq, state, capability, segregated, cert, nsq, sort, page: String(page), size: "15" })}`),
     placeholderData: keepPreviousData,
   });
   if (summary.isLoading) return <PageSkeleton />;
@@ -319,9 +333,14 @@ export function Plants() {
     setPage(1);
   };
   const chips = [state, capability && (capability === "sterile" ? "Sterile (any)" : labels?.capabilities[capability]), segregated && labels?.segregated[segregated]].filter(Boolean);
+  const sections: Section[] = [
+    { id: "rates", title: "Who fails, per plant that can make it", icon: <Factory size={16} />, subtitle: "Every group — click a row to list those plants",
+      render: () => <RatesCard bare s={s} onPick={(d, k) => { pick(d, k); setActive(null); }} /> },
+    { id: "about", title: "How the registry is built", icon: <FlaskConical size={16} />, subtitle: "Sources, what each contributes, and how NSQ alerts are joined", render: () => <AboutDetail s={s} /> },
+  ];
 
   return (
-    <>
+    <ExpandedProvider sections={sections} active={active} onActive={setActive} title="Plant registry" subtitle={`${nf(s.plants)} plants`}>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <Stat label="Plants in the registry" value={s.plants} icon={<Factory size={18} />} hint={`${nf(s.who_gmp)} WHO-GMP · ${nf(s.eu_gmp)} EU GMP · ${nf(s.us_fda ?? 0)} US FDA · ${nf(s.sugam)} in SUGAM${s.eu_ncr ? ` · ${nf(s.eu_ncr)} under EU non-compliance` : ""}${s.fda_oai ? ` · ${nf(s.fda_oai)} FDA OAI / import alert` : ""}`} />
         <Stat label="Sterile-capable" value={s.sterile} tone="indigo" delay={0.04} hint="Injectables, ophthalmics or a Schedule C licence" />
@@ -332,16 +351,25 @@ export function Plants() {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <RatesCard s={s} onPick={pick} />
-        <Card delay={0.15}>
-          <CardHeader title="About this registry" subtitle={`CDSCO · retrieved ${s.meta?.retrieved_at?.slice(0, 10) ?? "—"}`} />
-          <div className="space-y-3 px-5 pb-5 pt-3 text-[13px] leading-relaxed text-ink-soft">
-            <p><b>WHO-GMP certified units</b> ({nf(s.who_gmp)}): CDSCO's list of plants certified for export certificates (COPP), with the "category of drugs permitted" for each — dosage forms, separate blocks for beta-lactams, cephalosporins, hormones or cytotoxics, and certificate dates.</p>
-            <p><b>EU GMP (EudraGMDP)</b>{s.meta?.eudragmdp ? ` — ${nf(s.meta.eudragmdp.eu_sites)} Indian sites, ${nf(s.meta.eudragmdp.eu_added)} not on CDSCO's lists` : " — not fetched yet"}: certificates from EU / EEA inspections, each listing the approved operations in the EU's coded format (e.g. 1.1.1.2 lyophilisates, 1.6.1 sterility testing, 3.1 API synthesis) — marked "stated" on the plant — and statements of non-compliance with what failed.</p>
-            <p><b>US FDA inspections</b>{s.meta?.fda_inspections ? ` — ${nf(s.meta.fda_inspections.fda_sites)} Indian drug sites, ${nf(s.meta.fda_inspections.fda_added)} not on the other lists` : " — not fetched yet"}: FDA's classification of each inspection — NAI (clean), VAI (observations, fixed voluntarily), OAI (official action: warning letter or import alert). "US FDA" on a plant means its latest GMP inspection was NAI or VAI within 5 years and it is not on Import Alert 66-40. Clinical / bioequivalence study inspections (Bioresearch Monitoring) are left out{s.meta?.fda_inspections?.fda_clinical_only ? ` (${nf(s.meta.fda_inspections.fda_clinical_only)} study-only sites)` : ""}. FDA's inspection records have no postcode, so the site's FDA registration supplies it where one exists; import-alert firms are matched by name and place. FDA does not state dosage forms, so FDA-only plants list none (API makers are marked from their FDA registration).</p>
-            <p><b>Approved manufacturing sites</b> (SUGAM, {nf(s.sugam)}): licence number, form (Form 28 = Schedule C: sterile and biological products), own or loan licence, and the brand owner making there on loan.</p>
-            <p><b>NSQ link</b>: an NSQ "Manufactured By" site is joined to a plant on company name and PIN code ({nf(s.match_kinds?.site ?? 0)} exact, {nf(s.match_kinds?.site_fuzzy ?? 0)} near-identical names), or on company and state when either side has no PIN ({nf(s.match_kinds?.company ?? 0)}).</p>
-            {s.outside_capabilities?.length > 0 && <p className="flex items-start gap-2 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-900"><ShieldAlert size={14} className="mt-0.5 shrink-0" />
+        <RatesCard s={s} onPick={pick} limit={10} onExpand={() => setActive("rates")} />
+        <Card delay={0.15} className="min-w-0">
+          <CardHeader title="Where the registry comes from" subtitle={`Retrieved ${s.meta?.retrieved_at?.slice(0, 10) ?? "—"}`}
+            action={<button onClick={() => setActive("about")} className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs text-brand-700 hover:bg-brand-50">How it's built ↗</button>} />
+          <div className="grid grid-cols-2 gap-3 p-5">
+            {[
+              ["CDSCO WHO-GMP", s.who_gmp, "certified units, with what each may make", "#0a9a7d"],
+              ["CDSCO SUGAM", s.sugam, "approved sites and licences", "#64748b"],
+              ["EU GMP", s.meta?.eudragmdp?.eu_sites, `Indian sites · ${nf(s.eu_gmp)} certified now`, "#6366f1"],
+              ["US FDA", s.meta?.fda_inspections?.fda_sites, `inspected sites · ${nf(s.us_fda ?? 0)} acceptable`, "#0ea5e9"],
+            ].map(([k, v, sub, c]: any) => (
+              <div key={k} className="rounded-xl p-3 ring-1 ring-inset ring-line">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted"><span className="h-2 w-2 rounded-full" style={{ background: c }} />{k}</div>
+                <div className="mt-1 font-display text-xl font-extrabold tabular-nums">{v != null ? nf(v) : "—"}</div>
+                <div className="text-[11px] text-ink-muted">{v != null ? sub : "not fetched yet"}</div>
+              </div>
+            ))}
+            <div className="col-span-2 rounded-xl bg-slate-50 p-3 text-xs text-ink-soft">NSQ alerts are joined to plants on company name and PIN code: {nf(s.match_kinds?.site ?? 0)} exact, {nf(s.match_kinds?.site_fuzzy ?? 0)} near-identical, {nf(s.match_kinds?.company ?? 0)} on company and state.</div>
+            {s.outside_capabilities?.length > 0 && <p className="col-span-2 flex items-start gap-2 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-900"><ShieldAlert size={14} className="mt-0.5 shrink-0" />
               <span>WHO-GMP plants with NSQ alerts in a form their listing doesn't cover: {s.outside_capabilities.map((o: any) => `${o.form} (${o.plants})`).join(", ")}.</span></p>}
           </div>
         </Card>
@@ -380,9 +408,9 @@ export function Plants() {
                   <td className="max-w-[300px] px-5 py-2.5"><div className="truncate font-semibold" title={x.name}>{x.name}</div>
                     {x.therapeutic?.length > 0 && <div className="truncate text-[11px] text-ink-muted">{x.therapeutic.map((t: string) => t.replace(/_/g, " ")).join(", ")}</div>}</td>
                   <td className="px-3 py-2.5 text-xs">{x.state || "—"}<div className="text-ink-faint">{[x.district, x.pin].filter(Boolean).join(" · ")}</div></td>
-                  <td className="px-3 py-2.5"><div className="flex max-w-[280px] flex-wrap gap-1">{x.dosage_forms.slice(0, 5).map((f: string) => <FormChip key={f} k={f} labels={labels} />)}
+                  <td className="px-3 py-2.5"><div className="flex max-w-[280px] flex-wrap gap-1">{x.dosage_forms.slice(0, 3).map((f: string) => <FormChip key={f} k={f} labels={labels} />)}
                     {x.dosage_forms.length === 0 && x.licence_forms?.map((f: string) => <span key={f} className="rounded-md border border-dashed border-line px-1.5 py-0.5 text-[10.5px] text-ink-muted" title="Licence form only — CDSCO lists no dosage forms for this site">{f}</span>)}
-                    {x.dosage_forms.length > 5 && <span className="text-[10.5px] text-ink-faint">+{x.dosage_forms.length - 5}</span>}</div></td>
+                    {x.dosage_forms.length > 3 && <span className="text-[10.5px] text-ink-faint">+{x.dosage_forms.length - 3}</span>}</div></td>
                   <td className="px-3 py-2.5"><div className="flex max-w-[200px] flex-wrap gap-1">{Object.entries(x.segregated).map(([k, f]: any) => <SegChip key={k} k={k} forms={f} labels={labels} />)}</div></td>
                   <td className="px-3 py-2.5"><RegistryBadges p={x} /></td>
                   <td className="px-5 py-2.5 text-right tabular-nums">{x.nsq_alerts ? <span className="font-semibold text-rose-700">{x.nsq_alerts}</span> : <span className="text-ink-faint">0</span>}
@@ -401,7 +429,7 @@ export function Plants() {
         )}
       </Card>
       <PlantDrawer id={open} labels={labels} onClose={() => setOpen(undefined)} />
-    </>
+    </ExpandedProvider>
   );
 }
 
@@ -462,13 +490,12 @@ function FilingsRow({ m }: { m: any }) {
   );
 }
 
-export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
+export function MakersCard({ moleculeKey, bare }: { moleculeKey: string; bare?: boolean }) {
   const { data: m, error, isLoading } = useQuery({ queryKey: ["makers", moleculeKey], queryFn: () => api<any>(`/api/plants/for-molecule/${moleculeKey}`), enabled: !!moleculeKey });
   if (error || (!isLoading && !m)) return null;
   const req = m?.molecule;
   return (
-    <Card>
-      <CardHeader title="Who can make it" subtitle={req ? `Plant registry (CDSCO + EU GMP + US FDA) · ${req.dosage_form || "dosage form unknown"}${req.segregated?.length ? ` · needs a separate ${req.segregated.map((x: string) => x.replace("_", "-")).join(" / ")} block` : ""}` : "Loading…"} />
+    <Frame bare={bare} title="Who can make it" subtitle={req ? `Plant registry (CDSCO + EU GMP + US FDA) · ${req.dosage_form || "dosage form unknown"}${req.segregated?.length ? ` · needs a separate ${req.segregated.map((x: string) => x.replace("_", "-")).join(" / ")} block` : ""}` : "Loading…"}>
       {!m ? <div className="p-5"><Skeleton className="h-32" /></div> : (<>
         <div className="grid gap-5 p-5 lg:grid-cols-3">
           <div>
@@ -498,6 +525,6 @@ export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
         </div>
         <FilingsRow m={m} />
       </>)}
-    </Card>
+    </Frame>
   );
 }

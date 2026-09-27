@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, CalendarClock, CircleDashed, Crosshair, Lightbulb, Rocket, Sparkles } from "lucide-react";
+import { ArrowRight, CalendarClock, CircleDashed, Crosshair, Lightbulb, ListChecks, Maximize2, Rocket, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -11,6 +11,7 @@ import { api } from "../../lib/api";
 import { fmtDate, TIER_STYLE, titleCase } from "../../lib/format";
 import { useOrg, useOrgData, VERDICT } from "./common";
 import { useMe } from "../../lib/session";
+import { ExpandedProvider, type Section } from "../../components/ui/Expanded";
 
 const TIER_COLOR: Record<string, string> = { strategic: "#0a9a7d", core: "#6366f1", adjacent: "#f59e0b", stretch: "#94a3b8" };
 
@@ -126,6 +127,74 @@ function Detail({ slug, molecule, onClose }: { slug: string; molecule?: string; 
   );
 }
 
+function UnlockItem({ u, full }: { u: any; full?: boolean }) {
+  const n = full ? u.molecules.length : 4;
+  return (
+    <div className="min-w-0 rounded-xl border border-line bg-white p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold">{u.label}</div>
+          <div className="text-[11px] uppercase tracking-wider text-ink-faint">{u.kind}</div>
+        </div>
+        <div className="shrink-0 text-right"><div className="font-display text-lg font-extrabold text-brand-700">+{u.count}</div><div className="flex items-center justify-end gap-1 text-[11px] text-ink-muted">{u.market_usd_bn ? <>${u.market_usd_bn} bn <Estimate field="market_size_usd_bn" align="right" /></> : "molecules"}</div></div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {u.molecules.slice(0, n).map((m: string) => <span key={m} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-ink-soft">{m}</span>)}
+        {u.molecules.length > n && <span className="rounded-md px-1.5 py-0.5 text-[11px] text-ink-muted">+{u.molecules.length - n} more</span>}
+      </div>
+    </div>
+  );
+}
+
+function MoleculeTable({ rows, slug, limit }: { rows: any[]; slug: string; limit?: number }) {
+  const nav = useNavigate();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[960px] text-sm">
+        <thead><tr className="border-y border-line bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+          <th className="px-5 py-2.5">Molecule</th><th className="whitespace-nowrap px-3 py-2.5">Your alerts</th><th className="px-3 py-2.5"><span className="inline-flex items-center gap-1">Loss of exclusivity <Estimate field="loe" /></span></th><th className="whitespace-nowrap px-3 py-2.5">Best plant</th><th className="px-3 py-2.5">Fit</th><th className="px-3 py-2.5">Missing</th><th className="px-5 py-2.5 text-right">Score</th>
+        </tr></thead>
+        <tbody>
+          {rows.slice(0, limit ?? rows.length).map((m: any) => (
+            <tr key={m.molecule_key} onClick={() => nav(`/o/${slug}/opportunities/${m.molecule_key}`)} className={`cursor-pointer border-b border-line/70 transition hover:bg-brand-50/40 ${m.alerts_in_org ? "bg-rose-50/30" : ""}`}>
+              <td className={`border-l-[3px] px-5 py-3 ${m.alerts_in_org ? "border-rose-400" : "border-brand-500"}`}><div className="flex items-center gap-2 whitespace-nowrap font-semibold">{m.api_name}{ORIGIN_BADGE[m.origin] ?? ORIGIN_BADGE.curated}</div><div className="text-xs text-ink-muted">{m.therapeutic_area} · {titleCase(m.modality)}{m.market_size_usd_bn ? ` · $${m.market_size_usd_bn} bn` : ""}</div></td>
+              <td className="px-3 py-3">{m.alerts_in_org ? <Badge tone="rose">{m.alerts_in_org} NSQ</Badge> : <span className="text-xs text-ink-faint">—</span>}</td>
+              <td className="px-3 py-3"><Loe loe={m.loe} prov={Object.keys(m.prov ?? {}).length ? m.prov : undefined} /></td>
+              <td className="whitespace-nowrap px-3 py-3 text-xs">{m.best_plant?.name ?? "—"}</td>
+              <td className="px-3 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[m.fit_tier]}`}>{titleCase(m.fit_tier)}</span></td>
+              <td className="max-w-[260px] px-3 py-3 text-xs text-ink-muted"><div className="truncate">{[...m.missing_capabilities.map((c: any) => c.label), ...m.missing_certifications.map((c: string) => c.toUpperCase())].join(", ") || <span className="text-emerald-600">Nothing core</span>}</div></td>
+              <td className="px-5 py-3 text-right font-display font-bold tabular-nums">{Math.round(m.fit_score)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UntrackedGrid({ items, canEdit, limit }: { items: any[]; canEdit?: boolean; limit?: number }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {items.slice(0, limit ?? items.length).map((u: any) => (
+        <div key={u.ingredient} className="min-w-0 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-3.5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0"><div className="truncate font-semibold capitalize text-ink-soft">{u.ingredient}</div><div className="mt-0.5 text-[11px] uppercase tracking-wider text-ink-faint">Untracked</div></div>
+            <Badge tone="rose">{u.alerts} NSQ</Badge>
+          </div>
+          <div className="mt-2 text-xs text-ink-muted">{u.categories.join(" · ")}{u.last ? ` · last ${u.last}` : ""}</div>
+          <div className="mt-1 truncate text-[11px] text-ink-faint" title={u.products.join(" | ")}>{u.products[0]}</div>
+          {u.variants?.length > 0 && <div className="mt-1 truncate text-[11px] text-amber-700" title={u.variants.join(", ")}>also spelt: {u.variants.join(", ")}</div>}
+          {canEdit && <Link to={`/admin/molecules?add=${encodeURIComponent(u.ingredient)}`} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline">Start tracking <ArrowRight size={11} /></Link>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExpandButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return <button onClick={onClick} className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-brand-700 ring-1 ring-inset ring-brand-200 hover:bg-brand-50"><Maximize2 size={12} /> {children}</button>;
+}
+
 export function Opportunities() {
   const { org, slug } = useOrg();
   const { data: me } = useMe();
@@ -133,7 +202,7 @@ export function Opportunities() {
   const nav = useNavigate();
   const { data, isLoading, error } = useOrgData<any>("opportunities");
   const [tier, setTier] = useState<string>("all");
-  const [shown, setShown] = useState(40);
+  const [active, setActive] = useState<string | null>(null);
   // Molecules that appear in the organisation's own alerts come first.
   const rows = useMemo(() => (data?.molecules ?? [])
     .filter((m: any) => tier === "all" || m.fit_tier === tier)
@@ -142,9 +211,23 @@ export function Opportunities() {
   if (error) return <ErrorNote error={error} />;
   const t = data.tiers;
   const total = data.molecules.length;
+  const sections: Section[] = [
+    { id: "table", title: "Tracked molecules", icon: <ListChecks size={16} />, subtitle: `${rows.length} molecules · highlighted rows appear in your own CDSCO alerts`, render: () => (
+      <div className="-m-5 md:-m-6">
+        <div className="flex justify-end px-5 pt-4 md:px-6"><Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} /></div>
+        <div className="mt-3 bg-white"><MoleculeTable rows={rows} slug={slug} /></div>
+      </div>
+    ) },
+    { id: "unlocks", title: "What to add next", icon: <Rocket size={16} />, subtitle: "Every addition, with all the molecules it unlocks", render: () => (
+      <div className="grid gap-3 lg:grid-cols-2">{data.unlocks.map((u: any) => <UnlockItem key={u.kind + u.token} u={u} full />)}</div>
+    ) },
+    { id: "untracked", title: "Untracked ingredients in your alerts", icon: <CircleDashed size={16} />, subtitle: `${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet`, render: () => (
+      <UntrackedGrid items={data.untracked} canEdit={me?.permissions.edit_molecules} />
+    ) },
+  ];
 
   return (
-    <>
+    <ExpandedProvider sections={sections} active={active} onActive={setActive} title="Patent opportunities" subtitle={org?.name}>
       <PageHeader eyebrow="Patent opportunities" title="Which off-patent medicines your plants can make" subtitle="Each molecule's patent expiry, market and FTO risk scored against your best plant — and the additions that would unlock the rest." />
       {!data.has_plants && <div className="mb-5"><Empty title="No plants linked">Scores below assume no plant. Add one under Infrastructure.</Empty></div>}
       <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl bg-white px-4 py-3 text-xs text-ink-soft ring-1 ring-inset ring-line">
@@ -167,77 +250,39 @@ export function Opportunities() {
         </Card>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_1fr]">
-        <Card delay={0.1}>
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <Card delay={0.1} className="min-w-0">
           <CardHeader title={<span className="flex items-center gap-1.5">Patent cliff × plant fit <Estimate field="loe" /><Estimate field="market_size_usd_bn" /></span>} subtitle="Bubble size = market size (estimate). Click a molecule for its roadmap." />
           <div className="px-2 pb-3"><CliffChart rows={data.molecules} onPick={(k) => nav(`/o/${slug}/opportunities/${k}`)} /></div>
         </Card>
-        <Card delay={0.15}>
-          <CardHeader icon={<Rocket size={16} />} title="What to add next" subtitle="Additions that unlock the most molecules" />
-          <motion.ul variants={listVariants} initial="hidden" animate="show" className="space-y-3 p-5">
+        <Card delay={0.15} className="min-w-0">
+          <CardHeader icon={<Rocket size={16} />} title="What to add next" subtitle="Additions that unlock the most molecules"
+            action={data.unlocks.length > 3 ? <ExpandButton onClick={() => setActive("unlocks")}>All {data.unlocks.length}</ExpandButton> : undefined} />
+          <motion.ul variants={listVariants} initial="hidden" animate="show" className="space-y-2.5 p-5">
             {data.unlocks.length === 0 && <li className="text-sm text-ink-muted">Your plants already cover every tracked molecule's core requirements.</li>}
-            {data.unlocks.slice(0, 6).map((u: any) => (
-              <motion.li variants={itemVariants} key={u.kind + u.token} className="rounded-xl border border-line p-3.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold">{u.label}</div>
-                    <div className="text-[11px] uppercase tracking-wider text-ink-faint">{u.kind}</div>
-                  </div>
-                  <div className="text-right"><div className="font-display text-lg font-extrabold text-brand-700">+{u.count}</div><div className="flex items-center justify-end gap-1 text-[11px] text-ink-muted">{u.market_usd_bn ? <>${u.market_usd_bn} bn <Estimate field="market_size_usd_bn" align="right" /></> : "molecules"}</div></div>
-                </div>
-                <div className="mt-2 truncate text-xs text-ink-muted">{u.molecules.join(", ")}</div>
-              </motion.li>
-            ))}
+            {data.unlocks.slice(0, 3).map((u: any) => <motion.li variants={itemVariants} key={u.kind + u.token}><UnlockItem u={u} /></motion.li>)}
           </motion.ul>
         </Card>
       </div>
 
       <Card delay={0.2} className="mt-5">
-        <CardHeader title="Tracked molecules" subtitle={`${rows.length} shown · highlighted rows appear in your own CDSCO alerts`} action={
-          <Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} />
+        <CardHeader title="Tracked molecules" subtitle={`${rows.length} molecules · highlighted rows appear in your own CDSCO alerts`} action={
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} />
+            {rows.length > 10 && <ExpandButton onClick={() => setActive("table")}>All {rows.length}</ExpandButton>}
+          </div>
         } />
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-y border-line bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-              <th className="px-5 py-2.5">Molecule</th><th className="px-3 py-2.5">Your alerts</th><th className="px-3 py-2.5"><span className="inline-flex items-center gap-1">Loss of exclusivity <Estimate field="loe" /></span></th><th className="px-3 py-2.5">Best plant</th><th className="px-3 py-2.5">Fit</th><th className="px-3 py-2.5">Missing</th><th className="px-5 py-2.5 text-right">Score</th>
-            </tr></thead>
-            <tbody>
-              {rows.slice(0, shown).map((m: any) => (
-                <tr key={m.molecule_key} onClick={() => nav(`/o/${slug}/opportunities/${m.molecule_key}`)} className={`cursor-pointer border-b border-line/70 transition hover:bg-brand-50/40 ${m.alerts_in_org ? "bg-rose-50/30" : ""}`}>
-                  <td className={`border-l-[3px] px-5 py-3 ${m.alerts_in_org ? "border-rose-400" : "border-brand-500"}`}><div className="flex items-center gap-2 font-semibold">{m.api_name}{ORIGIN_BADGE[m.origin] ?? ORIGIN_BADGE.curated}</div><div className="text-xs text-ink-muted">{m.therapeutic_area} · {titleCase(m.modality)}{m.market_size_usd_bn ? ` · $${m.market_size_usd_bn} bn` : ""}</div></td>
-                  <td className="px-3 py-3">{m.alerts_in_org ? <Badge tone="rose">{m.alerts_in_org} NSQ</Badge> : <span className="text-xs text-ink-faint">—</span>}</td>
-                  <td className="px-3 py-3"><Loe loe={m.loe} prov={Object.keys(m.prov ?? {}).length ? m.prov : undefined} /></td>
-                  <td className="px-3 py-3 text-xs">{m.best_plant?.name ?? "—"}</td>
-                  <td className="px-3 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[m.fit_tier]}`}>{titleCase(m.fit_tier)}</span></td>
-                  <td className="max-w-[260px] px-3 py-3 text-xs text-ink-muted"><div className="truncate">{[...m.missing_capabilities.map((c: any) => c.label), ...m.missing_certifications.map((c: string) => c.toUpperCase())].join(", ") || <span className="text-emerald-600">Nothing core</span>}</div></td>
-                  <td className="px-5 py-3 text-right font-display font-bold tabular-nums">{Math.round(m.fit_score)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {rows.length > shown && <div className="flex justify-center p-4"><Button variant="secondary" size="sm" onClick={() => setShown(shown + 60)}>Show {Math.min(60, rows.length - shown)} more of {rows.length - shown}</Button></div>}
+        <div className="mt-4"><MoleculeTable rows={rows} slug={slug} limit={10} /></div>
+        {rows.length > 10 && <button onClick={() => setActive("table")} className="block w-full border-t border-line py-3 text-center text-xs font-medium text-brand-700 hover:bg-brand-50/40">Open the full table · {rows.length - 10} more molecules</button>}
       </Card>
       <Card delay={0.25} className="mt-5 border-dashed bg-white/60">
-        <CardHeader icon={<CircleDashed size={16} />} title="Also in your CDSCO alerts — untracked" subtitle={`${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet. They cannot be scored until they are added to the tracked set.`} />
+        <CardHeader icon={<CircleDashed size={16} />} title="Also in your CDSCO alerts — untracked" subtitle={`${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet. They cannot be scored until they are added to the tracked set.`}
+          action={data.untracked.length > 6 ? <ExpandButton onClick={() => setActive("untracked")}>All {data.untracked.length}</ExpandButton> : undefined} />
         {data.untracked.length === 0 ? <div className="px-5 pb-5 pt-3 text-sm text-ink-muted">Every ingredient in your alerts is tracked.</div> : (
-          <motion.div variants={listVariants} initial="hidden" animate="show" className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
-            {data.untracked.map((u: any) => (
-              <motion.div variants={itemVariants} key={u.ingredient} className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-3.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0"><div className="truncate font-semibold capitalize text-ink-soft">{u.ingredient}</div><div className="mt-0.5 text-[11px] uppercase tracking-wider text-ink-faint">Untracked</div></div>
-                  <Badge tone="rose">{u.alerts} NSQ</Badge>
-                </div>
-                <div className="mt-2 text-xs text-ink-muted">{u.categories.join(" · ")}{u.last ? ` · last ${u.last}` : ""}</div>
-                <div className="mt-1 truncate text-[11px] text-ink-faint" title={u.products.join(" | ")}>{u.products[0]}</div>
-                {u.variants?.length > 0 && <div className="mt-1 truncate text-[11px] text-amber-700" title={u.variants.join(", ")}>also spelt: {u.variants.join(", ")}</div>}
-                {me?.permissions.edit_molecules && <Link to={`/admin/molecules?add=${encodeURIComponent(u.ingredient)}`} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline">Start tracking <ArrowRight size={11} /></Link>}
-              </motion.div>
-            ))}
-          </motion.div>
+          <div className="p-5"><UntrackedGrid items={data.untracked} canEdit={me?.permissions.edit_molecules} limit={6} /></div>
         )}
       </Card>
       <Detail slug={slug} molecule={molecule} onClose={() => nav(`/o/${slug}/opportunities`)} />
-    </>
+    </ExpandedProvider>
   );
 }

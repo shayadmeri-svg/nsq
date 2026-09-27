@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, Network, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
+import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, Network, PanelLeftClose, PanelLeftOpen, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
+import { createContext, useContext } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -10,29 +11,39 @@ import { useLogout, type Me } from "../../lib/session";
 
 type OrgLite = { slug: string; name: string; city: string };
 
+// Collapsed sidebar: icons only, labels as tooltips. Remembered per browser.
+const Collapsed = createContext(false);
+const COLLAPSE_KEY = "nsq.sidebar.collapsed";
+function readCollapsed(): boolean {
+  try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; }
+}
+
 function Logo() {
+  const c = useContext(Collapsed);
   return (
-    <div className="flex items-center gap-2.5 px-2">
+    <div className={cn("flex items-center gap-2.5", c ? "justify-center" : "px-2")}>
       <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-700 shadow-lg shadow-brand-900/40">
         <svg viewBox="0 0 32 32" className="h-5 w-5"><path d="M8 23V9l8 9 8-9v14" stroke="white" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </div>
-      <div className="leading-tight">
+      {!c && <div className="leading-tight">
         <div className="font-display text-[15px] font-extrabold tracking-tight text-white">NSQ Intelligence</div>
         <div className="text-[10.5px] font-medium text-slate-400">Quality · Capability · Export</div>
-      </div>
+      </div>}
     </div>
   );
 }
 
 function NavItem({ to, icon, children, end }: { to: string; icon: ReactNode; children: ReactNode; end?: boolean }) {
+  const c = useContext(Collapsed);
   return (
-    <NavLink to={to} end={end} className="group relative block">
+    <NavLink to={to} end={end} className="group relative block" title={c && typeof children === "string" ? children : undefined}>
       {({ isActive }) => (
-        <div className={cn("relative flex items-center gap-3 rounded-xl px-3 py-2 text-[13.5px] font-medium transition", isActive ? "text-white" : "text-slate-400 hover:bg-white/5 hover:text-slate-200")}>
+        <div className={cn("relative flex items-center rounded-xl py-2 text-[13.5px] font-medium transition", c ? "justify-center px-0" : "gap-3 px-3",
+          isActive ? "text-white" : "text-slate-400 hover:bg-white/5 hover:text-slate-200")}>
           {isActive && <motion.div layoutId="nav-active" className="absolute inset-0 rounded-xl bg-white/10 ring-1 ring-inset ring-white/10" transition={{ type: "spring", damping: 30, stiffness: 380 }} />}
           {isActive && <motion.div layoutId="nav-bar" className="absolute -left-3 top-1.5 h-6 w-1 rounded-r-full bg-brand-400" />}
           <span className={cn("relative", isActive ? "text-brand-400" : "")}>{icon}</span>
-          <span className="relative">{children}</span>
+          {!c && <span className="relative truncate">{children}</span>}
         </div>
       )}
     </NavLink>
@@ -40,15 +51,18 @@ function NavItem({ to, icon, children, end }: { to: string; icon: ReactNode; chi
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
+  const c = useContext(Collapsed);
   return (
     <div className="space-y-0.5">
-      <div className="px-3 pb-1.5 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</div>
+      {c ? <div className="mx-3 mb-2 mt-4 border-t border-white/10" title={title} />
+        : <div className="px-3 pb-1.5 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</div>}
       {children}
     </div>
   );
 }
 
-function OrgSwitcher({ me, current }: { me: Me; current?: string }) {
+function OrgSwitcher({ me, current, onExpand }: { me: Me; current?: string; onExpand?: () => void }) {
+  const c = useContext(Collapsed);
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -56,6 +70,15 @@ function OrgSwitcher({ me, current }: { me: Me; current?: string }) {
   const orgs = data?.orgs ?? [];
   const cur = orgs.find((o) => o.slug === current) ?? (me.org ? { slug: me.org.slug, name: me.org.name, city: me.org.city } : undefined);
   const filtered = orgs.filter((o) => o.name.toLowerCase().includes(q.toLowerCase()));
+  if (c) {
+    const name = cur?.name ?? me.org?.name ?? "";
+    return (
+      <button onClick={onExpand} title={name ? `Organisation: ${name}` : "Select an organisation"}
+        className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-xs font-bold text-white ring-1 ring-inset ring-white/10 hover:bg-white/10">
+        {name ? name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") : <Building2 size={16} />}
+      </button>
+    );
+  }
   if (!me.is_platform && me.org) {
     return (
       <div className="mx-1 rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-inset ring-white/10">
@@ -141,15 +164,26 @@ export function AppShell({ me }: { me: Me }) {
   const loc = useLocation();
   const params = useParams();
   const [mobile, setMobile] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const toggle = () => setCollapsed((v) => { try { localStorage.setItem(COLLAPSE_KEY, v ? "0" : "1"); } catch { /* private mode */ } return !v; });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.key === "[" && !e.metaKey && !e.ctrlKey && !["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName)) toggle();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const slug = params.slug ?? (loc.pathname.startsWith("/o/") ? loc.pathname.split("/")[2] : undefined) ?? (!me.is_platform ? me.org?.slug : undefined);
   const pageKey = useMemo(() => loc.pathname.split("/").slice(0, 4).join("/").replace(/\/(quality|opportunities|eu)\/.+$/, "/$1"), [loc.pathname]);
   useEffect(() => { setMobile(false); }, [loc.pathname]);
   useEffect(() => { window.scrollTo({ top: 0 }); }, [pageKey]);
 
-  const sidebar = (
-    <nav className="flex h-full flex-col gap-2 overflow-y-auto bg-night-900 px-3 pb-4 pt-5 scrollbar-thin">
+  const sidebar = (c: boolean) => (
+    <Collapsed.Provider value={c}>
+    <nav className={cn("flex h-full flex-col gap-2 overflow-y-auto bg-night-900 pb-4 pt-5 scrollbar-thin", c ? "px-2" : "px-3")}>
       <Logo />
-      <div className="mt-5"><OrgSwitcher me={me} current={slug} /></div>
+      <div className="mt-5"><OrgSwitcher me={me} current={slug} onExpand={toggle} /></div>
       {slug && (
         <Section title="Organisation">
           <NavItem to={`/o/${slug}`} end icon={<LayoutDashboard size={17} />}>Overview</NavItem>
@@ -177,20 +211,25 @@ export function AppShell({ me }: { me: Me }) {
           <NavItem to="/admin/audit" icon={<ScrollText size={17} />}>Audit log</NavItem>
         </Section>
       )}
-      <div className="mt-auto rounded-xl bg-gradient-to-br from-white/[0.06] to-transparent p-3 text-[11.5px] leading-relaxed text-slate-400 ring-1 ring-inset ring-white/5">
+      {!c && <div className="mt-auto rounded-xl bg-gradient-to-br from-white/[0.06] to-transparent p-3 text-[11.5px] leading-relaxed text-slate-400 ring-1 ring-inset ring-white/5">
         <div className="mb-1 flex items-center gap-1.5 font-semibold text-slate-300"><FlaskConical size={13} /> Data sources</div>
-        CDSCO NSQ alerts · FDA Orange/Purple Book · EMA · ClinicalTrials.gov · FDA site records · curated seeds.
-      </div>
+        CDSCO NSQ alerts, plant registries (CDSCO, EU GMP, US FDA), FDA / EMA product records, ClinicalTrials.gov, open chemistry and health datasets.
+      </div>}
+      <button onClick={toggle} title={c ? "Expand the sidebar ( [ )" : "Collapse the sidebar ( [ )"}
+        className={cn("hidden items-center gap-2 rounded-xl py-2 text-[12.5px] text-slate-400 transition hover:bg-white/5 hover:text-slate-200 lg:flex", c ? "mt-auto justify-center" : "px-3")}>
+        {c ? <PanelLeftOpen size={17} /> : <><PanelLeftClose size={17} /> Collapse</>}
+      </button>
     </nav>
+    </Collapsed.Provider>
   );
 
   return (
     <div className="flex min-h-full">
-      <aside className="sticky top-0 hidden h-screen w-[264px] shrink-0 lg:block">{sidebar}</aside>
+      <aside className={cn("sticky top-0 hidden h-screen shrink-0 transition-[width] duration-200 lg:block", collapsed ? "w-[72px]" : "w-[264px]")}>{sidebar(collapsed)}</aside>
       {mobile && <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setMobile(false)} />}
       <AnimatePresence>
         {mobile && (
-          <motion.aside key="mobile-nav" className="fixed inset-y-0 left-0 z-50 w-[264px] lg:hidden" initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: "spring", damping: 30, stiffness: 300 }}>{sidebar}</motion.aside>
+          <motion.aside key="mobile-nav" className="fixed inset-y-0 left-0 z-50 w-[264px] lg:hidden" initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: "spring", damping: 30, stiffness: 300 }}>{sidebar(false)}</motion.aside>
         )}
       </AnimatePresence>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -207,7 +246,7 @@ export function AppShell({ me }: { me: Me }) {
         <main className="flex-1">
           {/* Enter-only page transition. No exit / mode="wait": with the Outlet
               inside, a stalled exit would leave the new route unrendered. */}
-          <motion.div key={pageKey} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }} className="mx-auto w-full max-w-[1320px] px-4 py-7 md:px-8">
+          <motion.div key={pageKey} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }} className={cn("mx-auto w-full px-4 py-7 md:px-8", collapsed ? "max-w-[1560px]" : "max-w-[1320px]")}>
             <Outlet />
           </motion.div>
         </main>
