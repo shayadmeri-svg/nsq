@@ -225,3 +225,4 @@ def test_new_forms():
     f = lambda t: cp.parse_capabilities(t, source="t")["dosage_forms"]  # noqa: E731
     assert f("Mouth Dissolving Strip") == ["oral_film_gum"] and f("L.V.P") == ["lvp"] and f("Respiratory Solution") == ["inhalation"]
     assert f("Exteernal Preparation") == ["topical"]
+    assert f("Tablet, Capsules (Soft Gelatin)") == ["capsule_soft", "tablet"]

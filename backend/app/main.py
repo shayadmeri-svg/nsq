@@ -15,7 +15,7 @@ from . import data, scheduler
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .models import JobRun, Plant, User, utcnow
-from .routers import admin, auth, jobs as jobs_router, lab as lab_router, medicines as medicines_router, molecules, orgs, pipelines, platform, playground
+from .routers import admin, auth, jobs as jobs_router, lab as lab_router, medicines as medicines_router, molecules, orgs, pipelines, platform, playground, plants as plants_router
 from .security import csrf_guard, hash_password
 
 log = logging.getLogger("nsq")
@@ -72,7 +72,7 @@ if settings.cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
                        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["content-type", "x-nsq-client"])
 
-for r in (auth.router, orgs.router, admin.router, jobs_router.router, pipelines.router, molecules.router, playground.router, lab_router.router, medicines_router.router, platform.router):
+for r in (auth.router, orgs.router, admin.router, jobs_router.router, pipelines.router, molecules.router, playground.router, lab_router.router, medicines_router.router, plants_router.router, platform.router):
     app.include_router(r)
 
 

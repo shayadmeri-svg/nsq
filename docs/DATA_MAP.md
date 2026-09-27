@@ -203,6 +203,7 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | Playground · Regulation map | molecule intelligence, built-in knowledge (`core/regulatory_regions.py`) | `cdmo:*` |
 | Playground · Molecule workbench | molecule intelligence, NSQ frame, built-in knowledge | `cdmo:*`, frame, `orgs` (your plants) |
 | Playground · Process lab | built-in knowledge (`core/process_models.py`) | none |
+| Playground · Plants | plant registry (CDSCO WHO-GMP + SUGAM), site directory | `sources/cdsco_plants.json`, frame |
 | Org · Overview / Opportunities / EU export | NSQ frame, molecule intelligence | frame, `cdmo:*`, `orgs` |
 | Org · Quality | NSQ frame (your manufacturer keys and national) | frame, `orgs` |
 | Org · Infrastructure | molecule intelligence (plants), site directory | `cdmo:plant:*`, `plants`, `sources/fda_*.json` |
@@ -211,7 +212,7 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | Organisations | NSQ frame (manufacturer search), plants | `orgs`, frame, `cdmo:plant:*` |
 | Data pipelines | universe & source status | manifest, `generated/molecule_universe.json`, `pipeline_schedules`, `job_runs` |
 | Molecule universe | universe, molecule intelligence, lookup | `generated/*`, `cdmo:*`, seeds, `sources/*`, `molecule_entries`, `watch_molecules` |
-| Site directory | site directory | frame, `sources/fda_*.json`, `orgs` |
+| Site directory | site directory, plant registry | frame, `sources/fda_*.json`, `sources/cdsco_plants.json`, `orgs` |
 | Audit log | none | `audit_log` |
 
 ## 6. Things worth knowing
@@ -219,3 +220,19 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 - **Spurious batches.** A batch declared spurious is listed under the company printed on its label, which may not be the real maker. The API flags these rows (`_spurious`) and keeps them out of every company ranking, the site directory and org ranks. They appear in Insights and in the Ledger's Authenticity column.
 - **Unused Redis keys.** `cdmo:complexity:*` and `cdmo:portfolio:*` have store functions but no writers today.
 - **Legacy `/analytics` service.** It reads the same Redis keys through `analytics/shared/*`, which is a copy of `core/*`. It only starts with the `legacy` compose profile.
+
+## Plant registry (CDSCO)
+
+`redis-loader/sources/cdsco_plants.py` builds `data/sources/cdsco_plants.json` from two official CDSCO lists:
+the WHO-GMP certified-units PDF (read by page layout: serial column, name/address, "category of drugs permitted")
+and the SUGAM approved-manufacturing-site table (licence number, form, own/loan, loan licensee, dates). The free
+text becomes a fixed vocabulary — dosage forms, sterile / API, segregated blocks (beta-lactam, cephalosporin,
+hormone, cytotoxic…) scoped to the forms they cover, therapeutic classes — and every capability keeps the CDSCO
+sentence it came from. The output also keeps the parsed inputs, so a run that cannot reach CDSCO rebuilds from them
+instead of losing data. CDSCO refuses many cloud networks: run it on a machine in India or a laptop, or upload the PDF
+to the "CDSCO plant registry" job.
+
+`backend/app/plants.py` links NSQ directory sites to registry plants (company + PIN = `site`; same PIN, near-identical
+name = `site_fuzzy`; company + town, or the company's only plant in the state = `company`) and serves `/api/plants*`:
+per-capability denominators (plants that can make X, share with NSQ alerts), the plant list and plant detail.
+"Add as plant" from the site directory adds the registry's forms as `stated` capabilities and the WHO-GMP certificate.

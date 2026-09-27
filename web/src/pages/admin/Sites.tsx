@@ -9,6 +9,7 @@ import { useToast } from "../../components/ui/toast";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
+import { SiteRegistryLink } from "../playground/Plants";
 
 export function FdaBadges({ fda }: { fda: any }) {
   return (
@@ -57,6 +58,12 @@ export function SiteDetail({ site, actions }: { site: any; actions?: React.React
           </div>
         )}
       </div>
+      {"cdsco" in site && (
+        <div>
+          <div className="label mb-1.5">CDSCO plant registry (WHO-GMP · approved sites)</div>
+          <SiteRegistryLink cdsco={site.cdsco} />
+        </div>
+      )}
       {actions}
     </div>
   );

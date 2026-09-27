@@ -210,8 +210,26 @@ def summary() -> dict[str, Any]:
     }
 
 
-def plant_from_site(site: dict[str, Any], asset_id: str) -> dict[str, Any]:
-    """PlantAsset fields for a directory site. Every capability is 'inferred'."""
+# CDSCO registry dosage form -> (approved_forms, capability tokens) in the plant profile vocabulary
+REGISTRY_FORMS: dict[str, tuple[list[str], list[str]]] = {
+    "tablet": (["solid_oral", "tablet"], ["compression"]),
+    "capsule_hard": (["solid_oral", "capsule"], []), "capsule_soft": (["solid_oral", "capsule", "softgel"], []),
+    "oral_liquid": (["syrup", "suspension"], ["liquid_oral_filling"]), "dry_syrup": (["dry_syrup"], []),
+    "oral_powder": (["powder"], []), "svp_liquid": (["injection", "vial"], ["aseptic_fill", "vial_filling", "sterile_liquid"]),
+    "svp_dry_powder": (["injection", "vial", "dry_powder_injection"], ["aseptic_fill", "powder_filling"]),
+    "lyophilised": (["lyophilized_vial"], ["lyophilization", "aseptic_fill"]), "lvp": (["lvp"], ["sterile_liquid"]),
+    "prefilled_syringe": (["prefilled_syringe"], ["pfs_filling"]), "ophthalmic": (["ophthalmic"], ["sterile_liquid"]),
+    "topical": (["topical"], []), "inhalation": (["inhalation"], []), "api": (["api"], []), "biological": (["biologic"], []),
+}
+
+
+def plant_from_site(site: dict[str, Any], asset_id: str, cdsco: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """PlantAsset fields for a directory site.
+
+    Capabilities come from the alerted products ('inferred'). When the site is the same
+    plant as one in CDSCO's WHO-GMP / SUGAM lists (matched on company and PIN), the forms
+    CDSCO lists are added as 'stated', with the WHO-GMP certificate.
+    """
     fda = site["fda"]
     inspections = []
     for a in fda.get("import_alert") or []:
@@ -230,18 +248,43 @@ def plant_from_site(site: dict[str, Any], asset_id: str) -> dict[str, Any]:
     if reg:
         summary += f" FDA-registered ({fda['match']} match, FEI {reg[0].get('fei') or '—'}; operations: {', '.join(reg[0].get('operations') or []) or '—'})."
     containment = "cytotoxic" if any(k in " ".join(site["top_ingredients"]) for k in ("tamoxifen", "capecitabine", "methotrexate", "imatinib", "letrozole")) else "standard"
+    approved, caps = list(site["approved_forms"]), list(site["capabilities"])
+    basis = {t: "inferred" for t in caps}
+    certs, cert_basis = [], {}
+    reg = (cdsco or {}).get("plants") or []
+    if reg and cdsco.get("match") in ("site", "site_fuzzy"):
+        p = reg[0]
+        for f in p.get("dosage_forms", []):
+            forms, toks = REGISTRY_FORMS.get(f, ([], []))
+            approved += [x for x in forms if x not in approved]
+            for t in toks:
+                if t not in caps:
+                    caps.append(t)
+                basis[t] = "stated"
+        seg = p.get("segregated") or {}
+        if "cytotoxic" in seg:
+            containment = "cytotoxic"
+        elif {"hormone", "steroid", "immunosuppressant", "potent_other"} & set(seg):
+            containment = "potent"
+        if p.get("who_gmp"):
+            certs.append("WHO-GMP (CDSCO COPP)")
+            cert_basis["WHO-GMP (CDSCO COPP)"] = "stated"
+        sources.append({"label": "CDSCO WHO-GMP certified units / approved manufacturing sites", "url": "https://cdscoonline.gov.in/CDSCO/manuf_site"})
+        summary += f" CDSCO lists this plant ({p['name']}): {', '.join(p.get('dosage_forms', [])) or 'no forms parsed'}" + \
+            (f"; segregated blocks: {', '.join(seg)}" if seg else "") + (f"; WHO-GMP valid until {p['who_gmp_valid_until']}" if p.get("who_gmp_valid_until") else "") + "."
     return {
         "asset_id": asset_id,
         "site_name": f"{site['company']} — {site['city'] or site['state'] or site['pincode']}".strip(" —"),
         "city": site["city"], "state": site["state"], "country": "India",
-        "capabilities": site["capabilities"],
-        "approved_forms": site["approved_forms"],
+        "capabilities": caps,
+        "approved_forms": approved,
         "containment_class": containment,
-        "certifications": [], "certifications_active": [],
-        "capability_basis": {t: "inferred" for t in site["capabilities"]},
-        "certification_basis": {},
+        "certifications": certs, "certifications_active": certs,
+        "capability_basis": basis,
+        "certification_basis": cert_basis,
         "inspections": inspections,
-        "notes": "Created from the site directory (public records). Capabilities are inferred from the dosage forms of alerted products — confirm with the organisation.",
+        "notes": "Created from the site directory (public records). Capabilities marked 'inferred' come from the dosage forms of alerted products; "
+                 "'stated' ones are listed by CDSCO for this plant — confirm with the organisation.",
         "reference": {
             "company": site["company"], "site": site["address"], "location": ", ".join(x for x in (site["city"], site["state"], site["pincode"]) if x),
             "summary": summary, "retrieved_at": time.strftime("%Y-%m-%d"), "sources": sources, "site_id": site["id"],

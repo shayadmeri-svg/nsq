@@ -1,0 +1,332 @@
+// Plant registry: India's manufacturing plants from CDSCO's official lists (WHO-GMP
+// certified units + SUGAM approved sites), what each is permitted to make, and the NSQ
+// alerts linked to each plant. The "rates" card is the denominator view: how many plants
+// can make X, and how many of them had NSQ alerts.
+
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { AlertTriangle, BadgeCheck, ChevronLeft, ChevronRight, ExternalLink, Factory, FlaskConical, KeyRound, MapPin, Search, ShieldAlert, Syringe } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, PageSkeleton, Segmented, Stat } from "../../components/ui";
+import { api } from "../../lib/api";
+import { cn } from "../../lib/cn";
+import { fmtMonth } from "../../lib/format";
+
+type Rate = { key: string; label: string; plants: number; plants_with_nsq: number; alerts: number; share_with_nsq: number | null; alerts_per_100_plants: number | null };
+type Labels = { capabilities: Record<string, string>; segregated: Record<string, string> };
+
+const SEG_TONE: Record<string, string> = {
+  beta_lactam: "bg-amber-50 text-amber-800 ring-amber-200", cephalosporin: "bg-orange-50 text-orange-800 ring-orange-200",
+  carbapenem: "bg-yellow-50 text-yellow-800 ring-yellow-200", hormone: "bg-pink-50 text-pink-800 ring-pink-200",
+  steroid: "bg-fuchsia-50 text-fuchsia-800 ring-fuchsia-200", cytotoxic: "bg-rose-50 text-rose-800 ring-rose-200",
+  immunosuppressant: "bg-violet-50 text-violet-800 ring-violet-200", potent_other: "bg-red-50 text-red-800 ring-red-200",
+};
+const MATCH_WORD: Record<string, string> = { site: "same company + PIN", site_fuzzy: "same PIN, similar name", company: "same company, same town or only plant in the state (no shared PIN)" };
+const nf = (n: number | null | undefined, d = 0) => (n == null ? "—" : n.toLocaleString("en-IN", { maximumFractionDigits: d, minimumFractionDigits: d }));
+
+function FormChip({ k, labels, dim }: { k: string; labels?: Labels; dim?: boolean }) {
+  return <span className={cn("rounded-md px-1.5 py-0.5 text-[10.5px]", dim ? "bg-slate-50 text-ink-muted" : "bg-slate-100 text-ink-soft")}>{labels?.capabilities[k] ?? k.replace(/_/g, " ")}</span>;
+}
+
+function SegChip({ k, forms, labels }: { k: string; forms?: string[]; labels?: Labels }) {
+  const f = (forms ?? []).filter((x) => x !== "unspecified");
+  return (
+    <span className={cn("rounded-md px-1.5 py-0.5 text-[10.5px] font-medium ring-1 ring-inset", SEG_TONE[k] ?? "bg-slate-50 text-ink-soft ring-line")}
+      title={f.length ? `Separate ${labels?.segregated[k] ?? k} block for: ${f.map((x) => labels?.capabilities[x] ?? x).join(", ")}` : undefined}>
+      {labels?.segregated[k] ?? k.replace(/_/g, " ")}{f.length ? ` · ${f.length}` : ""}
+    </span>
+  );
+}
+
+export function RegistryBadges({ p }: { p: any }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {p.who_gmp && <Badge tone="brand"><BadgeCheck size={11} /> WHO-GMP</Badge>}
+      {p.schedule_c && <Badge tone="indigo"><Syringe size={11} /> Schedule C</Badge>}
+      {p.sterile && !p.schedule_c && <Badge tone="sky">Sterile</Badge>}
+      {p.api && <Badge><FlaskConical size={11} /> API</Badge>}
+      {p.loan_licensees?.length > 0 && <Badge tone="amber"><KeyRound size={11} /> Loan licence ×{p.loan_licensees.length}</Badge>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------- rates
+
+function RatesCard({ s, onPick }: { s: any; onPick: (dim: string, key: string) => void }) {
+  const [dim, setDim] = useState<"capabilities" | "segregated" | "states" | "tiers" | "breadth">("capabilities");
+  const [metric, setMetric] = useState<"share" | "per100">("share");
+  const rows: Rate[] = useMemo(() => (s[dim] as Rate[]).filter((r) => r.plants >= (dim === "states" ? 5 : 3)), [s, dim]);
+  const val = (r: Rate) => (metric === "share" ? r.share_with_nsq ?? 0 : r.alerts_per_100_plants ?? 0);
+  const max = Math.max(1, ...rows.map(val));
+  const overall = s.plants ? (100 * s.with_nsq) / s.plants : 0;
+  return (
+    <Card delay={0.1}>
+      <CardHeader title="Who fails, per plant that can make it"
+        subtitle={<span>Registry plants grouped by what they are permitted to make, and how many had NSQ alerts. Dashed line: all registry plants ({nf(overall, 1)}% with alerts). Click a row to list those plants.</span>} />
+      <div className="px-5 pb-5 pt-3">
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Segmented value={dim} onChange={setDim} options={[{ value: "capabilities", label: "Dosage form" }, { value: "segregated", label: "Segregated block" }, { value: "states", label: "State" }, { value: "tiers", label: "Certification" }, { value: "breadth", label: "Breadth" }]} />
+          <Segmented value={metric} onChange={setMetric} options={[{ value: "share", label: "% plants with NSQ" }, { value: "per100", label: "Alerts / 100 plants" }]} />
+        </div>
+        <div className="mb-2 grid grid-cols-[minmax(0,1.3fr)_70px_minmax(0,2fr)_80px] gap-3 text-[10.5px] font-semibold uppercase tracking-wider text-ink-muted">
+          <span>{dim === "capabilities" ? "Permitted to make" : dim === "segregated" ? "Separate block" : dim === "states" ? "State" : dim === "tiers" ? "Listed as" : "Dosage forms per plant"}</span>
+          <span className="text-right">Plants</span><span /><span className="text-right">{metric === "share" ? "With NSQ" : "Alerts/100"}</span>
+        </div>
+        <div className="space-y-1.5">
+          {rows.map((r) => (
+            <button key={r.key} onClick={() => onPick(dim, r.key)} disabled={dim === "tiers" || dim === "breadth"}
+              className="grid w-full grid-cols-[minmax(0,1.3fr)_70px_minmax(0,2fr)_80px] items-center gap-3 rounded-lg px-1 py-1 text-left text-[13px] hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent">
+              <span className="truncate font-medium text-ink-soft" title={r.label}>{r.label}</span>
+              <span className="text-right tabular-nums text-ink-muted">{nf(r.plants)}</span>
+              <span className="relative h-2.5 overflow-hidden rounded-full bg-slate-100">
+                <span className="absolute inset-y-0 left-0 rounded-full bg-rose-400/80" style={{ width: `${(100 * val(r)) / max}%` }} />
+                {metric === "share" && <span className="absolute inset-y-[-2px] w-px border-l border-dashed border-ink-muted" style={{ left: `${(100 * overall) / max}%` }} />}
+              </span>
+              <span className="text-right tabular-nums font-semibold" title={`${r.plants_with_nsq} of ${r.plants} plants · ${r.alerts} alerts`}>
+                {metric === "share" ? `${nf(r.share_with_nsq, 1)}%` : nf(r.alerts_per_100_plants, 0)}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-4 text-[11.5px] leading-relaxed text-ink-muted">{s.caveat} Small groups swing a lot: read rates on fewer than ~30 plants as hints.</p>
+      </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------------- detail
+
+function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; onClose: () => void }) {
+  const { data: p, error } = useQuery({ queryKey: ["plant", id], queryFn: () => api<any>(`/api/plants/${encodeURIComponent(id!)}`), enabled: !!id });
+  const c = p?.capabilities;
+  return (
+    <Drawer open={!!id} onClose={onClose} title={p?.name ?? "Plant"} subtitle={p ? <RegistryBadges p={p.brief} /> : undefined} width={760}>
+      {error ? <ErrorNote error={error} /> : !p ? <div className="text-sm text-ink-muted">Loading…</div> : (
+        <div className="space-y-5 text-sm">
+          <div className="flex items-start gap-2 text-ink-soft"><MapPin size={15} className="mt-0.5 shrink-0" />
+            <div>{p.address || "—"}<div className="text-xs text-ink-muted">{[p.district, p.state, p.pin].filter(Boolean).join(" · ") || "no location parsed"}</div></div>
+          </div>
+          {p.aliases?.length > 0 && <div className="text-xs text-ink-muted">Also listed as: {p.aliases.join(" · ")}</div>}
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-slate-50 p-3"><div className="label">NSQ alerts linked</div><div className="mt-1 font-display text-xl font-bold">{p.nsq?.alerts ?? 0}</div>
+              <div className="text-[11px] text-ink-muted">{p.nsq ? `${fmtMonth(p.nsq.first)} – ${fmtMonth(p.nsq.last)}` : "none on record"}</div></div>
+            <div className="rounded-xl bg-slate-50 p-3"><div className="label">Dosage forms</div><div className="mt-1 font-display text-xl font-bold">{c.dosage_forms.length}</div>
+              <div className="text-[11px] text-ink-muted">{Object.keys(c.segregated).length} segregated block(s)</div></div>
+            <div className="rounded-xl bg-slate-50 p-3"><div className="label">WHO-GMP</div><div className="mt-1 font-semibold">{p.who_gmp_certified ? "Certified" : "Not in the list"}</div>
+              <div className="text-[11px] text-ink-muted">{p.who_gmp_valid_until ? `valid until ${p.who_gmp_valid_until}` : p.who_gmp_certified ? "validity not stated" : ""}</div></div>
+          </div>
+
+          <div>
+            <div className="label mb-1.5">Permitted to make</div>
+            <div className="flex flex-wrap gap-1.5">{c.dosage_forms.length ? c.dosage_forms.map((f: string) => <Badge key={f}>{labels?.capabilities[f] ?? f}</Badge>) : <span className="text-xs text-ink-muted">No dosage form in CDSCO's wording{c.therapeutic.length ? " — therapeutic classes only" : ""}.</span>}</div>
+            {Object.keys(c.segregated).length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {Object.entries(c.segregated).map(([k, forms]: any) => (
+                  <div key={k} className="flex flex-wrap items-center gap-1.5 text-xs"><SegChip k={k} labels={labels} /><span className="text-ink-muted">block for</span>
+                    {forms.map((f: string) => <FormChip key={f} k={f} labels={labels} />)}</div>
+                ))}
+              </div>
+            )}
+            {c.therapeutic.length > 0 && <div className="mt-2 text-xs text-ink-muted">Therapeutic classes: {c.therapeutic.map((t: string) => t.replace(/_/g, " ")).join(", ")}</div>}
+          </div>
+
+          <div>
+            <div className="label mb-1.5">Evidence — CDSCO's own words</div>
+            <div className="space-y-1.5">
+              {c.evidence.map((e: any, i: number) => (
+                <div key={i} className="rounded-lg border border-line p-2.5 text-xs">
+                  <div className="text-ink">{e.text}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-ink-faint">
+                    <span>{e.source === "cdsco_sugam" ? "SUGAM licence" : "WHO-GMP list"}{e.ref ? ` · ${e.ref}` : ""}</span>
+                    {e.issued && <span>· issued {e.issued}</span>}{e.valid_until && <span>· valid until {e.valid_until}</span>}
+                    {e.forms?.map((f: string) => <FormChip key={f} k={f} labels={labels} dim />)}
+                    {e.segregated?.map((s: string) => <SegChip key={s} k={s} labels={labels} />)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {p.licences?.length > 0 && (
+            <div>
+              <div className="label mb-1.5">Manufacturing licences (SUGAM)</div>
+              <table className="w-full text-xs">
+                <thead><tr className="border-b border-line text-left text-[10.5px] uppercase tracking-wider text-ink-muted"><th className="py-1.5">Licence</th><th>Form</th><th>Covers</th><th>Site</th><th>Valid</th></tr></thead>
+                <tbody>{p.licences.map((l: any) => (
+                  <tr key={`${l.number}-${l.form}`} className="border-b border-line/60">
+                    <td className="py-1.5 font-mono">{l.number}</td><td>{l.form}</td><td className="max-w-[240px] text-ink-muted">{l.covers}</td><td>{l.site_type}</td>
+                    <td className={cn("tabular-nums", l.expires && l.expires < new Date().toISOString().slice(0, 10) && "text-rose-700")}>{l.issued} → {l.expires}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              {p.loan_licensees?.length > 0 && <div className="mt-2 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900"><b>Loan licensees made here:</b> {p.loan_licensees.join(" · ")} — brands sold under these names are manufactured at this plant.</div>}
+            </div>
+          )}
+
+          <div>
+            <div className="label mb-1.5">NSQ alerts at this plant</div>
+            {!p.nsq ? <div className="text-xs text-ink-muted">No site in the NSQ directory matched this plant (company name + PIN / state).</div> : (
+              <>
+                <div className="mb-2 flex flex-wrap gap-1.5">{Object.entries(p.nsq.forms).map(([f, n]: any) => <Badge key={f}>{f} · {n}</Badge>)}</div>
+                {p.nsq.outside_capabilities?.length > 0 && (
+                  <div className="mb-2 flex items-start gap-2 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-900"><AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    <span>Alerted in <b>{p.nsq.outside_capabilities.join(", ")}</b>, which this plant's WHO-GMP listing does not cover — made under a non-WHO-GMP licence, on loan elsewhere, or a mislabelled maker.</span></div>
+                )}
+                {p.nsq.sites.map((s: any) => (
+                  <div key={s.id} className="mb-1 flex items-center justify-between rounded-lg border border-line px-3 py-2 text-xs">
+                    <span><b>{s.company}</b> <span className="text-ink-muted">· {s.pincode || "no PIN"} · matched on {MATCH_WORD[s.match] ?? s.match}</span></span>
+                    <span className="tabular-nums">{s.alerts} alerts · last {fmtMonth(s.last)}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-3 text-xs">
+            {p.source_links?.map((s: any) => s.url && <a key={s.key} href={s.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-brand-700 hover:underline"><ExternalLink size={12} />{s.key === "cdsco_sugam" ? "CDSCO approved manufacturing sites" : "CDSCO WHO-GMP certified units"}</a>)}
+          </div>
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
+// ---------------------------------------------------------------------------------- page
+
+export function Plants() {
+  const [params, setParams] = useSearchParams();
+  const summary = useQuery({ queryKey: ["plants-summary"], queryFn: () => api<any>("/api/plants/summary") });
+  const facets = useQuery({ queryKey: ["plants-facets"], queryFn: () => api<any>("/api/plants/facets") });
+  const [q, setQ] = useState("");
+  const [dq, setDq] = useState("");
+  const [state, setState] = useState("");
+  const [capability, setCapability] = useState("");
+  const [segregated, setSegregated] = useState("");
+  const [cert, setCert] = useState<"" | "who_gmp" | "schedule_c" | "loan">("");
+  const [nsq, setNsq] = useState<"" | "yes" | "no">("");
+  const [sort, setSort] = useState<"nsq" | "forms" | "name">("nsq");
+  const [page, setPage] = useState(1);
+  const open = params.get("plant") ?? undefined;
+  const setOpen = (id?: string) => { const n = new URLSearchParams(params); if (id) n.set("plant", id); else n.delete("plant"); setParams(n, { replace: true }); };
+  useEffect(() => { const t = setTimeout(() => { setDq(q); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
+  const list = useQuery({
+    queryKey: ["plants", dq, state, capability, segregated, cert, nsq, sort, page],
+    queryFn: () => api<any>(`/api/plants?${new URLSearchParams({ q: dq, state, capability, segregated, cert, nsq, sort, page: String(page), size: "25" })}`),
+    placeholderData: keepPreviousData,
+  });
+  if (summary.isLoading) return <PageSkeleton />;
+  if (summary.error) return <ErrorNote error={summary.error} />;
+  const s = summary.data;
+  const labels: Labels | undefined = s.labels;
+  if (!s.plants) {
+    return <Card><Empty icon={<Factory size={22} />} title="The plant registry has not been built yet">
+      Run <b>CDSCO plant registry</b> under Admin → Jobs (Sources), or run <code>fetch_source.py cdsco_plants</code> on a machine that can reach CDSCO and copy <code>data/sources/cdsco_plants.json</code> to the server.
+    </Empty></Card>;
+  }
+  const pick = (dim: string, key: string) => {
+    if (dim === "capabilities") setCapability(capability === key ? "" : key);
+    if (dim === "segregated") setSegregated(segregated === key ? "" : key);
+    if (dim === "states") setState(state === key ? "" : key);
+    setPage(1);
+  };
+  const chips = [state, capability && (capability === "sterile" ? "Sterile (any)" : labels?.capabilities[capability]), segregated && labels?.segregated[segregated]].filter(Boolean);
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
+        <Stat label="Plants in the registry" value={s.plants} icon={<Factory size={18} />} hint={`${nf(s.who_gmp)} WHO-GMP · ${nf(s.sugam)} in SUGAM · ${nf(s.with_pin)} with PIN`} />
+        <Stat label="Sterile-capable" value={s.sterile} tone="indigo" delay={0.04} hint="Injectables, ophthalmics or a Schedule C licence" />
+        <Stat label="API makers" value={s.api} tone="amber" delay={0.08} hint="Bulk drugs / raw materials" />
+        <Stat label="Plants with NSQ alerts" value={s.with_nsq} tone="rose" delay={0.12} hint={`${nf(s.nsq_sites_linked)} of ${nf(s.nsq_sites)} NSQ sites linked`} />
+        <Stat label="NSQ alerts from listed plants" value={s.nsq_alerts_linked_pct} decimals={1} suffix="%" tone="rose" delay={0.16}
+          hint="The rest come from makers on neither CDSCO list" />
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <RatesCard s={s} onPick={pick} />
+        <Card delay={0.15}>
+          <CardHeader title="About this registry" subtitle={`CDSCO · retrieved ${s.meta?.retrieved_at?.slice(0, 10) ?? "—"}`} />
+          <div className="space-y-3 px-5 pb-5 pt-3 text-[13px] leading-relaxed text-ink-soft">
+            <p><b>WHO-GMP certified units</b> ({nf(s.who_gmp)}): CDSCO's list of plants certified for export certificates (COPP), with the "category of drugs permitted" for each — dosage forms, separate blocks for beta-lactams, cephalosporins, hormones or cytotoxics, and certificate dates.</p>
+            <p><b>Approved manufacturing sites</b> (SUGAM, {nf(s.sugam)}): licence number, form (Form 28 = Schedule C: sterile and biological products), own or loan licence, and the brand owner making there on loan.</p>
+            <p><b>NSQ link</b>: an NSQ "Manufactured By" site is joined to a plant on company name and PIN code ({nf(s.match_kinds?.site ?? 0)} exact, {nf(s.match_kinds?.site_fuzzy ?? 0)} near-identical names), or on company and state when either side has no PIN ({nf(s.match_kinds?.company ?? 0)}).</p>
+            {s.outside_capabilities?.length > 0 && <p className="flex items-start gap-2 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-900"><ShieldAlert size={14} className="mt-0.5 shrink-0" />
+              <span>WHO-GMP plants with NSQ alerts in a form their listing doesn't cover: {s.outside_capabilities.map((o: any) => `${o.form} (${o.plants})`).join(", ")}.</span></p>}
+          </div>
+        </Card>
+      </div>
+
+      <Card delay={0.2} className="mt-5">
+        <CardHeader title="Plants" subtitle={`${list.data?.total?.toLocaleString("en-IN") ?? "…"} plants`} action={
+          <div className="flex flex-wrap items-center gap-2">
+            {chips.length > 0 && <button onClick={() => { setState(""); setCapability(""); setSegregated(""); setPage(1); }}><Badge tone="indigo">{chips.join(" · ")} ✕</Badge></button>}
+            <select className="input h-9 w-36 text-xs" value={state} onChange={(e) => { setState(e.target.value); setPage(1); }}>
+              <option value="">All states</option>{facets.data?.states.map((x: string) => <option key={x}>{x}</option>)}
+            </select>
+            <select className="input h-9 w-44 text-xs" value={capability} onChange={(e) => { setCapability(e.target.value); setPage(1); }}>
+              <option value="">Any dosage form</option><option value="sterile">Sterile (any)</option>
+              {facets.data?.capabilities.map((x: any) => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
+            <select className="input h-9 w-40 text-xs" value={segregated} onChange={(e) => { setSegregated(e.target.value); setPage(1); }}>
+              <option value="">Any block</option>{facets.data?.segregated.map((x: any) => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
+            <Segmented value={cert} onChange={(v) => { setCert(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "who_gmp", label: "WHO-GMP" }, { value: "schedule_c", label: "Sched. C" }, { value: "loan", label: "Loan" }]} />
+            <Segmented value={nsq} onChange={(v) => { setNsq(v); setPage(1); }} options={[{ value: "", label: "Any" }, { value: "yes", label: "With NSQ" }, { value: "no", label: "Clean" }]} />
+            <select className="input h-9 w-32 text-xs" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+              <option value="nsq">Most alerts</option><option value="forms">Most forms</option><option value="name">Name</option>
+            </select>
+            <div className="relative"><Search size={15} className="absolute left-3 top-2.5 text-ink-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Company, town, PIN, loan licensee…" className="input h-9 w-60 pl-9" /></div>
+          </div>
+        } />
+        <div className="mt-4 overflow-x-auto">
+          <table className={cn("w-full text-sm", list.isFetching && "opacity-60")}>
+            <thead><tr className="border-y border-line bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+              <th className="px-5 py-2.5">Plant</th><th className="px-3 py-2.5">Where</th><th className="px-3 py-2.5">Permitted to make</th><th className="px-3 py-2.5">Blocks</th><th className="px-3 py-2.5">Listing</th><th className="px-5 py-2.5 text-right">NSQ</th>
+            </tr></thead>
+            <tbody>
+              {list.data?.items.map((x: any) => (
+                <tr key={x.id} onClick={() => setOpen(x.id)} className="cursor-pointer border-b border-line/70 align-top hover:bg-slate-50">
+                  <td className="max-w-[300px] px-5 py-2.5"><div className="truncate font-semibold" title={x.name}>{x.name}</div>
+                    {x.therapeutic?.length > 0 && <div className="truncate text-[11px] text-ink-muted">{x.therapeutic.map((t: string) => t.replace(/_/g, " ")).join(", ")}</div>}</td>
+                  <td className="px-3 py-2.5 text-xs">{x.state || "—"}<div className="text-ink-faint">{[x.district, x.pin].filter(Boolean).join(" · ")}</div></td>
+                  <td className="px-3 py-2.5"><div className="flex max-w-[280px] flex-wrap gap-1">{x.dosage_forms.slice(0, 5).map((f: string) => <FormChip key={f} k={f} labels={labels} />)}
+                    {x.dosage_forms.length === 0 && x.licence_forms?.map((f: string) => <span key={f} className="rounded-md border border-dashed border-line px-1.5 py-0.5 text-[10.5px] text-ink-muted" title="Licence form only — CDSCO lists no dosage forms for this site">{f}</span>)}
+                    {x.dosage_forms.length > 5 && <span className="text-[10.5px] text-ink-faint">+{x.dosage_forms.length - 5}</span>}</div></td>
+                  <td className="px-3 py-2.5"><div className="flex max-w-[200px] flex-wrap gap-1">{Object.entries(x.segregated).map(([k, f]: any) => <SegChip key={k} k={k} forms={f} labels={labels} />)}</div></td>
+                  <td className="px-3 py-2.5"><RegistryBadges p={x} /></td>
+                  <td className="px-5 py-2.5 text-right tabular-nums">{x.nsq_alerts ? <span className="font-semibold text-rose-700">{x.nsq_alerts}</span> : <span className="text-ink-faint">0</span>}
+                    {x.nsq_last && <div className="text-[11px] text-ink-muted">{fmtMonth(x.nsq_last)}</div>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {list.data?.items.length === 0 && <div className="p-8 text-center text-sm text-ink-muted">No plant matches these filters.</div>}
+        </div>
+        {list.data && (
+          <div className="flex items-center justify-between px-5 py-3 text-xs text-ink-muted">
+            <span>Page {list.data.page} of {list.data.pages}</span>
+            <div className="flex gap-1.5"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={14} /></Button><Button size="sm" variant="secondary" disabled={page >= list.data.pages} onClick={() => setPage(page + 1)}><ChevronRight size={14} /></Button></div>
+          </div>
+        )}
+      </Card>
+      <PlantDrawer id={open} labels={labels} onClose={() => setOpen(undefined)} />
+    </>
+  );
+}
+
+// Registry section for the NSQ site drawer (admin site directory, org infrastructure).
+export function SiteRegistryLink({ cdsco }: { cdsco: any }) {
+  if (!cdsco) return <div className="text-xs text-ink-muted">Not found in CDSCO's WHO-GMP or approved-site lists (matched on company name and PIN).</div>;
+  return (
+    <div className="space-y-1.5">
+      {cdsco.plants.map((p: any) => (
+        <Link key={p.id} to={`/playground/plants?plant=${encodeURIComponent(p.id)}`} className="block rounded-lg border border-line p-2.5 text-xs hover:bg-slate-50">
+          <div className="flex items-center justify-between gap-2"><span className="font-semibold">{p.name}</span><RegistryBadges p={p} /></div>
+          <div className="mt-1 flex flex-wrap gap-1">{p.dosage_forms.map((f: string) => <FormChip key={f} k={f} />)}{Object.entries(p.segregated).map(([k, f]: any) => <SegChip key={k} k={k} forms={f} />)}</div>
+          <div className="mt-1 text-ink-faint">Matched on {MATCH_WORD[cdsco.match] ?? cdsco.match}{p.who_gmp_valid_until ? ` · WHO-GMP valid until ${p.who_gmp_valid_until}` : ""}</div>
+        </Link>
+      ))}
+    </div>
+  );
+}

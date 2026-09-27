@@ -63,6 +63,9 @@ NODES: list[dict[str, Any]] = [
     _n("ext_fdasites", "origin", "external", "FDA site records", "DECRS · import alert · openFDA recalls",
        "FDA drug establishment registrations (DECRS), the import-alert page for Indian firms, and openFDA drug recalls for India. Matched to Indian sites by company name (and PIN code where possible).",
        keys=["accessdata.fda.gov/cder/drls_reg.zip", "accessdata.fda.gov/CMS_IA/importalert_189.html", "api.fda.gov/drug/enforcement.json"]),
+    _n("ext_cdsco_plants", "origin", "external", "CDSCO plant lists", "WHO-GMP PDF · SUGAM approved sites",
+       "CDSCO's WHO-GMP certified manufacturing units (what each is permitted to make, segregated blocks, certificate dates) and the SUGAM approved-manufacturing-site table (licences, own/loan).",
+       keys=["cdsco.gov.in/…/Final WHO GMP data for website.pdf", "cdscoonline.gov.in/CDSCO/manuf_site"]),
     _n("ext_pubchem", "origin", "external", "PubChem", "structures · XLogP3 · melting points",
        "Chemical structure (SMILES), InChIKey, XLogP3 and experimental melting points per molecule, for the lab's structure-based models.",
        keys=["pubchem.ncbi.nlm.nih.gov/rest/pug", "…/pug_view (Melting Point)"]),
@@ -183,6 +186,9 @@ NODES: list[dict[str, Any]] = [
        keys=["backend/app/data.py: cdmo()"]),
     _n("s_sites", "services", "service", "Site directory", "rebuilt when inputs change", "Indian manufacturing sites from the 'Manufactured By' address (company + PIN), matched to FDA registrations, import alerts and recalls. Spurious batches excluded.",
        keys=["backend/app/sites.py: directory()"]),
+    _n("s_plants", "services", "service", "Plant registry", "rebuilt when the registry or NSQ frame changes",
+       "CDSCO plants with parsed capabilities, linked to NSQ sites on company + PIN (or company + town / state). Gives per-capability denominators: plants that can make X and how many had NSQ alerts.",
+       keys=["backend/app/plants.py: registry()", "data/sources/cdsco_plants.json"]),
     _n("s_universe", "services", "service", "Universe & source status", "files, read on request", "The molecule universe list and the per-source status the pipelines page shows.",
        keys=["data/generated/molecule_universe.json", "data/sources/manifest.json"]),
     _n("s_static", "services", "service", "Built-in knowledge", "code, versioned with the app", "Regulation table by country (compiled, indicative), process models, GMP knowledge and pharmacopoeia differences.",
@@ -203,6 +209,7 @@ NODES: list[dict[str, Any]] = [
     _n("p_insights", "pages", "page", "Playground · Insights", "/playground/insights", "", group="Playground", route="/playground/insights", endpoints=["/api/playground/insights"]),
     _n("p_world", "pages", "page", "Playground · Regulation map", "/playground/world", "", group="Playground", route="/playground/world", endpoints=["/api/playground/world"]),
     _n("p_workbench", "pages", "page", "Playground · Molecule workbench", "/playground/molecule", "", group="Playground", route="/playground/molecule", endpoints=["/api/playground/molecule/{key}"]),
+    _n("p_plants", "pages", "page", "Playground · Plants", "/playground/plants", "", group="Playground", route="/playground/plants", endpoints=["/api/plants", "/api/plants/summary", "/api/plants/{id}"]),
     _n("p_process", "pages", "page", "Playground · Lab", "/playground/process", "", group="Playground", route="/playground/process", endpoints=["/api/lab/*", "/api/process/*"]),
     _n("p_org_overview", "pages", "page", "Org · Overview", "/o/:slug", "", group="Organisation", endpoints=["/api/orgs/{slug}/overview"]),
     _n("p_org_quality", "pages", "page", "Org · Quality", "/o/:slug/quality", "", group="Organisation", endpoints=["/api/orgs/{slug}/quality", "/quality/issues"]),
@@ -323,6 +330,9 @@ EDGES: list[dict[str, Any]] = [
     _e("s_universe", "p_admin_molecules"), _e("s_cdmo", "p_admin_molecules"), _e("pg_mol", "p_admin_molecules"),
     _e("f_seeds", "p_admin_molecules", label="lookup"), _e("f_sources", "p_admin_molecules", label="lookup"),
     _e("s_sites", "p_admin_sites"), _e("pg_orgs", "p_admin_sites"),
+    _e("ext_cdsco_plants", "f_sources", label="cdsco_plants.json"), _e("f_sources", "s_plants", label="registry"),
+    _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_admin_sites", label="registry match"),
+    _e("s_plants", "p_org_infra", label="stated capabilities on 'add as plant'"),
     _e("pg_audit", "p_admin_audit"),
     _e("pg_jobs", "p_admin_datamap", label="live counts"),
     # pages: mutations (every one is also written to audit_log)
@@ -430,7 +440,8 @@ def _source_stats() -> dict[str, dict[str, Any]]:
         parts += [f"{k.replace('_', ' ')}: {rows[keys.index(k)].get('status')}" for k in bad]
         return {"ok": not bad, "text": " · ".join(parts) or "fetched", "updated_at": last or None}
     return {"ext_cdsco": s(["cdsco"]), "ext_orange": s(["orange_book"]), "ext_purple": s(["purple_book"]), "ext_ema": s(["ema"]),
-            "ext_ct": s(["clinical_trials"]), "ext_fdasites": s(["fda_establishments", "fda_import_alerts", "fda_recalls"])}
+            "ext_ct": s(["clinical_trials"]), "ext_fdasites": s(["fda_establishments", "fda_import_alerts", "fda_recalls"]),
+            "ext_cdsco_plants": s(["cdsco_plants"])}
 
 
 def _file_stats() -> dict[str, dict[str, Any]]:
@@ -463,6 +474,12 @@ def _service_stats() -> dict[str, dict[str, Any]]:
         out["s_sites"] = {"ok": True, "text": f"{len(sites.directory()):,} sites"}
     except Exception as exc:
         out["s_sites"] = {"ok": False, "text": f"unavailable: {exc.__class__.__name__}"}
+    try:
+        from . import plants
+        reg = plants.registry()
+        out["s_plants"] = {"ok": bool(reg["plants"]), "text": f"{len(reg['plants']):,} plants · {len(reg['links']):,} NSQ sites linked" if reg["plants"] else "not built"}
+    except Exception as exc:
+        out["s_plants"] = {"ok": False, "text": f"unavailable: {exc.__class__.__name__}"}
     return out
 
 

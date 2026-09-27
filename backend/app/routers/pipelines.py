@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import data, insights, jobs, scheduler, sites
+from .. import data, insights, jobs, plants, scheduler, sites
 from ..audit import audit
 from ..config import settings
 from ..db import get_db
@@ -243,8 +243,8 @@ def site_detail(site_id: str, user: User = Depends(require_platform), db: Sessio
         raise HTTPException(404, "Site not found.")
     from ..models import Org
 
-    plants = data.cdmo()["plants"]
+    cdmo_plants = data.cdmo()["plants"]
     orgs = [{"slug": o.slug, "name": o.name,
-             "linked": any(pid in plants and (plants[pid].reference or {}).get("site_id") == site_id for pid in (o.plant_ids or []))}
+             "linked": any(pid in cdmo_plants and (cdmo_plants[pid].reference or {}).get("site_id") == site_id for pid in (o.plant_ids or []))}
             for o in db.scalars(select(Org)) if s["ontology_key"] in (o.ontology_keys or [])]
-    return {**s, "orgs": orgs}
+    return {**s, "orgs": orgs, "cdsco": plants.site_link(site_id)}

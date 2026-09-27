@@ -248,7 +248,9 @@ def plant_from_site(slug: str, body: FromSiteBody, request: Request, user: User 
     if body.site_id in _linked_sites(org):
         raise HTTPException(409, "This site is already one of the organisation's plants.")
     asset_id = f"{org.slug}-{_slug(site['company'])[:40]}-{site['pincode'] or uuid.uuid4().hex[:6]}"
-    plant = PlantAsset(**sites.plant_from_site(site, asset_id))
+    from .. import plants as plant_registry
+
+    plant = PlantAsset(**sites.plant_from_site(site, asset_id, plant_registry.site_link(body.site_id)))
     store.save_plant_asset(plant, data.redis_client())
     db.merge(Plant(asset_id=asset_id, org_id=org.id, created_by=user.id, payload=plant.model_dump(mode="json")))
     if asset_id not in (org.plant_ids or []):

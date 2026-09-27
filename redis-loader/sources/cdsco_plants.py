@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 from urllib.parse import urlencode
 
-from .common import Ctx, Unreachable, http_get, write_normalized
+from .common import Ctx, Unreachable, http_get, read_normalized, write_normalized
 
 SUGAM_URL = "https://cdscoonline.gov.in/CDSCO/app_srv/cdsco/global/jsp/Approved_Manuf_Site.jsp"
 WHO_GMP_URLS = [
@@ -233,7 +233,7 @@ def split_name_address(text: str) -> tuple[str, str]:
     a 'Unit-N' right after the name stays with the name (it identifies the plant).
     """
     t = re.sub(r"^\s*(m/s\.?|messrs\.?)\s*", "", clean(text), flags=re.I)
-    head = t.split(",", 1)[0]
+    head = re.split(r"[,;]", t, maxsplit=1)[0]
     ends = [m.end() for m in _COMPANY_WORD.finditer(head)]
     cut = ends[-1] if ends and ends[-1] <= 120 else len(head)
     if t[:cut].count("(") > t[:cut].count(")"):  # "X Labs (a division of Y Ltd) Plot 4..." -> close the bracket
@@ -309,7 +309,7 @@ def _seg_classes(text: str) -> list[str]:
 
 
 def _forms(text: str) -> list[str]:
-    low = text.lower()
+    low = re.sub(r"\bcaps\w*\s*\(\s*soft\s*ge[lt]\w*\s*\)", "soft gelatin", text.lower())  # "Capsules (Soft Gelatin)"
     forms = _hits(low, DOSAGE_FORMS)
     # what is inside "External Preparation (Liquid & Powder)" or "Inhalation (Solution & Suspension)" is not an oral form
     stripped = re.sub(r"(external\s*prep\w*|inhal\w*(\s+formulations?)?|ophthal\w*|opthal\w*|nasal\w*|parent?e?ral\w*|svp)\s*[(\[][^)\]]*[)\]]",
@@ -786,7 +786,7 @@ def build_registry(sugam: list[dict[str, Any]], who: list[dict[str, Any]]) -> tu
         c.setdefault("licence_classes", [])
         c.setdefault("schedule_c", False)
         p["who_gmp_certified"] = bool(p["who_gmp"])
-        valid = [e["valid_until"] for e in c["evidence"] if e.get("valid_until")]
+        valid = [e["valid_until"] for e in c["evidence"] if e.get("valid_until") and e.get("source") == "cdsco_who_gmp"]
         p["who_gmp_valid_until"] = max(valid) if valid else None
         p["tags"] = sorted(set(c["dosage_forms"]) | {f"segregated:{k}" for k in c["segregated"]}
                            | ({"sterile"} if c["sterile"] else set()) | ({"who_gmp"} if p["who_gmp_certified"] else set())
@@ -843,33 +843,45 @@ def _download_pdf(ctx: Ctx) -> tuple[Path, str]:
 
 
 def run(ctx: Ctx) -> int:
-    # 1. SUGAM approved sites
+    prev = read_normalized(ctx.name) or {}
+
+    # 1. SUGAM approved sites: live crawl -> pages saved by the last crawl -> rows kept in the last output
     sugam_raw: list[dict[str, Any]] = []
+    sugam_from = "live"
     if not ctx.options.get("skip_sugam"):
         try:
             sugam_raw = crawl_sugam(ctx, sleep=float(ctx.options.get("sleep", 1.0)))
         except Unreachable as exc:
             cached = sorted(ctx.raw_dir.glob("sugam_p*.html"))
-            ctx.log(f"  SUGAM unreachable ({exc}); using the {len(cached)} pages saved by the last crawl")
             for f in cached:
                 sugam_raw.extend(parse_sugam_page(f.read_text(encoding="utf-8"))[0])
+            sugam_from = f"saved pages ({len(cached)})"
+            if not sugam_raw and prev.get("sugam_rows"):
+                sugam_raw, sugam_from = prev["sugam_rows"], "previous output"
+            ctx.log(f"  SUGAM unreachable ({exc}); using {len(sugam_raw)} sites from the {sugam_from}")
     sugam = [sugam_record(r) for r in sugam_raw]
 
-    # 2. WHO-GMP certified units (PDF)
+    # 2. WHO-GMP certified units (PDF): uploaded file -> download -> units kept in the last output
+    units: list[dict[str, Any]] = []
+    ref: Optional[str] = None
+    pdf: Optional[Path] = None
     if ctx.from_file:
         pdf, ref = ctx.from_file, ctx.from_file.name
     else:
         try:
             pdf, ref = _download_pdf(ctx)
-        except Unreachable:
-            if not sugam:
+        except Unreachable as exc:
+            if prev.get("who_units"):
+                units, ref = prev["who_units"], (prev.get("inputs") or {}).get("who_gmp")
+                ctx.log(f"  WHO-GMP list unreachable ({exc}); using the {len(units)} units from the previous output")
+            else:
                 raise
-            pdf, ref = None, None
-    who: list[dict[str, Any]] = []
     if pdf:
         units = extract_who_units(pdf, ctx.log)
-        who = [who_record(u, ref) for u in units if u["name_address"]]
-        ctx.log(f"  WHO-GMP list: {len(who)} certified units")
+        ctx.log(f"  WHO-GMP list: {len(units)} certified units")
+    if not units and not sugam:
+        raise Unreachable("neither CDSCO list could be read")
+    who = [who_record(u, ref or "") for u in units if u["name_address"]]
 
     plants, stats = build_registry(sugam, who)
     ctx.log(f"  registry: {stats['plants']} plants, {stats['with_capabilities']} with parsed capabilities, "
@@ -877,9 +889,12 @@ def run(ctx: Ctx) -> int:
     ctx.log("  capabilities: " + ", ".join(f"{k} {v}" for k, v in list(stats["by_capability"].items())[:18]))
     write_csv(ctx.out_path.with_suffix(".csv"), plants)
     write_normalized(ctx, META, plants, len(plants),
-                     extra={"inputs": {"sugam": SUGAM_URL if sugam else None, "who_gmp": ref}, "stats": stats, "vocabulary": {"dosage_forms": list(DOSAGE_FORMS), "segregated": list(SEGREGATED),
-                                                           "therapeutic": list(THERAPEUTIC),
-                                                           "licence_forms": {f"Form {k}": v[1] for k, v in LICENCE_FORMS.items()}}})
+                     extra={"inputs": {"sugam": SUGAM_URL if sugam else None, "sugam_from": sugam_from if sugam else None, "who_gmp": ref},
+                            "stats": stats,
+                            "vocabulary": {"dosage_forms": list(DOSAGE_FORMS), "segregated": list(SEGREGATED), "therapeutic": list(THERAPEUTIC),
+                                           "licence_forms": {f"Form {k}": v[1] for k, v in LICENCE_FORMS.items()}},
+                            # the parsed inputs, so a later run that cannot reach CDSCO rebuilds instead of losing data
+                            "sugam_rows": sugam_raw, "who_units": units})
     return len(plants)
 
 
