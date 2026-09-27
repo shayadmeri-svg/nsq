@@ -367,18 +367,66 @@ def parse_idsp_pdf(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+_A = re.compile(r"<a\b[^>]*href\s*=\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.I | re.S)
+
+
+def _anchors(html: str, base: str) -> list[tuple[str, str]]:
+    from html import unescape
+    from urllib.parse import urljoin
+
+    return [(urljoin(base, unescape(h.strip())), re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", t))).strip()) for h, t in _A.findall(html)]
+
+
+def _get_page(ctx: Ctx, url: str, name: str) -> str:
+    try:
+        html = http_get(url, timeout=60, retries=1).decode("utf-8", errors="replace")
+    except Exception as exc:
+        raise Unreachable(f"IDSP page {url}: {exc}") from exc
+    (ctx.raw_dir / name).write_text(html, encoding="utf-8")
+    return html
+
+
+def idsp_pdf_links(ctx: Ctx) -> list[tuple[str, str]]:
+    """Weekly-report PDFs on the IDSP outbreaks page, newest first. The PDFs are often served under numeric
+    names (WriteReadData/...), so the link text ("31st week 2026") matters more than the URL. When the page
+    only lists years, the newest year pages are followed."""
+    html = _get_page(ctx, IDSP_PAGE, "page.html")
+    anchors = _anchors(html, IDSP_PAGE)
+    pdfs = [(u, t) for u, t in anchors if re.search(r"\.pdf(\?|$)", u, re.I)]
+    if not pdfs:
+        years = sorted({(int(m.group(0)), u) for u, t in anchors if (m := re.fullmatch(r"20\d\d", t.strip()))}, reverse=True)
+        for i, (_y, u) in enumerate(years[:2]):
+            pdfs += [(pu, pt) for pu, pt in _anchors(_get_page(ctx, u, f"page_{_y}.html"), u) if re.search(r"\.pdf(\?|$)", pu, re.I)]
+    weekly = [(u, t) for u, t in pdfs if re.search(r"week|wk|outbreak", f"{u} {t}", re.I)] or pdfs
+
+    def order(ut: tuple[str, str]) -> tuple[int, int]:
+        lab = _week_label(ut[1] + " " + ut[0])
+        return (int(lab[:4]), int(lab[-2:])) if lab else (0, 0)
+
+    weekly.sort(key=order, reverse=True)
+    seen, out = set(), []
+    for u, t in weekly:
+        if u not in seen:
+            seen.add(u)
+            out.append((u, _week_label(t + " " + u) or ""))
+    return out
+
+
 def run_idsp(ctx: Ctx) -> int:
     prev = read_normalized(ctx.name) or {}
     keep = int(ctx.limit or ctx.options.get("weeks") or 26)
     if ctx.from_file:
         pdfs = [ctx.from_file] if ctx.from_file.is_file() else sorted(ctx.from_file.glob("*.pdf"))
     else:
-        links = [u for u in page_links(IDSP_PAGE, r"\.pdf") if re.search(r"week|outbreak|wk", u, re.I)]
+        links = idsp_pdf_links(ctx)
         if not links:
-            raise Unreachable("no weekly-report PDFs found on the IDSP outbreaks page (the site may be down or blocking this network)")
+            raise NotFound(f"no PDF links found on the IDSP outbreaks page — the page was saved to {ctx.raw_dir / 'page.html'}; "
+                           "download a few weekly PDFs in a browser and run with a folder instead")
+        ctx.log(f"  {len(links)} weekly reports listed; fetching the latest {min(keep, len(links))}")
         pdfs = []
-        for u in links[:keep]:
-            name = re.sub(r"[^A-Za-z0-9._-]+", "_", u.rsplit("/", 1)[-1])[-120:]
+        for u, label in links[:keep]:
+            # keep the week (from the link text) in the file name: the PDFs are often served under numeric names
+            name = (f"{label}_" if label else "") + re.sub(r"[^A-Za-z0-9._-]+", "_", u.rsplit("/", 1)[-1])[-100:]
             try:
                 pdfs.append(download(ctx, u, name))
             except Exception as exc:  # one bad week must not stop the rest
