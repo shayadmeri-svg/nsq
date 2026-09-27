@@ -1,5 +1,10 @@
 {
   "_comment": "Five demo plants, each modelled on a real, publicly documented Indian site (see each asset's 'reference'). Dosage forms, approvals, capacity and equipment come from the cited page; capability_basis marks tokens 'stated' by the source vs 'inferred' from a stated dosage form. talent_depth and experience years are estimates with no public source. Retrieved 2026-09-26.",
+  "retired_ids": {
+    "_note": "Old ids renamed to match the real site's city. Loaders and API startup move references and delete the old keys.",
+    "ahmedabad-osd-liquid": "goa-osd-liquid",
+    "pune-pilot-rnd": "ahmedabad-pilot-rnd"
+  },
   "assets": [
     {
       "asset_id": "baddi-osd-a",
@@ -83,7 +88,7 @@
       "api_sourcing_experience": true
     },
     {
-      "asset_id": "ahmedabad-osd-liquid",
+      "asset_id": "goa-osd-liquid",
       "site_name": "Goa OSD + Liquid Orals Plant",
       "city": "Goa",
       "state": "Goa",
@@ -294,7 +299,7 @@
       "api_sourcing_experience": false
     },
     {
-      "asset_id": "pune-pilot-rnd",
+      "asset_id": "ahmedabad-pilot-rnd",
       "site_name": "Ahmedabad Pilot / R&D Scale-Up Center",
       "city": "Ahmedabad",
       "state": "Gujarat",

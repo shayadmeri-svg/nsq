@@ -45,6 +45,11 @@ def load(input_path: Path, redis_url: str, flush: bool) -> None:
             r.delete(key)
         print("Flushed existing cdmo:plant:* keys.")
 
+    retired = {k: v for k, v in seed.get("retired_ids", {}).items() if not k.startswith("_")}
+    for old in retired:
+        if r.delete(f"cdmo:plant:{old}"):
+            print(f"Removed retired plant id {old} (now {retired[old]}).")
+
     loaded = 0
     for raw in assets:
         asset = PlantAsset(**raw)

@@ -14,7 +14,7 @@ from sqlalchemy import select, text
 from . import data, scheduler
 from .config import settings
 from .db import Base, SessionLocal, engine
-from .models import JobRun, Plant, User, utcnow
+from .models import JobRun, Org, Plant, User, utcnow
 from .routers import admin, auth, jobs as jobs_router, lab as lab_router, medicines as medicines_router, molecules, orgs, pipelines, platform, playground, plants as plants_router
 from .security import csrf_guard, hash_password
 
@@ -39,6 +39,50 @@ def init_db() -> None:
         db.commit()
 
 
+def rename_retired_plants() -> None:
+    """Move references off plant ids the seed has retired (renamed) and drop their Redis keys."""
+    try:
+        import json
+
+        seed = json.loads((settings.data_dir / "plant_assets_seed.json").read_text())
+    except Exception as exc:
+        log.warning("could not read plant seed: %s", exc)
+        return
+    renames = {k: v for k, v in (seed.get("retired_ids") or {}).items() if not k.startswith("_")}
+    if not renames:
+        return
+    assets = {a["asset_id"]: a for a in seed.get("assets", [])}
+    with SessionLocal() as db:
+        for org in db.scalars(select(Org)):
+            ids = org.plant_ids or []
+            if any(i in renames for i in ids):
+                org.plant_ids = list(dict.fromkeys(renames.get(i, i) for i in ids))
+        for old, new in renames.items():
+            row = db.get(Plant, old)
+            if row is not None:
+                if db.get(Plant, new) is None:
+                    db.add(Plant(asset_id=new, org_id=row.org_id, created_by=row.created_by, created_at=row.created_at,
+                                 payload={**(row.payload or {}), "asset_id": new}))
+                db.delete(row)
+        db.commit()
+        saved = {p.asset_id: p.payload for p in db.scalars(select(Plant).where(Plant.asset_id.in_(list(renames.values()))))}
+    try:
+        import intelligence_store as store
+        from intelligence_models import PlantAsset
+
+        r = data.redis_client()
+        for old, new in renames.items():
+            if r.delete(f"cdmo:plant:{old}"):
+                log.warning("retired plant id %s -> %s", old, new)
+            if not r.exists(f"cdmo:plant:{new}"):
+                src = saved.get(new) or assets.get(new)
+                if src:
+                    store.save_plant_asset(PlantAsset(**src), r)
+        data.invalidate()
+    except Exception as exc:  # Redis down at boot must not stop the API
+        log.warning("could not rename retired plants in Redis: %s", exc)
+
+
 def restore_user_plants() -> None:
     """User plants live in Postgres too; put back any Redis lost (rebuild, flush)."""
     try:
@@ -57,6 +101,7 @@ def restore_user_plants() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    rename_retired_plants()
     restore_user_plants()
     scheduler.start()
     yield

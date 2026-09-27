@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from conftest import H, login
@@ -72,17 +74,17 @@ def test_org_plant_registry_match_and_apply(admin):
     from app import data
     import intelligence_store as store
 
-    original = data.cdmo()["plants"]["ahmedabad-osd-liquid"]
+    original = data.cdmo()["plants"]["goa-osd-liquid"]
     request_cleanup = lambda: (store.save_plant_asset(original, data.redis_client()), data.invalidate())  # noqa: E731
-    r = admin.post("/api/admin/orgs", json={"name": f"Org {uuid.uuid4().hex[:6]}", "ontology_keys": ["unicure"], "plant_ids": ["ahmedabad-osd-liquid"]}, headers=H)
+    r = admin.post("/api/admin/orgs", json={"name": f"Org {uuid.uuid4().hex[:6]}", "ontology_keys": ["unicure"], "plant_ids": ["goa-osd-liquid"]}, headers=H)
     slug = r.json()["org"]["slug"]
     before = admin.get(f"/api/orgs/{slug}/infrastructure").json()["plants"][0]
-    c = admin.get(f"/api/orgs/{slug}/plants/ahmedabad-osd-liquid/registry").json()
+    c = admin.get(f"/api/orgs/{slug}/plants/goa-osd-liquid/registry").json()
     assert c["candidates"] and all(x["name_score"] >= 85 for x in c["candidates"])
-    c = admin.get(f"/api/orgs/{slug}/plants/ahmedabad-osd-liquid/registry", params={"q": "Affy Parenterals"}).json()
+    c = admin.get(f"/api/orgs/{slug}/plants/goa-osd-liquid/registry", params={"q": "Affy Parenterals"}).json()
     target = c["candidates"][0]
     assert target["who_gmp"] and target["required"] > 10
-    p = admin.post(f"/api/orgs/{slug}/plants/ahmedabad-osd-liquid/registry", json={"plant_id": target["id"]}, headers=H).json()
+    p = admin.post(f"/api/orgs/{slug}/plants/goa-osd-liquid/registry", json={"plant_id": target["id"]}, headers=H).json()
     assert p["added"] and "WHO_GMP" in p["certifications_active"] and p["containment_class"] == "cytotoxic"
     basis = p["capability_basis"]
     assert basis["grade_a_cleanroom"] == "required" and basis["wfi_generation"] == "required"
@@ -164,3 +166,32 @@ def test_who_can_make_a_molecule(admin):
     assert r["made_total"] > 0 and r["made"][0]["alerts_for_molecule"] >= r["made"][-1]["alerts_for_molecule"]
     assert all("tablet" in p["dosage_forms"] for p in r["capable"])
     assert admin.get("/api/plants/for-molecule/not-a-molecule", headers=H).status_code == 404
+
+
+def test_retired_plant_ids_are_renamed(admin):
+    """Old demo ids (named after the wrong city) move to the new ids on startup."""
+    import json as _json
+    import redis as _redis
+    from sqlalchemy import select as _select
+    from app import main as app_main
+    from app.config import settings as _settings
+    from app.db import SessionLocal
+    from app.models import Org as _Org, Plant as _Plant
+
+    seed = _json.loads((_settings.data_dir / "plant_assets_seed.json").read_text())
+    old, new = "ahmedabad-osd-liquid", seed["retired_ids"]["ahmedabad-osd-liquid"]
+    assert new == "goa-osd-liquid" and new in {a["asset_id"] for a in seed["assets"]}
+    r = _redis.from_url(_settings.redis_url)
+    r.set(f"cdmo:plant:{old}", "{}")
+    with SessionLocal() as db:
+        org = _Org(name=f"Retired {uuid.uuid4().hex[:6]}", slug=f"retired-{uuid.uuid4().hex[:6]}", ontology_keys=[], plant_ids=[old, "baddi-osd-a"])
+        db.add(org)
+        db.merge(_Plant(asset_id=old, payload={**next(a for a in seed["assets"] if a["asset_id"] == new), "asset_id": old}))
+        db.commit()
+        oid = org.id
+    app_main.rename_retired_plants()
+    assert not r.exists(f"cdmo:plant:{old}") and r.exists(f"cdmo:plant:{new}")
+    with SessionLocal() as db:
+        assert db.get(_Org, oid).plant_ids == [new, "baddi-osd-a"]
+        assert db.get(_Plant, old) is None and db.get(_Plant, new).payload["asset_id"] == new
+        db.delete(db.get(_Plant, new)); db.commit()
