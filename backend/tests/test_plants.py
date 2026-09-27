@@ -38,6 +38,8 @@ def test_registry_summary_list_detail(admin):
     d = admin.get(f"/api/plants/{top[0]['id']}", headers=H).json()
     assert d["nsq"]["sites"] and d["capabilities"]["evidence"] is not None
     assert admin.get("/api/plants/nope", headers=H).status_code == 404
+    for cert in ("who_gmp", "eu_gmp", "eu_ncr", "sugam", "schedule_c", "loan"):
+        assert admin.get("/api/plants", params={"cert": cert}, headers=H).status_code == 200, cert
 
 
 def test_site_detail_carries_registry_link(admin):
