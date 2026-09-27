@@ -66,13 +66,12 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
   const cube = useQuery({ queryKey: ["pg-cube", f, topMfr], queryFn: () => api<any>(`/api/playground/cube?${qs(f, { top_mfr: topMfr })}`), placeholderData: keepPreviousData });
   const geo = useQuery({ queryKey: ["pg-geo"], queryFn: () => api<any>("/api/playground/geo/india"), staleTime: Infinity, retry: false });
   const d = cube.data;
-  if (cube.error) return <ErrorNote error={cube.error} />;
-  if (!d) return <div className="space-y-4"><Skeleton className="h-28" /><Skeleton className="h-96" /></div>;
-  if (d.empty) return <Card className="p-10 text-center text-sm text-ink-muted">No alerts match these filters.</Card>;
-  const k = d.kpis;
-  const hm = heat === "mfr_reason" ? d.heat_mfr_reason : heat === "mfr_molecule" ? d.heat_mfr_molecule : d.heat_form_lab;
 
-  const breakdowns = useMemo(() => [
+  // All hooks must run on every render regardless of loading/error/empty state
+  // (Rules of Hooks) — so the memos below guard internally with `d &&` rather
+  // than living after an early return, and calls that need `d` fall back to
+  // safe defaults when it isn't loaded yet.
+  const breakdowns = useMemo(() => !d || d.empty ? [] : [
     { id: "categories", title: "Failure categories", hint: "Click to filter", icon: <ShieldAlert size={14} />, rows: d.categories, color: "#e11d48", onClick: (n: string) => set({ ...f, category: toggle(f.category, n) }) },
     { id: "forms", title: "Dosage forms", hint: "Click to filter", icon: <Pill size={14} />, rows: d.forms, color: "#f59e0b", onClick: (n: string) => set({ ...f, form: toggle(f.form, n) }) },
     { id: "classes", title: "Therapeutic class", hint: "Click to filter", icon: <Stethoscope size={14} />, rows: d.drug_types, color: "#10b996", onClick: (n: string) => set({ ...f, drug_type: toggle(f.drug_type, n) }) },
@@ -82,6 +81,7 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
   ], [d, f, set]);
 
   const { hot, hmPreview, hmMax } = useMemo(() => {
+    if (!d || d.empty) return { hot: undefined as { row: string; col: string; v: number } | undefined, hmPreview: [] as number[], hmMax: 1 };
     const cells: { row: string; col: string; v: number }[] = [];
     (d.heat_mfr_reason?.rows ?? []).forEach((r: string, i: number) => (d.heat_mfr_reason.cols ?? []).forEach((c: string, j: number) => cells.push({ row: r, col: c, v: d.heat_mfr_reason.values[i][j] })));
     const hot = cells.sort((a, b2) => b2.v - a.v)[0];
@@ -90,7 +90,9 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
     return { hot, hmPreview, hmMax };
   }, [d]);
 
-  const sections: Section[] = useMemo(() => [
+  const hm = d && !d.empty ? (heat === "mfr_reason" ? d.heat_mfr_reason : heat === "mfr_molecule" ? d.heat_mfr_molecule : d.heat_form_lab) : undefined;
+
+  const sections: Section[] = useMemo(() => !d || d.empty ? [] : [
     ...breakdowns.map((b) => ({ id: b.id, title: b.title, icon: b.icon, subtitle: b.hint, render: () => <div className="max-w-3xl"><RankBars rows={b.rows} color={b.color} onClick={b.onClick ? (n: string) => { b.onClick!(n); setActive(null); } : undefined} /></div> })),
     { id: "heatmap", title: "Heatmap", icon: <Grid3x3 size={16} />, subtitle: "Where problems concentrate — darker = more alerts", render: () => (
       <div>
@@ -109,6 +111,11 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
     ) },
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [breakdowns, heat, topMfr, flow, hm, d, f, set]);
+
+  if (cube.error) return <ErrorNote error={cube.error} />;
+  if (!d) return <div className="space-y-4"><Skeleton className="h-28" /><Skeleton className="h-96" /></div>;
+  if (d.empty) return <Card className="p-10 text-center text-sm text-ink-muted">No alerts match these filters.</Card>;
+  const k = d.kpis;
 
   return (
     <ExpandedProvider sections={sections} active={active} onActive={setActive} title="NSQ explorer" subtitle={`${k.alerts.toLocaleString("en-IN")} alerts in view`}>

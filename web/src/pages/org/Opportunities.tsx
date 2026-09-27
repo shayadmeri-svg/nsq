@@ -207,11 +207,7 @@ export function Opportunities() {
   const rows = useMemo(() => (data?.molecules ?? [])
     .filter((m: any) => tier === "all" || m.fit_tier === tier)
     .slice().sort((a: any, b: any) => (b.alerts_in_org > 0 ? 1 : 0) - (a.alerts_in_org > 0 ? 1 : 0) || b.alerts_in_org - a.alerts_in_org || b.fit_score - a.fit_score), [data, tier]);
-  if (isLoading || !org) return <PageSkeleton />;
-  if (error) return <ErrorNote error={error} />;
-  const t = data.tiers;
-  const total = data.molecules.length;
-  const sections: Section[] = [
+  const sections: Section[] = useMemo(() => !data ? [] : [
     { id: "table", title: "Tracked molecules", icon: <ListChecks size={16} />, subtitle: `${rows.length} molecules · highlighted rows appear in your own CDSCO alerts`, render: () => (
       <div className="-m-5 md:-m-6">
         <div className="flex justify-end px-5 pt-4 md:px-6"><Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} /></div>
@@ -224,7 +220,11 @@ export function Opportunities() {
     { id: "untracked", title: "Untracked ingredients in your alerts", icon: <CircleDashed size={16} />, subtitle: `${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet`, render: () => (
       <UntrackedGrid items={data.untracked} canEdit={me?.permissions.edit_molecules} />
     ) },
-  ];
+  ], [rows, tier, slug, data, me]);
+  if (isLoading || !org) return <PageSkeleton />;
+  if (error) return <ErrorNote error={error} />;
+  const t = data.tiers;
+  const total = data.molecules.length;
 
   return (
     <ExpandedProvider sections={sections} active={active} onActive={setActive} title="Patent opportunities" subtitle={org?.name}>

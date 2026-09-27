@@ -60,10 +60,11 @@ export function IndiaMap({ geo, values, selected, onPick, height = 460, metricLa
   const onMove = (e: ReactMouseEvent<SVGSVGElement>) => {
     const target = e.target as SVGElement;
     const name = target instanceof SVGPathElement ? target.dataset.name : undefined;
+    const clientX = e.clientX, clientY = e.clientY;
     if (raf.current) cancelAnimationFrame(raf.current);
     raf.current = requestAnimationFrame(() => {
       const r = ref.current!.getBoundingClientRect();
-      const x = e.clientX - r.left, y = e.clientY - r.top;
+      const x = clientX - r.left, y = clientY - r.top;
       if (!name) { setHover(null); return; }
       setHover((prev) => (prev?.name === name && prev.x === x && prev.y === y) ? prev : { name, x, y, row: byName[normState(name)] });
     });
@@ -126,10 +127,11 @@ export function WorldMap({ colorFor, isSelected, onPick, tooltip, height = 420 }
   const onMove = (e: ReactMouseEvent<SVGSVGElement>) => {
     const target = e.target as SVGElement;
     const id = target instanceof SVGPathElement ? target.dataset.id : undefined;
+    const clientX = e.clientX, clientY = e.clientY;
     if (raf.current) cancelAnimationFrame(raf.current);
     raf.current = requestAnimationFrame(() => {
       const r = ref.current!.getBoundingClientRect();
-      const x = e.clientX - r.left, y = e.clientY - r.top;
+      const x = clientX - r.left, y = clientY - r.top;
       if (!id) { setHover(null); return; }
       const f = byId[id];
       const code = ISO_NUM[id.padStart(3, "0")] ?? null;
