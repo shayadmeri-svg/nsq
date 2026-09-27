@@ -42,3 +42,17 @@ def test_cep_tab_text(tmp_path):
     rows = af.parse_cep(f)
     assert rows["R1-CEP 2010-123-Rev 03"]["valid"] and not rows["R0-CEP 2012-001-Rev 00"]["valid"]
     assert rows["R1-CEP 2010-123-Rev 03"]["monograph"] == "2154" and rows["R1-CEP 2010-123-Rev 03"]["date"] == "2024-03-15"
+
+
+def test_cep_real_export_header(tmp_path):
+    f = tmp_path / "EXPORT_WEB_CEP.txt"
+    f.write_text("Monograph Number\tSubstance\tType CEP\tCertificate (CEP) Holder\tHolder SPOR ORG-ID / SPOR LOC-ID\t"
+                 "Certificate (CEP) Number\tIssue Date CEP\tStatus CEP\n"
+                 "0\t1,2-dihydrotriamcinolone\tTSE\tPharmacia & Upjohn Company Kalamazoo US\t\tR0-CEP 2001-231 - Rev 00\t09/04/2002\tExpired\n"
+                 "2154\tTelmisartan\tChemistry\tGlenmark Life Sciences Limited Mumbai IN\tORG-100001234 / LOC-100028900\t"
+                 "R1-CEP 2010-123 - Rev 03\t15/03/2024\tValid\n")
+    rows = af.parse_cep(f)
+    t = rows["R1-CEP 2010-123 - Rev 03"]
+    assert t["valid"] and t["country"] == "IN" and t["spor_loc"] == "LOC-100028900" and t["spor_org"] == "ORG-100001234"
+    assert t["date"] == "2024-03-15" and t["monograph"] == "2154"
+    assert not rows["R0-CEP 2001-231 - Rev 00"]["valid"] and rows["R0-CEP 2001-231 - Rev 00"]["country"] == "US"

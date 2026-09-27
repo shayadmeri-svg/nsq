@@ -305,12 +305,14 @@ fetch-eudragmdp:
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py eudragmdp
 # FDA inspection outcomes for Indian sites: API (export FDA_DD_USER / FDA_DD_KEY first) or FILE = Data Dashboard Excel export
 fetch-fda-inspections FILE="":
+    @cd {{LOADER}} && .venv/bin/python -c "import openpyxl" 2>/dev/null || .venv/bin/pip install --quiet openpyxl
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py fda_inspections {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
 # API makers per molecule: FDA Type II DMF list (quarterly .xls) and EDQM CEPs (daily .txt); FILE = a file you downloaded
 fetch-fda-dmf FILE="":
-    @cd {{LOADER}} && .venv/bin/python -c "import xlrd" 2>/dev/null || .venv/bin/pip install --quiet xlrd
+    @cd {{LOADER}} && .venv/bin/python -c "import xlrd, openpyxl" 2>/dev/null || .venv/bin/pip install --quiet xlrd openpyxl
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py fda_dmf {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
 fetch-cep FILE="":
+    @cd {{LOADER}} && .venv/bin/python -c "import openpyxl" 2>/dev/null || .venv/bin/pip install --quiet openpyxl
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py edqm_cep {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
 # CDSCO + EU (the app merges them into one registry); add FDA with just fetch-fda-inspections
 fetch-plant-registry: fetch-plants fetch-eudragmdp

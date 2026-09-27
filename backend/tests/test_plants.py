@@ -235,15 +235,22 @@ def test_fda_inspections_attach_by_pin_and_plot():
     recent = "2025-11-24"
     fda = {"3002807456": {"fei": "3002807456", "key": "3002807456", "name": "INDOCO REMEDIES LIMITED", "address": "L-14 Verna Industrial Area",
                           "city": "Verna", "postcode": "403722", "last_inspection": recent, "last_code": "VAI", "oai_count": 0,
-                          "inspections": [{"date": recent, "code": "VAI"}]},
+                          "inspections": [{"date": recent, "code": "VAI", "project_area": "Drug Quality Assurance"}]},
            "3005550001": {"fei": "3005550001", "key": "3005550001", "name": "Indoco Remedies Limited", "address": "L-32, 33 & 34 Verna",
-                          "city": "Verna", "postcode": "403722", "last_inspection": recent, "last_code": "NAI", "oai_count": 0, "inspections": []},
+                          "city": "Verna", "postcode": "403722", "last_inspection": recent, "last_code": "NAI", "oai_count": 0,
+                          "inspections": [{"date": recent, "code": "NAI", "project_area": "Drug Quality Assurance"}]},
            "3005550002": {"fei": "3005550002", "key": "3005550002", "name": "Redlist Labs Pvt Ltd", "address": "Plot 7", "city": "Hyderabad",
-                          "postcode": "500076", "last_inspection": "2024-01-01", "last_code": "NAI", "oai_count": 0, "inspections": []}}
+                          "postcode": "500076", "last_inspection": "2024-01-01", "last_code": "NAI", "oai_count": 0,
+                          "inspections": [{"date": "2024-01-01", "code": "NAI", "project_area": "Drug Quality Assurance"}]},
+           "3005550003": {"fei": "3005550003", "key": "3005550003", "name": "Dr. A. Investigator, M.D.", "address": "Clinic", "city": "Pune",
+                          "postcode": None, "last_inspection": "2025-01-01", "last_code": "NAI", "oai_count": 0,
+                          "inspections": [{"date": "2025-01-01", "code": "NAI", "project_area": "Bioresearch Monitoring"}]}}
     stats = pl._merge_fda(reg, fda, {"3005550002"})
+    assert not any("investigator" in pid for pid in reg)
     p1 = reg["indoco--403722--l14"]
     assert p1["fda"]["fei"] == "3002807456" and p1["fda"]["acceptable"] and "fda_inspections" in p1["sources"]
-    assert stats == {"fda_sites": 3, "fda_matched": 1, "fda_added": 2, "fda_folded": 0}  # Plant II (L-32) is a separate plant
+    assert {k: stats[k] for k in ("fda_sites", "fda_matched", "fda_added", "fda_clinical_only")} == \
+        {"fda_sites": 4, "fda_matched": 1, "fda_added": 2, "fda_clinical_only": 1}  # Plant II (L-32) is a separate plant; the study site is not a plant
     red = next(p for pid, p in reg.items() if pid.startswith("fda-redlist"))
     assert red["fda"]["import_alert"] and not red["fda"]["acceptable"] and red["state"] == "Telangana"
     b = pl.brief(p1)

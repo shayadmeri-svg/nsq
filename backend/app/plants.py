@@ -285,7 +285,7 @@ def _indexes(plants: dict[str, dict[str, Any]]) -> tuple[dict[str, list[str]], d
 
 
 def _find_plants(plants: dict[str, dict[str, Any]], by_pin: dict[str, list[str]], by_token: dict[str, set[str]],
-                 site_name: str, pin: str, address: Optional[str], city: Optional[str]) -> list[str]:
+                 site_name: str, pin: str, address: Optional[str], city: Optional[str], state: Optional[str] = None) -> list[str]:
     """Registry plants an outside site record (EU GMP, US FDA) belongs to: company + PIN, or company + town,
     and no conflicting plot numbers."""
     from rapidfuzz import fuzz
@@ -304,7 +304,9 @@ def _find_plants(plants: dict[str, dict[str, Any]], by_pin: dict[str, list[str]]
             score += 20
         else:
             town = _town_words(city, address) - _ADDRESS_STOP
-            if score < 92 or p.get("state") != pin_state(pin) or not (town & _town_words(p.get("district"), p.get("address"))):
+            st = pin_state(pin) if pin else state  # FDA inspection records carry no postcode
+            if score < 92 or (st and p.get("state") and p["state"] != st) or (pin and p.get("state") != st) \
+                    or not (town & _town_words(p.get("district"), p.get("address"))):
                 continue
             if not _same_site(address, p.get("address"), pin or None):
                 continue
@@ -388,22 +390,52 @@ def _attach_fda(p: dict[str, Any], f: dict[str, Any]) -> None:
 def _fda_plant(site: dict[str, Any], f: dict[str, Any]) -> dict[str, Any]:
     pin = site.get("postcode") or None
     pid = f"fda-{re.sub(r'[^a-z0-9]+', '-', (site.get('name') or '').lower()).strip('-')[:50]}--{pin or site.get('fei')}"
+    ops = " ".join(site.get("operations") or []).lower()
+    api = "api manufacture" in ops  # FDA registration: business operations
     return {"id": pid, "name": site.get("name") or "?", "aliases": [], "address": site.get("address"),
-            "district": site.get("city"), "state": pin_state(pin), "pin": pin, "phones": [], "sources": [],
-            "licences": [], "loan_licensees": [], "who_gmp": [], "who_gmp_certified": False,
-            "capabilities": {"dosage_forms": [], "segregated": {}, "therapeutic": [], "evidence": [], "raw": "",
-                             "sterile": False, "api": False, "finished_dose": False, "licence_classes": [], "schedule_c": False}}
+            "district": site.get("city"), "state": pin_state(pin) or site.get("state"), "pin": pin, "phones": [], "sources": [],
+            "licences": [], "loan_licensees": [], "who_gmp": [], "who_gmp_certified": False, "fda_operations": site.get("operations") or [],
+            "capabilities": {"dosage_forms": ["api"] if api else [], "segregated": {}, "therapeutic": [], "evidence": [], "raw": "",
+                             "sterile": False, "api": api, "finished_dose": False, "licence_classes": [], "schedule_c": False}}
+
+
+def _decrs_by_fei() -> dict[str, dict[str, Any]]:
+    _m, est = _load("fda_establishments")
+    return {str(r.get("fei") or "").lstrip("0"): r for r in (est.get("data") or {}).values() if r.get("fei")}
+
+
+def _enrich_fda(site: dict[str, Any], decrs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """FDA's inspection records for India have no postcode or state: take them (and business operations) from the
+    FDA registration of the same FEI when the site is registered."""
+    e = decrs.get(site.get("fei") or "")
+    if not e:
+        return site
+    pin = re.sub(r"\D", "", str(e.get("postal") or ""))[:6] or None
+    return {**site, "postcode": site.get("postcode") or pin, "state": site.get("state") or e.get("state"),
+            "address": site.get("address") or e.get("address"), "operations": e.get("operations") or [],
+            "registered_until": e.get("expiration")}
 
 
 def _merge_fda(plants: dict[str, dict[str, Any]], fda_sites: dict[str, dict[str, Any]], import_alert_feis: set[str]) -> dict[str, int]:
     """Attach FDA-inspected Indian drug sites (by FEI) to registry plants; unmatched ones become plants."""
     by_pin, by_token = _indexes(plants)
+    decrs = _decrs_by_fei()
     made: dict[str, list[str]] = defaultdict(list)
-    matched = added = folded = 0
+    matched = added = folded = with_pin = clinical = 0
     for site in fda_sites.values():
+        # Bioresearch Monitoring inspections are of clinical / bioequivalence study sites, not GMP: plant status uses
+        # Drug Quality Assurance (and biologics) inspections only, and study-only sites are not plants.
+        gmp = [i for i in site.get("inspections") or [] if "bioresearch" not in (i.get("project_area") or "").lower()]
+        if not gmp:
+            clinical += 1
+            continue
+        site = {**site, "inspections": gmp, "last_inspection": gmp[0].get("date"), "last_code": gmp[0].get("code") or None,
+                "oai_count": sum(1 for i in gmp if i.get("code") == "OAI")}
+        site = _enrich_fda(site, decrs)
+        with_pin += bool(site.get("postcode"))
         f = _fda_summary(site, import_alert_feis)
         pin = site.get("postcode") or ""
-        best = _find_plants(plants, by_pin, by_token, site.get("name") or "", pin, site.get("address"), site.get("city"))
+        best = _find_plants(plants, by_pin, by_token, site.get("name") or "", pin, site.get("address"), site.get("city"), site.get("state"))
         if best:
             for pid in best:
                 _attach_fda(plants[pid], f)
@@ -422,7 +454,39 @@ def _merge_fda(plants: dict[str, dict[str, Any]], fda_sites: dict[str, dict[str,
         if pin:
             made[pin].append(np["id"])
         added += 1
-    return {"fda_sites": len(fda_sites), "fda_matched": matched, "fda_added": added, "fda_folded": folded}
+    return {"fda_sites": len(fda_sites), "fda_matched": matched, "fda_added": added, "fda_folded": folded, "fda_with_pin": with_pin,
+            "fda_clinical_only": clinical}
+
+
+_IN_STATES = ["Andhra Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh",
+              "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Odisha", "Puducherry", "Punjab",
+              "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Dadra and Nagar Haveli",
+              "Daman and Diu"]
+
+
+def _flag_import_alerts(plants: dict[str, dict[str, Any]]) -> int:
+    """Import Alert 66-40 entries carry no FEI: match them to plants by company and place like other site records."""
+    _m, ia = _load("fda_import_alerts")
+    rows = list((ia.get("data") or {}).values())
+    if not rows:
+        return 0
+    by_pin, by_token = _indexes(plants)
+    n = 0
+    for r in rows:
+        addr = r.get("address") or ""
+        if isinstance(addr, list):
+            addr = ", ".join(addr)
+        m = re.search(r"\b(\d{3})\s?(\d{3})\b", addr)
+        pin = (m.group(1) + m.group(2)) if m else ""
+        state = next((st for st in _IN_STATES if st.lower() in addr.lower().replace("&", "and")), None)
+        city = addr.split(",")[-2] if addr.count(",") >= 1 else None
+        for pid in _find_plants(plants, by_pin, by_token, r.get("name") or "", pin, addr, city, state):
+            p = plants[pid]
+            p["import_alert"] = {"name": r.get("name"), "since": (r.get("dates") or [None])[0], "notes": r.get("notes") or []}
+            if p.get("fda"):
+                p["fda"] = {**p["fda"], "import_alert": True, "acceptable": False}
+            n += 1
+    return n
 
 
 def _import_alert_feis() -> set[str]:
@@ -437,7 +501,7 @@ def registry() -> dict[str, Any]:
     eu_mtime, eu_raw = _load("eudragmdp")
     fda_mtime, fda_raw = _load("fda_inspections")
     directory = sites.directory()
-    key = (mtime, eu_mtime, fda_mtime, _load("fda_import_alerts")[0], id(directory))
+    key = (mtime, eu_mtime, fda_mtime, _load("fda_import_alerts")[0], _load("fda_establishments")[0], id(directory))
     c = _cache
     if c is not None and c[0] == key:
         return c[1]
@@ -447,6 +511,7 @@ def registry() -> dict[str, Any]:
             plants = {pid: {**p} for pid, p in (raw.get("data") or {}).items()}
             eu_stats = _merge_eu(plants, eu_raw.get("data") or {}) if eu_raw.get("data") else {}
             fda_stats = _merge_fda(plants, fda_raw.get("data") or {}, _import_alert_feis()) if fda_raw.get("data") else {}
+            fda_stats["import_alert_plants"] = _flag_import_alerts(plants)
             links = _link(plants, directory) if plants else {}
             meta = {k: raw.get(k) for k in ("title", "publisher", "url", "retrieved_at", "records", "inputs", "stats")}
             meta["eudragmdp"] = {"retrieved_at": eu_raw.get("retrieved_at"), "listed": eu_raw.get("total_listed"), **eu_stats} if eu_raw else None
@@ -485,7 +550,7 @@ def brief(p: dict[str, Any]) -> dict[str, Any]:
             "eu_stated": (p.get("eu") or {}).get("stated") or {},
             "fda_code": (p.get("fda") or {}).get("last_code"), "fda_last": (p.get("fda") or {}).get("last_inspection"),
             "fda_ok": bool((p.get("fda") or {}).get("acceptable")), "fda_oai": bool((p.get("fda") or {}).get("oai_recent")),
-            "fda_import_alert": bool((p.get("fda") or {}).get("import_alert"))}
+            "fda_import_alert": bool((p.get("fda") or {}).get("import_alert") or p.get("import_alert"))}
 
 
 def rule_input(p: dict[str, Any]) -> dict[str, Any]:
@@ -539,7 +604,7 @@ def _matches(p: dict[str, Any], q: str, state: str, capability: str, segregated:
         return False
     if cert == "us_fda" and not (p.get("fda") or {}).get("acceptable"):
         return False
-    if cert == "fda_oai" and not ((p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert")):
+    if cert == "fda_oai" and not ((p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert") or p.get("import_alert")):
         return False
     if cert == "loan" and not p.get("loan_licensees"):
         return False
@@ -610,7 +675,7 @@ def summary(exclude_api_only: bool = False) -> dict[str, Any]:
                   + (["EU GMP certified (last 3 years)"] if (p.get("eu") or {}).get("certified") else [])
                   + (["EU non-compliance statement"] if (p.get("eu") or {}).get("status") == "non_compliant" else [])
                   + (["US FDA acceptable (NAI/VAI, last 5 years)"] if (p.get("fda") or {}).get("acceptable") else [])
-                  + (["US FDA OAI or import alert"] if (p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert") else []))
+                  + (["US FDA OAI or import alert"] if (p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert") or p.get("import_alert") else []))
     breadth = group(lambda p: [("1 form" if n == 1 else "2–3 forms" if n <= 3 else "4–6 forms" if n <= 6 else "7+ forms")
                                for n in [len([f for f in p["capabilities"]["dosage_forms"] if f not in ("api", "finished_unspecified")])] if n])
     alerts_all = sum(s["alerts"] for s in directory)
@@ -627,7 +692,7 @@ def summary(exclude_api_only: bool = False) -> dict[str, Any]:
         "eu_ncr": sum(1 for p in plants if (p.get("eu") or {}).get("status") == "non_compliant"),
         "eu_only": sum(1 for p in plants if p.get("sources") == ["eudragmdp"]),
         "us_fda": sum(1 for p in plants if (p.get("fda") or {}).get("acceptable")),
-        "fda_oai": sum(1 for p in plants if (p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert")),
+        "fda_oai": sum(1 for p in plants if (p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert") or p.get("import_alert")),
         "fda_inspected": sum(1 for p in plants if p.get("fda")),
         "fda_only": sum(1 for p in plants if p.get("sources") == ["fda_inspections"]),
         "with_pin": sum(1 for p in plants if p.get("pin")),
@@ -766,7 +831,7 @@ def as_plant_asset(p: dict[str, Any]):
     eu, fda = p.get("eu") or {}, p.get("fda") or {}
     certs = (["WHO_GMP"] if p.get("who_gmp_certified") else []) + (["EU_GMP"] if eu.get("certified") else []) \
         + (["USFDA"] if fda.get("acceptable") else []) + (["EU_NCR"] if eu.get("status") == "non_compliant" else []) \
-        + (["FDA_OAI"] if fda.get("oai_recent") else []) + (["FDA_IMPORT_ALERT"] if fda.get("import_alert") else [])
+        + (["FDA_OAI"] if fda.get("oai_recent") else []) + (["FDA_IMPORT_ALERT"] if fda.get("import_alert") or p.get("import_alert") else [])
     return PlantAsset(
         asset_id=f"reg:{p['id']}", site_name=p["name"] + (f", {p.get('district')}" if p.get("district") else ""),
         city=p.get("district") or "", state=p.get("state") or "", capabilities=list(dict.fromkeys(caps)),
@@ -875,7 +940,13 @@ def _filings() -> dict[str, Any]:
         t = _tokens(p["name"])
         if t:
             companies[t[0]].append(pid)
-    out = {"by_ing": dict(by_ing), "companies": dict(companies), "dmf_at": dmf.get("retrieved_at"), "cep_at": cep.get("retrieved_at")}
+    eu_locs: dict[str, list[str]] = defaultdict(list)  # EudraGMDP LOC id -> plants (a CEP's SPOR LOC-ID names the site)
+    for pid, p in reg["plants"].items():
+        for k in p.get("eu_records") or []:
+            if str(k).startswith("LOC-"):
+                eu_locs[k].append(pid)
+    out = {"by_ing": dict(by_ing), "companies": dict(companies), "eu_locs": dict(eu_locs),
+           "dmf_at": dmf.get("retrieved_at"), "cep_at": cep.get("retrieved_at")}
     _filings_cache = (ck, out)
     return out
 
@@ -894,8 +965,22 @@ def _holder_plants(holder: str, f: dict[str, Any], plants: dict[str, dict[str, A
 def _filing_rows(rows: list[dict[str, Any]], f: dict[str, Any], plants: dict[str, dict[str, Any]], label: str) -> list[dict[str, Any]]:
     out = []
     for r in sorted(rows, key=lambda r: r.get("date") or "", reverse=True):
-        pids = _holder_plants(r["holder"], f, plants)
-        out.append({"holder": r["holder"], "number": r["number"], "date": r.get("date"), "kind": label,
+        level = "company"
+        if r.get("spor_loc") and f["eu_locs"].get(r["spor_loc"]):
+            pids, level = f["eu_locs"][r["spor_loc"]], "site"
+        elif r.get("country") and r["country"] != "IN":
+            pids = []  # held from outside India: not one of the registry's plants
+        else:
+            pids = _holder_plants(re.sub(r"\s[A-Z]{2}$", "", r["holder"]), f, plants)
+            # CEP holders end with their town ("REINE LIFESCIENCE Ankleshwar IN"): keep that town's plants when there are any
+            town = re.search(r"\s([A-Za-z][A-Za-z.-]+)\s[A-Z]{2}$", r["holder"]) if r.get("country") else None
+            if town and pids:
+                t = town.group(1).lower()
+                here = [pid for pid in pids if t in " ".join(str(plants[pid].get(k) or "") for k in ("district", "address")).lower()]
+                if here:
+                    pids, level = here, "town"
+        out.append({"holder": r["holder"], "number": r["number"], "date": r.get("date"), "kind": label, "level": level,
+                    "country": r.get("country"),
                     "plants": [{"id": pid, "name": plants[pid]["name"], "state": plants[pid].get("state")} for pid in pids[:4]],
                     "plants_total": len(pids), "plant_ids": pids})
     out.sort(key=lambda x: (-(1 if x["plants"] else 0), -(int((x["date"] or "0")[:4]))))

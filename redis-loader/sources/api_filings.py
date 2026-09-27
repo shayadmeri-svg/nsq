@@ -192,12 +192,15 @@ def run_dmf(ctx: Ctx) -> int:
 
 # --- EDQM CEP ---------------------------------------------------------------------------------
 
-CEP_COLS = {"number": ("certificatenumber", "cepnumber", "certificateno", "numero", "number", "cep"),
-            "holder": ("holder", "certificateholder", "holdername", "titulaire"),
+# EDQM's EXPORT_WEB_CEP.txt header (Sep 2026): Monograph Number | Substance | Type CEP | Certificate (CEP) Holder |
+# Holder SPOR ORG-ID / SPOR LOC-ID | Certificate (CEP) Number | Issue Date CEP | Status CEP
+CEP_COLS = {"number": ("certificatecepnumber", "certificatenumber", "cepnumber", "certificateno", "numero", "number", "cep"),
+            "holder": ("certificatecepholder", "holder", "certificateholder", "holdername", "titulaire"),
             "substance": ("substance", "substancename", "nameofsubstance", "substancenameen"),
             "monograph": ("monographnumber", "monograph", "monographno"),
-            "status": ("status", "statut"), "date": ("issuedate", "dateofissue", "lastissuedate", "issuingdate", "date"),
-            "type": ("type", "certificatetype")}
+            "status": ("statuscep", "status", "statut"),
+            "date": ("issuedatecep", "issuedate", "dateofissue", "lastissuedate", "issuingdate", "date"),
+            "type": ("typecep", "type", "certificatetype"), "spor": ("holderspororgidsporlocid", "sporlocid", "spor")}
 
 
 def parse_cep(path: Path) -> dict[str, dict[str, Any]]:
@@ -207,9 +210,13 @@ def parse_cep(path: Path) -> dict[str, dict[str, Any]]:
         if not num:
             continue
         status = _s(r.get("status")).lower()
-        out[num] = {"number": num, "holder": _s(r.get("holder")), "substance": _s(r.get("substance")),
+        holder = _s(r.get("holder"))
+        m = re.search(r"\s([A-Z]{2})$", holder)  # the holder ends with its city and ISO country code: "... Hyderabad IN"
+        spor = _s(r.get("spor"))
+        out[num] = {"number": num, "holder": holder, "country": m.group(1) if m else None, "substance": _s(r.get("substance")),
                     "monograph": _s(r.get("monograph")) or None, "type": _s(r.get("type")) or None,
-                    "status": status or None, "valid": (not status) or status.startswith("valid"), "date": _date(r.get("date"), dayfirst=True)}
+                    "status": status or None, "valid": (not status) or status.startswith("valid"), "date": _date(r.get("date"), dayfirst=True),
+                    "spor_org": (re.search(r"ORG-\d+", spor) or [None])[0], "spor_loc": (re.search(r"LOC-\d+", spor) or [None])[0]}
     return out
 
 
@@ -226,6 +233,7 @@ def run_cep(ctx: Ctx) -> int:
     if not rows:
         raise NotFound(f"no CEPs parsed from {path.name}")
     valid = sum(1 for r in rows.values() if r["valid"])
-    ctx.log(f"  {len(rows):,} CEPs ({valid:,} valid)")
-    write_normalized(ctx, CEP, rows, len(rows), extra={"valid": valid})
+    india = sum(1 for r in rows.values() if r["valid"] and r["country"] == "IN")
+    ctx.log(f"  {len(rows):,} CEPs ({valid:,} valid, {india:,} of them held from India)")
+    write_normalized(ctx, CEP, rows, len(rows), extra={"valid": valid, "valid_india": india})
     return len(rows)
