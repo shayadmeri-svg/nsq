@@ -34,6 +34,20 @@ export function ExpandedView({ sections, active, onChange, title, subtitle }: {
   sections: Section[]; active: string | null; onChange: (id: string | null) => void; title: ReactNode; subtitle?: ReactNode;
 }) {
   const cur = sections.find((s) => s.id === active);
+  const isOpen = !!active;
+  // Lock/unlock body scroll only when the modal transitions open <-> closed, not on every
+  // section switch. Switching `active` between two open sections used to re-run this effect
+  // (its dependency included `active`), which re-captured `document.body.style.overflow` as
+  // "hidden" (the value the modal itself had just set) and restored that "hidden" value back
+  // on the next change instead of the original pre-modal value — so the lock could get stuck
+  // on after closing. Keying the lock off `isOpen` instead means it only sets once on open and
+  // only restores once on close, so the original overflow value is always the one restored.
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [isOpen]);
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -47,9 +61,7 @@ export function ExpandedView({ sections, active, onChange, title, subtitle }: {
       }
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+    return () => window.removeEventListener("keydown", onKey);
     // Only re-run when the modal opens/closes, not on every re-render of the
     // caller's `sections` array (a fresh array/function identity each render
     // would tear down and re-attach these listeners continuously, which can
