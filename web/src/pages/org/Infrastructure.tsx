@@ -1,12 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, Factory, FileSearch, MapPin, Pencil, Plus, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Check, ExternalLink, Factory, FileSearch, Link2, MapPin, Pencil, Plus, Search, ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
-import { Badge, Bar, Button, Card, Drawer, Empty, ErrorNote, Field, PageHeader, PageSkeleton } from "../../components/ui";
+import { Link } from "react-router-dom";
+import { Badge, Button, Card, Drawer, Empty, ErrorNote, Field, PageHeader, PageSkeleton } from "../../components/ui";
 import { useToast } from "../../components/ui/toast";
 import { Estimate } from "../../components/ui/Estimate";
 import { api, post, put } from "../../lib/api";
 import { FdaBadges, SiteDetail } from "../admin/Sites";
+import { BasisLegend, CoverageSections } from "../../components/capabilities";
 import { cn } from "../../lib/cn";
 import { titleCase } from "../../lib/format";
 import { useOrg, useOrgData } from "./common";
@@ -112,15 +114,6 @@ function PlantEditor({ slug, plant, taxonomy, onClose }: { slug: string; plant: 
   );
 }
 
-function CapChip({ label, basis }: { label: string; basis: string }) {
-  return (
-    <span title={basis === "stated" ? "Stated by the reference site" : basis === "inferred" ? "Inferred from a stated dosage form — not evidenced" : basis === "user" ? "Entered in the app" : "Derived"}
-      className={cn("rounded-md px-1.5 py-0.5 text-[11px]", basis === "stated" ? "bg-brand-50 font-medium text-brand-700 ring-1 ring-inset ring-brand-200" : basis === "inferred" ? "border border-dashed border-sky-400 text-sky-700" : "bg-slate-100 text-slate-600")}>
-      {label}
-    </span>
-  );
-}
-
 function ReferencePanel({ p }: { p: any }) {
   const ref = p.reference;
   return (
@@ -143,6 +136,79 @@ function ReferencePanel({ p }: { p: any }) {
         <span>retrieved {ref.retrieved_at}</span>
       </div>
     </div>
+  );
+}
+
+function RegistryStrip({ p, canManage, onOpen }: { slug: string; p: any; canManage: boolean; onOpen: () => void }) {
+  const reg = p.reference?.registry;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-indigo-50/40 px-5 py-2.5 text-xs">
+      {reg ? (
+        <span className="flex min-w-0 items-center gap-1.5 text-ink-soft"><BadgeCheck size={14} className="shrink-0 text-indigo-600" />
+          <span className="truncate">CDSCO lists this plant as <Link to={`/playground/plants?plant=${encodeURIComponent(reg.id)}`} className="font-semibold text-indigo-700 hover:underline">{reg.name}</Link>
+            {reg.who_gmp_valid_until ? ` · WHO-GMP valid until ${reg.who_gmp_valid_until}` : ""} · applied {reg.applied_at}</span></span>
+      ) : <span className="text-ink-muted">Not matched to CDSCO's plant lists yet — matching fills the capabilities its licence requires.</span>}
+      {canManage && <Button size="sm" variant="secondary" onClick={onOpen}><Link2 size={13} /> {reg ? "Re-match" : "Match with CDSCO registry"}</Button>}
+    </div>
+  );
+}
+
+function RegistryMatch({ slug, plant, onClose }: { slug: string; plant: any | null; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const [dq, setDq] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { data, error, isFetching } = useQuery({
+    queryKey: ["registry-candidates", slug, plant?.asset_id, dq],
+    queryFn: () => api<any>(`/api/orgs/${slug}/plants/${plant.asset_id}/registry?${new URLSearchParams({ q: dq })}`),
+    enabled: !!plant,
+  });
+  const apply = async (id: string) => {
+    setBusy(id);
+    try {
+      const r = await post<any>(`/api/orgs/${slug}/plants/${plant.asset_id}/registry`, { plant_id: id });
+      toast(`Matched — ${r.added.length} capabilities added, ${r.upgraded.length} upgraded to 'required'.`);
+      await qc.invalidateQueries({ queryKey: ["org", slug] });
+      qc.invalidateQueries();
+      onClose();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Drawer open={!!plant} onClose={onClose} title={`Match ${plant?.site_name ?? ""} with CDSCO`} subtitle="WHO-GMP certified units and approved manufacturing sites, by company name — nearest to this plant's city first." width={760}>
+      <form onSubmit={(e) => { e.preventDefault(); setDq(q); }} className="mb-4 flex gap-2">
+        <div className="relative flex-1"><Search size={15} className="absolute left-3 top-2.5 text-ink-faint" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={data?.names?.length ? `Searching: ${data.names.slice(0, 3).join(" · ")} — or type another company name` : "Company name as CDSCO lists it"} className="input h-9 w-full pl-9" /></div>
+        <Button size="sm" type="submit" loading={isFetching}>Search</Button>
+      </form>
+      <ErrorNote error={error} />
+      {data && !data.candidates.length && <div className="rounded-lg bg-slate-50 p-4 text-sm text-ink-muted">No CDSCO plant with a similar company name. Try the name as printed on the licence (e.g. the legal entity, or "… Unit II").</div>}
+      <div className="space-y-2">
+        {data?.candidates.map((c: any) => (
+          <div key={c.id} className="rounded-xl border border-line p-3 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-semibold">{c.name}</div>
+                <div className="text-xs text-ink-muted">{[c.district, c.state, c.pin].filter(Boolean).join(" · ")}{c.same_city ? " · same city" : c.same_state ? " · same state" : ""}</div>
+                {c.address && <div className="mt-0.5 truncate text-[11px] text-ink-faint" title={c.address}>{c.address}</div>}
+              </div>
+              {data.can_apply && <Button size="sm" loading={busy === c.id} onClick={() => apply(c.id)}>This is the plant</Button>}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              {c.who_gmp && <Badge tone="brand">WHO-GMP</Badge>}
+              {c.dosage_forms.map((f: string) => <span key={f} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10.5px]">{f.replace(/_/g, " ")}</span>)}
+              {Object.keys(c.segregated).map((k) => <span key={k} className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10.5px] text-amber-800 ring-1 ring-inset ring-amber-200">{k.replace(/_/g, " ")} block</span>)}
+              {!c.dosage_forms.length && c.licence_forms?.map((f: string) => <span key={f} className="rounded-md border border-dashed border-line px-1.5 py-0.5 text-[10.5px] text-ink-muted">{f}</span>)}
+            </div>
+            <div className="mt-1.5 text-[11px] text-ink-muted">Adds up to {c.derived} capabilities ({c.required} required by its listing). Nothing you or a source stated is changed.</div>
+          </div>
+        ))}
+      </div>
+    </Drawer>
   );
 }
 
@@ -197,6 +263,7 @@ export function Infrastructure() {
   const { org, slug } = useOrg();
   const { data, isLoading, error } = useOrgData<any>("infrastructure");
   const [editing, setEditing] = useState<any | null | undefined>(undefined);
+  const [matching, setMatching] = useState<any | null>(null);
   if (isLoading || !org) return <PageSkeleton />;
   if (error) return <ErrorNote error={error} />;
 
@@ -224,24 +291,13 @@ export function Infrastructure() {
               <div className="px-3 py-3"><div className="label">Capacity</div><div className="mt-1 truncate px-1 text-sm font-semibold" title={(p.annual_capacity ?? []).join(" · ")}>{p.annual_capacity?.[0] ?? (p.batch_capacity_kg ? `${p.batch_capacity_kg} kg batch` : "—")}</div></div>
             </div>
             {p.reference?.company && <ReferencePanel p={p} />}
+            <RegistryStrip slug={slug} p={p} canManage={p.editable} onOpen={() => setMatching(p)} />
             <div className="space-y-3 p-5">
               <div className="flex items-center justify-between">
                 <div className="label">Capability coverage</div>
-                <div className="flex items-center gap-3 text-[11px] text-ink-muted">
-                  <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-brand-500" /> stated</span>
-                  <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-sky-500" /> inferred <Estimate field="capability_inferred" align="right" /></span>
-                </div>
+                <BasisLegend />
               </div>
-              {p.sections.map((s: any) => (
-                <div key={s.id}>
-                  <div className="mb-1 flex justify-between text-xs"><span className="font-medium text-ink-soft">{s.title}</span><span className="tabular-nums text-ink-muted">{s.have.length}/{s.total}</span></div>
-                  <Bar value={s.coverage_pct} color={s.coverage_pct > 40 ? "#0a9a7d" : s.coverage_pct > 0 ? "#f59e0b" : "#e2e8f0"} />
-                  {s.have.length > 0 && <div className="mt-1.5 flex flex-wrap gap-1">{s.have.map((h: any) => <CapChip key={h.token} label={h.label} basis={h.basis} />)}</div>}
-                </div>
-              ))}
-              {p.other_capabilities?.length > 0 && (
-                <div><div className="mb-1 text-xs font-medium text-ink-soft">Other process capabilities</div><div className="flex flex-wrap gap-1">{p.other_capabilities.map((h: any) => <CapChip key={h.token} label={h.label} basis={h.basis} />)}</div></div>
-              )}
+              <CoverageSections sections={p.sections} other={p.other_capabilities} />
               {p.approved_forms.length > 0 && <div className="flex flex-wrap gap-1.5 pt-2">{p.approved_forms.map((f: string) => <Badge key={f}>{titleCase(f)}</Badge>)}</div>}
               <div className="flex items-center gap-1.5 pt-1 text-[11px] text-ink-muted">Talent depth used in fit scores is an estimate <Estimate field="talent_depth" /></div>
             </div>
@@ -250,6 +306,7 @@ export function Infrastructure() {
       </div>
       <SiteSuggestions slug={slug} />
       <PlantEditor slug={slug} plant={editing} taxonomy={data.taxonomy} onClose={() => setEditing(undefined)} />
+      <RegistryMatch slug={slug} plant={matching} onClose={() => setMatching(null)} />
     </>
   );
 }

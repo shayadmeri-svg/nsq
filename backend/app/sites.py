@@ -210,17 +210,30 @@ def summary() -> dict[str, Any]:
     }
 
 
-# CDSCO registry dosage form -> (approved_forms, capability tokens) in the plant profile vocabulary
-REGISTRY_FORMS: dict[str, tuple[list[str], list[str]]] = {
-    "tablet": (["solid_oral", "tablet"], ["compression"]),
-    "capsule_hard": (["solid_oral", "capsule"], []), "capsule_soft": (["solid_oral", "capsule", "softgel"], []),
-    "oral_liquid": (["syrup", "suspension"], ["liquid_oral_filling"]), "dry_syrup": (["dry_syrup"], []),
-    "oral_powder": (["powder"], []), "svp_liquid": (["injection", "vial"], ["aseptic_fill", "vial_filling", "sterile_liquid"]),
-    "svp_dry_powder": (["injection", "vial", "dry_powder_injection"], ["aseptic_fill", "powder_filling"]),
-    "lyophilised": (["lyophilized_vial"], ["lyophilization", "aseptic_fill"]), "lvp": (["lvp"], ["sterile_liquid"]),
-    "prefilled_syringe": (["prefilled_syringe"], ["pfs_filling"]), "ophthalmic": (["ophthalmic"], ["sterile_liquid"]),
-    "topical": (["topical"], []), "inhalation": (["inhalation"], []), "api": (["api"], []), "biological": (["biologic"], []),
-}
+def apply_registry(approved: list[str], caps: list[str], basis: dict[str, str], reg: dict[str, Any]) -> dict[str, Any]:
+    """Add what CDSCO's listing implies (capability_rules) to a plant's forms / capabilities, in place.
+
+    A token already stated or entered keeps its basis; 'inferred' / 'derived' ones are upgraded to
+    'required' when the listing requires them. Returns {'added', 'upgraded', 'containment', 'why'}.
+    """
+    import capability_rules
+
+    rin = {"dosage_forms": reg.get("dosage_forms", []), "segregated": reg.get("segregated", {}), "api": reg.get("api"),
+           "sterile": reg.get("sterile"), "who_gmp": reg.get("who_gmp"), "licence_classes": reg.get("licence_classes", [])}
+    added, upgraded, why = [], [], {}
+    for t, v in capability_rules.derive(rin).items():
+        why[t] = " ".join(v["why"])
+        if t not in caps:
+            caps.append(t)
+            basis[t] = v["basis"]
+            added.append(t)
+        elif v["basis"] == "required" and basis.get(t) in (None, "inferred", "derived"):
+            basis[t] = "required"
+            upgraded.append(t)
+    for f in capability_rules.approved_forms(rin):
+        if f not in approved:
+            approved.append(f)
+    return {"added": added, "upgraded": upgraded, "containment": capability_rules.containment(rin), "why": why}
 
 
 def plant_from_site(site: dict[str, Any], asset_id: str, cdsco: Optional[dict[str, Any]] = None) -> dict[str, Any]:
@@ -228,7 +241,8 @@ def plant_from_site(site: dict[str, Any], asset_id: str, cdsco: Optional[dict[st
 
     Capabilities come from the alerted products ('inferred'). When the site is the same
     plant as one in CDSCO's WHO-GMP / SUGAM lists (matched on company and PIN), the forms
-    CDSCO lists are added as 'stated', with the WHO-GMP certificate.
+    CDSCO lists are added with the capabilities its GMP rules require ('required') or make likely
+    ('inferred'), plus the WHO-GMP certificate.
     """
     fda = site["fda"]
     inspections = []
@@ -251,27 +265,19 @@ def plant_from_site(site: dict[str, Any], asset_id: str, cdsco: Optional[dict[st
     approved, caps = list(site["approved_forms"]), list(site["capabilities"])
     basis = {t: "inferred" for t in caps}
     certs, cert_basis = [], {}
+    registry_ref = None
     reg = (cdsco or {}).get("plants") or []
     if reg and cdsco.get("match") in ("site", "site_fuzzy"):
-        p = reg[0]
-        for f in p.get("dosage_forms", []):
-            forms, toks = REGISTRY_FORMS.get(f, ([], []))
-            approved += [x for x in forms if x not in approved]
-            for t in toks:
-                if t not in caps:
-                    caps.append(t)
-                basis[t] = "stated"
-        seg = p.get("segregated") or {}
-        if "cytotoxic" in seg:
-            containment = "cytotoxic"
-        elif {"hormone", "steroid", "immunosuppressant", "potent_other"} & set(seg):
-            containment = "potent"
-        if p.get("who_gmp"):
-            certs.append("WHO-GMP (CDSCO COPP)")
-            cert_basis["WHO-GMP (CDSCO COPP)"] = "stated"
+        applied = apply_registry(approved, caps, basis, reg[0])
+        registry_ref = {"id": reg[0]["id"], "name": reg[0]["name"], "match": cdsco["match"], "why": applied["why"],
+                        "applied_at": time.strftime("%Y-%m-%d")}
+        containment = applied["containment"] if applied["containment"] != "standard" else containment
+        if reg[0].get("who_gmp"):
+            certs.append("WHO_GMP")
+            cert_basis["WHO_GMP"] = "CDSCO WHO-GMP certified units list"
         sources.append({"label": "CDSCO WHO-GMP certified units / approved manufacturing sites", "url": "https://cdscoonline.gov.in/CDSCO/manuf_site"})
-        summary += f" CDSCO lists this plant ({p['name']}): {', '.join(p.get('dosage_forms', [])) or 'no forms parsed'}" + \
-            (f"; segregated blocks: {', '.join(seg)}" if seg else "") + (f"; WHO-GMP valid until {p['who_gmp_valid_until']}" if p.get("who_gmp_valid_until") else "") + "."
+        summary += f" CDSCO lists this plant ({reg[0]['name']}): {', '.join(reg[0].get('dosage_forms', [])) or 'no forms parsed'}" + \
+            (f"; segregated blocks: {', '.join(reg[0].get('segregated') or {})}" if reg[0].get("segregated") else "") + "."
     return {
         "asset_id": asset_id,
         "site_name": f"{site['company']} — {site['city'] or site['state'] or site['pincode']}".strip(" —"),
@@ -288,5 +294,6 @@ def plant_from_site(site: dict[str, Any], asset_id: str, cdsco: Optional[dict[st
         "reference": {
             "company": site["company"], "site": site["address"], "location": ", ".join(x for x in (site["city"], site["state"], site["pincode"]) if x),
             "summary": summary, "retrieved_at": time.strftime("%Y-%m-%d"), "sources": sources, "site_id": site["id"],
+            **({"registry": registry_ref} if registry_ref else {}),
         },
     }

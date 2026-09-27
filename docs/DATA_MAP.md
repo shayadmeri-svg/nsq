@@ -236,3 +236,10 @@ to the "CDSCO plant registry" job.
 name = `site_fuzzy`; company + town, or the company's only plant in the state = `company`) and serves `/api/plants*`:
 per-capability denominators (plants that can make X, share with NSQ alerts), the plant list and plant detail.
 "Add as plant" from the site directory adds the registry's forms as `stated` capabilities and the WHO-GMP certificate.
+
+`core/capability_rules.py` turns a registry listing into capability-catalog tokens: `required` (Schedule M / WHO-GMP
+require it for the products listed — e.g. Grade A cleanrooms and WFI for injectables, dedicated segregated areas for
+beta-lactam or cytotoxic blocks, export barcoding for WHO-GMP units) or `inferred` (usual, not mandatory — e.g. film
+coating for tablets), each with the rule text. It feeds the plant drawer's coverage view, "Add as plant", and
+Infrastructure → "Match with CDSCO registry", which adds these tokens to an existing plant without downgrading anything
+stated or entered.

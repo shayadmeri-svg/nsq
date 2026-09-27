@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, PageSkeleton, Segmented, Stat } from "../../components/ui";
 import { api } from "../../lib/api";
+import { BasisLegend, CoverageSections } from "../../components/capabilities";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
 
@@ -129,6 +130,12 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
               </div>
             )}
             {c.therapeutic.length > 0 && <div className="mt-2 text-xs text-ink-muted">Therapeutic classes: {c.therapeutic.map((t: string) => t.replace(/_/g, " ")).join(", ")}</div>}
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between"><span className="label">Capability coverage implied by this listing</span><BasisLegend /></div>
+            <p className="mb-2.5 text-[11.5px] text-ink-muted">What Schedule M / WHO-GMP require for the products CDSCO lists ({p.catalog.required}), and what is usual for them ({p.catalog.inferred}). Hover a chip for the rule. Equipment-level detail needs a source (EU GMP certificate, inspection report) or the company.</p>
+            <CoverageSections sections={p.catalog.sections} other={p.catalog.other} />
           </div>
 
           <div>

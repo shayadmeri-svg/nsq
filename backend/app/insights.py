@@ -406,6 +406,7 @@ def org_issue_detail(ontology_keys: list[str], issue_id: str) -> Optional[dict[s
 def plant_profile(plant) -> dict[str, Any]:
     caps = plant_available_capabilities(plant)
     basis = plant.capability_basis or {}
+    why = ((plant.reference or {}).get("registry") or {}).get("why") or {}
     sections = []
     in_catalog: set[str] = set()
     for sec in capability_catalog.SECTIONS:
@@ -414,18 +415,19 @@ def plant_profile(plant) -> dict[str, Any]:
         have = [c for c in sec.capabilities if c.token in caps]
         sections.append({
             "id": sec.section_id, "title": sec.title, "icon": sec.icon,
-            "have": [{"token": c.token, "label": c.label, "basis": basis.get(c.token, "derived")} for c in have],
+            "have": [{"token": c.token, "label": c.label, "basis": basis.get(c.token, "derived"), "why": why.get(c.token)} for c in have],
             "total": len(tokens),
             "coverage_pct": round(100 * len(have) / len(tokens)) if tokens else 0,
         })
     other = sorted(t for t in plant.capabilities if t not in in_catalog)
     d = plant.model_dump(mode="json")
     d["sections"] = sections
-    d["other_capabilities"] = [{"token": t, "label": _label(t), "basis": basis.get(t, "derived")} for t in other]
+    d["other_capabilities"] = [{"token": t, "label": _label(t), "basis": basis.get(t, "derived"), "why": why.get(t)} for t in other]
     d["certifications_active_norm"] = sorted(plant_active_certifications(plant))
     d["evidence"] = {
         "stated": sum(1 for v in basis.values() if v == "stated"),
         "inferred": sum(1 for v in basis.values() if v == "inferred"),
+        "required": sum(1 for v in basis.values() if v == "required"),
         "user": sum(1 for v in basis.values() if v == "user"),
     }
     return d

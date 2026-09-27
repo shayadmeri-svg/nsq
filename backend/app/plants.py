@@ -26,6 +26,9 @@ import time
 from collections import Counter, defaultdict
 from typing import Any, Optional
 
+import capability_catalog
+import capability_rules
+
 from .config import settings
 from . import sites
 
@@ -234,10 +237,30 @@ def brief(p: dict[str, Any]) -> dict[str, Any]:
     return {"id": p["id"], "name": p["name"], "state": p.get("state"), "district": p.get("district"), "pin": p.get("pin"),
             "who_gmp": p.get("who_gmp_certified", False), "who_gmp_valid_until": who_valid_until(p),
             "licence_forms": sorted({l.get("form") for l in p.get("licences") or [] if l.get("form")}),
+            "licence_classes": c.get("licence_classes", []),
             "sterile": c.get("sterile", False), "api": c.get("api", False), "schedule_c": c.get("schedule_c", False),
             "dosage_forms": c.get("dosage_forms", []), "segregated": c.get("segregated", {}), "therapeutic": c.get("therapeutic", []),
             "loan_licensees": p.get("loan_licensees", []), "sources": p.get("sources", []),
             "nsq_alerts": (p.get("nsq") or {}).get("alerts", 0), "nsq_last": (p.get("nsq") or {}).get("last")}
+
+
+def rule_input(p: dict[str, Any]) -> dict[str, Any]:
+    return {**p["capabilities"], "who_gmp": p.get("who_gmp_certified", False)}
+
+
+def catalog_profile(p: dict[str, Any]) -> dict[str, Any]:
+    """The plant in the capability catalog's 7 sections, from CDSCO's listing via capability_rules."""
+    derived = capability_rules.derive(rule_input(p))
+    sections = []
+    for sec in capability_catalog.SECTIONS:
+        have = [{"token": c.token, "label": c.label, **derived[c.token]} for c in sec.capabilities if c.token in derived]
+        sections.append({"id": sec.section_id, "title": sec.title, "total": len(sec.capabilities), "have": have})
+    cat = set(capability_catalog.CAPABILITY_BY_TOKEN)
+    other = [{"token": t, "label": t.replace("_", " ").capitalize(), **v} for t, v in derived.items() if t not in cat]
+    return {"sections": sections, "other": other, "containment": capability_rules.containment(rule_input(p)),
+            "approved_forms": capability_rules.approved_forms(p["capabilities"]),
+            "required": sum(1 for v in derived.values() if v["basis"] == "required"),
+            "inferred": sum(1 for v in derived.values() if v["basis"] == "inferred")}
 
 
 def _matches(p: dict[str, Any], q: str, state: str, capability: str, segregated: str, cert: str, nsq: str) -> bool:
@@ -292,7 +315,7 @@ def get(plant_id: str) -> Optional[dict[str, Any]]:
     p = registry()["plants"].get(plant_id)
     if p is None:
         return None
-    out = {**p, "brief": brief(p), "who_gmp_valid_until": who_valid_until(p)}
+    out = {**p, "brief": brief(p), "who_gmp_valid_until": who_valid_until(p), "catalog": catalog_profile(p)}
     out["source_links"] = [{"key": s, "url": SOURCE_URL.get(s)} for s in p.get("sources", [])]
     return out
 
@@ -364,3 +387,35 @@ def facets() -> dict[str, Any]:
         "segregated": [{"key": k, "label": SEGREGATED_LABELS.get(k, k)} for k, _ in
                        Counter(s for p in plants for s in p["capabilities"]["segregated"]).most_common()],
     }
+
+
+def candidates(names: list[str], state: str = "", city: str = "", limit: int = 8) -> list[dict[str, Any]]:
+    """Registry plants that could be an organisation's plant: same company name (fuzzy), ranked by place."""
+    from rapidfuzz import fuzz
+
+    keys = [" ".join(_tokens(n, keep_generic=True)) for n in names if n]
+    keys = [k for k in keys if k]
+    if not keys:
+        return []
+    out = []
+    for p in registry()["plants"].values():
+        pk = " ".join(_tokens(p["name"], drop=_town_words(p.get("district"), p.get("address")), keep_generic=True))
+        if not pk:
+            continue
+        score = max(max(fuzz.token_sort_ratio(k, pk), fuzz.token_set_ratio(k, pk) if min(len(k.split()), len(pk.split())) >= 2 else 0)
+                    for k in keys)
+        if score < 85:
+            continue
+        place = 0
+        if state and p.get("state") == state:
+            place += 1
+        if city and city.lower() in " ".join(filter(None, [p.get("address"), p.get("district")])).lower():
+            place += 2
+        out.append((place, score, p))
+    out.sort(key=lambda x: (-x[0], -x[1], -len(x[2]["capabilities"]["dosage_forms"])))
+    res = []
+    for place, score, p in out[:limit]:
+        prof = catalog_profile(p)
+        res.append({**brief(p), "address": p.get("address"), "name_score": round(score), "same_state": place in (1, 3),
+                    "same_city": place >= 2, "derived": prof["required"] + prof["inferred"], "required": prof["required"]})
+    return res

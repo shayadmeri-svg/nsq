@@ -59,4 +59,36 @@ def test_plant_from_site_adds_stated_capabilities():
     site_id = next(k for k, v in plants.registry()["links"].items() if v["match"] == "site" and plants.site_link(k)["plants"][0]["who_gmp"])
     pa = sites.plant_from_site(sites.get(site_id), "t-1", plants.site_link(site_id))
     PlantAsset(**pa)
-    assert "stated" in pa["capability_basis"].values() and pa["certifications"] == ["WHO-GMP (CDSCO COPP)"]
+    assert "required" in pa["capability_basis"].values() and pa["certifications"] == ["WHO_GMP"]
+
+
+def test_org_plant_registry_match_and_apply(admin):
+    if not _have_registry():
+        pytest.skip("data/sources/cdsco_plants.json not present")
+    import uuid
+
+    from app import data
+    import intelligence_store as store
+
+    original = data.cdmo()["plants"]["ahmedabad-osd-liquid"]
+    request_cleanup = lambda: (store.save_plant_asset(original, data.redis_client()), data.invalidate())  # noqa: E731
+    r = admin.post("/api/admin/orgs", json={"name": f"Org {uuid.uuid4().hex[:6]}", "ontology_keys": ["unicure"], "plant_ids": ["ahmedabad-osd-liquid"]}, headers=H)
+    slug = r.json()["org"]["slug"]
+    before = admin.get(f"/api/orgs/{slug}/infrastructure").json()["plants"][0]
+    c = admin.get(f"/api/orgs/{slug}/plants/ahmedabad-osd-liquid/registry").json()
+    assert c["candidates"] and all(x["name_score"] >= 85 for x in c["candidates"])
+    c = admin.get(f"/api/orgs/{slug}/plants/ahmedabad-osd-liquid/registry", params={"q": "Affy Parenterals"}).json()
+    target = c["candidates"][0]
+    assert target["who_gmp"] and target["required"] > 10
+    p = admin.post(f"/api/orgs/{slug}/plants/ahmedabad-osd-liquid/registry", json={"plant_id": target["id"]}, headers=H).json()
+    assert p["added"] and "WHO_GMP" in p["certifications_active"] and p["containment_class"] == "cytotoxic"
+    basis = p["capability_basis"]
+    assert basis["grade_a_cleanroom"] == "required" and basis["wfi_generation"] == "required"
+    # nothing stated before is downgraded
+    for t, b in (before["capability_basis"] or {}).items():
+        if b == "stated":
+            assert basis[t] == "stated"
+    have = [h for s in p["sections"] for h in s["have"] if h["token"] == "grade_a_cleanroom"]
+    assert have and "Grade A" in have[0]["why"]
+    assert p["reference"]["registry"]["id"] == target["id"]
+    request_cleanup()

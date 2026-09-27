@@ -4,6 +4,7 @@ opportunities (patents × infra) and EU export readiness."""
 from __future__ import annotations
 
 import re
+import time
 import uuid
 from typing import Optional
 
@@ -280,3 +281,90 @@ def update_plant(slug: str, asset_id: str, body: PlantBody, request: Request, us
     data.invalidate()
     audit(db, "plant.updated", actor=user, target_type="plant", target_id=asset_id, detail={"org": org.slug}, request=request)
     return insights.plant_profile(plant)
+
+
+# --- CDSCO plant registry --------------------------------------------------------------
+
+def _org_company_names(org) -> list[str]:
+    names = {org.name}
+    for s in sites.search(ontology_keys=list(org.ontology_keys or []), size=100)["items"]:
+        names.add(s["company"])
+    return sorted(n for n in names if n)
+
+
+@router.get("/{slug}/plants/{asset_id}/registry")
+def plant_registry_candidates(slug: str, asset_id: str, q: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """CDSCO registry plants that may be this plant (company name, then state / city), and the current link."""
+    from .. import plants as plant_registry
+
+    org = org_for_user(db, slug, user)
+    plant = data.cdmo()["plants"].get(asset_id)
+    if plant is None or asset_id not in (org.plant_ids or []):
+        raise HTTPException(404, "Plant not found in this organisation.")
+    names = [q] if q.strip() else _org_company_names(org)
+    return {"linked": (plant.reference or {}).get("registry"), "names": names,
+            "candidates": plant_registry.candidates(names, state=plant.state, city=plant.city),
+            "can_apply": can_manage_org(user, org)}
+
+
+class RegistryBody(BaseModel):
+    plant_id: str
+
+
+@router.post("/{slug}/plants/{asset_id}/registry")
+def plant_apply_registry(slug: str, asset_id: str, body: RegistryBody, request: Request, user: User = Depends(current_user),
+                         db: Session = Depends(get_db)):
+    """Link a plant to a CDSCO registry plant and add what its listing requires / makes likely.
+
+    Nothing is removed and nothing stated or entered is downgraded; new tokens are marked
+    'required' or 'inferred' with the reason kept in reference.registry.why."""
+    from .. import plants as plant_registry
+
+    org = org_for_user(db, slug, user)
+    if not can_manage_org(user, org) or asset_id not in (org.plant_ids or []):
+        raise HTTPException(403, "You cannot edit this plant.")
+    row = db.get(Plant, asset_id)
+    if row is None and user.role not in PLATFORM_ROLES:
+        raise HTTPException(403, "Seeded plants can only be edited by platform admins.")
+    base = data.cdmo()["plants"].get(asset_id)
+    reg = plant_registry.registry()["plants"].get(body.plant_id)
+    if base is None or reg is None:
+        raise HTTPException(404, "Plant or registry plant not found.")
+    b = plant_registry.brief(reg)
+    fields = base.model_dump()
+    approved, caps = list(fields["approved_forms"]), list(fields["capabilities"])
+    basis = dict(fields.get("capability_basis") or {})
+    applied = sites.apply_registry(approved, caps, basis, b)
+    certs_active = list(fields.get("certifications_active") or [])
+    certs = list(fields.get("certifications") or [])
+    cert_basis = dict(fields.get("certification_basis") or {})
+    if b["who_gmp"]:
+        for lst in (certs, certs_active):
+            if "WHO_GMP" not in [c.upper() for c in lst]:
+                lst.append("WHO_GMP")
+        cert_basis.setdefault("WHO_GMP", "CDSCO WHO-GMP certified units list")
+    order = ["standard", "biologic_GMP", "potent", "cytotoxic"]
+    containment = fields.get("containment_class") or "standard"
+    if order.index(applied["containment"]) > order.index(containment if containment in order else "standard"):
+        containment = applied["containment"]
+    ref = dict(fields.get("reference") or {})
+    ref["registry"] = {"id": reg["id"], "name": reg["name"], "match": "confirmed by organisation", "why": applied["why"],
+                       "applied_at": time.strftime("%Y-%m-%d"), "who_gmp_valid_until": b["who_gmp_valid_until"]}
+    srcs = list(ref.get("sources") or [])
+    if not any("cdsco" in (x.get("url") or "") and "manuf" in (x.get("url") or "") for x in srcs):
+        srcs.append({"label": "CDSCO WHO-GMP certified units / approved manufacturing sites", "url": "https://cdscoonline.gov.in/CDSCO/manuf_site"})
+    ref["sources"] = srcs
+    fields.update({"approved_forms": approved, "capabilities": caps, "capability_basis": {t: basis.get(t, "derived") for t in caps},
+                   "certifications": certs, "certifications_active": certs_active, "certification_basis": cert_basis,
+                   "containment_class": containment, "reference": ref})
+    plant = PlantAsset(**fields)
+    store.save_plant_asset(plant, data.redis_client())
+    if row is None:
+        db.add(Plant(asset_id=asset_id, org_id=org.id, created_by=user.id, payload=plant.model_dump(mode="json")))
+    else:
+        row.payload = plant.model_dump(mode="json")
+    db.commit()
+    data.invalidate()
+    audit(db, "plant.registry_applied", actor=user, target_type="plant", target_id=asset_id,
+          detail={"org": org.slug, "registry": reg["id"], "added": applied["added"], "upgraded": applied["upgraded"]}, request=request)
+    return {**insights.plant_profile(plant), "added": applied["added"], "upgraded": applied["upgraded"]}
