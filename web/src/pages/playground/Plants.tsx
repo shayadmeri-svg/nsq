@@ -452,11 +452,16 @@ export function SiteRegistryLink({ cdsco }: { cdsco: any }) {
 
 // "Who can make it" — for the Molecule workbench.
 function MakerRow({ p, right, sub }: { p: any; right?: React.ReactNode; sub?: React.ReactNode }) {
+  // name on its own line (never squeezed by the badges), place under it, badges last
+  const where = [p.district, p.state, p.pin].filter(Boolean).join(" · ").replace(/\uFFFD/g, "");
   return (
-    <Link to={`/playground/plants?plant=${encodeURIComponent(p.id)}`} className="flex items-start justify-between gap-3 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50">
-      <span className="min-w-0"><span className="block truncate font-semibold text-ink" title={p.name}>{p.name}</span>
-        <span className="block truncate text-ink-muted">{[p.district, p.state, p.pin].filter(Boolean).join(" · ")}{sub ? <> · {sub}</> : null}</span></span>
-      <span className="flex shrink-0 items-center gap-1">{right}<RegistryBadges p={p} /></span>
+    <Link to={`/playground/plants?plant=${encodeURIComponent(p.id)}`} className="block rounded-lg border-b border-line/60 px-2 py-2 text-xs last:border-0 hover:bg-slate-50">
+      <span className="flex items-start justify-between gap-2">
+        <span className="line-clamp-2 min-w-0 font-semibold leading-snug text-ink" title={p.name}>{p.name}</span>
+        {right && <span className="shrink-0">{right}</span>}
+      </span>
+      {(where || sub) && <span className="mt-0.5 block truncate text-ink-muted">{where}{where && sub ? " · " : ""}{sub}</span>}
+      <span className="mt-1 block"><RegistryBadges p={p} /></span>
     </Link>
   );
 }
@@ -497,7 +502,7 @@ export function MakersCard({ moleculeKey, bare }: { moleculeKey: string; bare?: 
   return (
     <Frame bare={bare} title="Who can make it" subtitle={req ? `Plant registry (CDSCO + EU GMP + US FDA) · ${req.dosage_form || "dosage form unknown"}${req.segregated?.length ? ` · needs a separate ${req.segregated.map((x: string) => x.replace("_", "-")).join(" / ")} block` : ""}` : "Loading…"}>
       {!m ? <div className="p-5"><Skeleton className="h-32" /></div> : (<>
-        <div className="grid gap-5 p-5 lg:grid-cols-3">
+        <div className="grid gap-6 p-5 lg:grid-cols-3 lg:divide-x lg:divide-line [&>div]:min-w-0 lg:[&>div+div]:pl-6">
           <div>
             <div className="label mb-1.5">API makers <span className="font-normal normal-case text-ink-faint">· {m.api_makers_total} EU-inspected{m.listed_total ? ` · ${m.listed_total} named in CDSCO lists` : ""}</span></div>
             {m.api_makers.length + m.listed.length === 0 && <div className="text-xs text-ink-muted">No plant in the registry is inspected or listed for this API. (EU inspections name the substances; CDSCO lists name forms, rarely molecules.)</div>}
