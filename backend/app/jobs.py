@@ -228,6 +228,8 @@ SOURCE_TITLES = {
     "cdsco_plants": "CDSCO plant registry (WHO-GMP + SUGAM)",
     "eudragmdp": "EU GMP certificates (EudraGMDP, India)",
     "fda_inspections": "FDA inspection classifications (India)",
+    "fda_dmf": "FDA Drug Master Files (Type II)",
+    "edqm_cep": "EDQM Certificates of Suitability (CEP)",
 }
 _SOURCE_JOB_DESC = {
     "orange_book": "US patents, exclusivity, RLD/TE codes and ANDA competitors per ingredient. Rebuilds the molecule universe after.",
@@ -239,6 +241,8 @@ _SOURCE_JOB_DESC = {
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
     "eudragmdp": "Every EU GMP certificate and statement of non-compliance for Indian sites, with the approved operations (Union coded scope) — stated capabilities and EU status in the plant registry. Needs a network EudraGMDP answers (a laptop works).",
     "fda_inspections": "Every FDA drug / biologic inspection of an Indian site with its outcome (NAI / VAI / OAI) — US FDA status in the plant registry. Needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API access), or upload the Inspections table exported to Excel.",
+    "fda_dmf": "FDA's quarterly list of Drug Master Files: active Type II (drug substance) holders per API — 'Who can make it' → API filings. Upload the .xls if FDA blocks the server.",
+    "edqm_cep": "EDQM's CEP data file: valid Certificates of Suitability per substance and holder — 'Who can make it' → API filings. If the link is not found, download 'CEP data file' from the EDQM CEP database page and upload it.",
     "fda_import_alerts": "Indian firms on the drug-GMP red list — feeds the site directory.",
     "fda_recalls": "US recalls of drugs made by Indian firms — feeds the site directory.",
 }

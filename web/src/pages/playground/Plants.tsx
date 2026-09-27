@@ -433,6 +433,34 @@ function MakerRow({ p, right, sub }: { p: any; right?: React.ReactNode; sub?: Re
   );
 }
 
+function FilingsRow({ m }: { m: any }) {
+  const [all, setAll] = useState(false);
+  if (m.dmf_total == null) return null;
+  const none = !m.filings_at?.dmf && !m.filings_at?.cep;
+  const rows = [...(m.dmf ?? []), ...(m.cep ?? [])].sort((a: any, b: any) => (b.plants.length ? 1 : 0) - (a.plants.length ? 1 : 0));
+  return (
+    <div className="border-t border-line px-5 py-4">
+      <div className="label mb-1.5">API filings <span className="font-normal normal-case text-ink-faint">· {m.dmf_total} active US DMFs ({m.dmf_in_registry} holders in the registry) · {m.cep_total} valid CEPs ({m.cep_in_registry} in the registry)</span></div>
+      {none ? <div className="text-xs text-ink-muted">FDA's DMF list and EDQM's CEP file are not fetched yet (Data jobs → FDA Drug Master Files / EDQM CEPs).</div>
+        : rows.length === 0 ? <div className="text-xs text-ink-muted">No active US DMF or valid CEP names this API.</div> : (
+          <>
+            <div className="grid gap-x-6 gap-y-1 md:grid-cols-2">{(all ? rows : rows.slice(0, 10)).map((r: any) => (
+              <div key={r.kind + r.number} className="flex flex-wrap items-center gap-1.5 text-xs">
+                <Badge tone={r.kind === "CEP" ? "indigo" : "sky"}>{r.kind}</Badge>
+                <span className="font-medium">{r.holder}</span>
+                <span className="text-ink-faint">{r.number}{r.date ? ` · ${r.date.slice(0, 4)}` : ""}</span>
+                {r.plants.map((p: any) => <Link key={p.id} to={`/playground/plants?plant=${encodeURIComponent(p.id)}`} className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-brand-700 hover:underline">{p.state ?? p.name}</Link>)}
+                {r.plants_total > r.plants.length && <span className="text-[11px] text-ink-faint">+{r.plants_total - r.plants.length}</span>}
+              </div>
+            ))}</div>
+            {rows.length > 10 && <button className="mt-1 text-xs text-brand-700 hover:underline" onClick={() => setAll(!all)}>{all ? "fewer" : `all ${rows.length}`}</button>}
+            <p className="mt-2 text-[11px] text-ink-faint">DMFs and CEPs name the holder company, not the site: the chips are that company's plants in the registry, matched by name.</p>
+          </>
+        )}
+    </div>
+  );
+}
+
 export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
   const { data: m, error, isLoading } = useQuery({ queryKey: ["makers", moleculeKey], queryFn: () => api<any>(`/api/plants/for-molecule/${moleculeKey}`), enabled: !!moleculeKey });
   if (error || (!isLoading && !m)) return null;
@@ -440,7 +468,7 @@ export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
   return (
     <Card>
       <CardHeader title="Who can make it" subtitle={req ? `Plant registry (CDSCO + EU GMP + US FDA) · ${req.dosage_form || "dosage form unknown"}${req.segregated?.length ? ` · needs a separate ${req.segregated.map((x: string) => x.replace("_", "-")).join(" / ")} block` : ""}` : "Loading…"} />
-      {!m ? <div className="p-5"><Skeleton className="h-32" /></div> : (
+      {!m ? <div className="p-5"><Skeleton className="h-32" /></div> : (<>
         <div className="grid gap-5 p-5 lg:grid-cols-3">
           <div>
             <div className="label mb-1.5">API makers <span className="font-normal normal-case text-ink-faint">· {m.api_makers_total} EU-inspected{m.listed_total ? ` · ${m.listed_total} named in CDSCO lists` : ""}</span></div>
@@ -467,7 +495,8 @@ export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
             <p className="mt-2 px-2 text-[11px] text-ink-faint">{m.note}</p>
           </div>
         </div>
-      )}
+        <FilingsRow m={m} />
+      </>)}
     </Card>
   );
 }

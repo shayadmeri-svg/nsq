@@ -8,3 +8,4 @@ rapidfuzz>=3.6
 openpyxl>=3.1
 # cdsco_plants: CDSCO's WHO-GMP list is a PDF
 pdfplumber>=0.11
+xlrd>=2.0

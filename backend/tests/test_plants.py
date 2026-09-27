@@ -250,3 +250,32 @@ def test_fda_inspections_attach_by_pin_and_plot():
     assert b["fda_ok"] and b["fda_code"] == "VAI" and not b["fda_oai"]
     assert pl._matches(p1, "", "", "", "", "us_fda", "") and not pl._matches(red, "", "", "", "", "us_fda", "")
     assert pl._matches(red, "", "", "", "", "fda_oai", "")
+
+
+def test_who_can_make_it_lists_dmf_and_cep_holders(admin, monkeypatch):
+    """Active Type II DMFs and valid CEPs for the API, linked to registry plants by company name."""
+    if not _have_registry():
+        pytest.skip("data/sources/cdsco_plants.json not present")
+    from app import plants
+
+    dmf = {"data": {"18990": {"number": "18990", "status": "active", "type": "II", "date": "2005-11-28",
+                              "holder": "GLENMARK LIFE SCIENCES LTD", "subject": "TELMISARTAN USP"},
+                    "20001": {"number": "20001", "status": "inactive", "type": "II", "date": "2007-01-05",
+                              "holder": "OLD CHEM LTD", "subject": "TELMISARTAN"},
+                    "20002": {"number": "20002", "status": "active", "type": "II", "date": "2010-01-05",
+                              "holder": "ZHEJIANG SOMEWHERE CO LTD", "subject": "TELMISARTAN"}},
+           "retrieved_at": "2026-09-27"}
+    cep = {"data": {"R1-CEP 2010-123-Rev 03": {"number": "R1-CEP 2010-123-Rev 03", "holder": "GLENMARK LIFE SCIENCES LIMITED IN",
+                                               "substance": "Telmisartan", "valid": True, "date": "2024-03-15"}}}
+    real = plants._load
+    monkeypatch.setattr(plants, "_load", lambda name="cdsco_plants": (777.0, dmf) if name == "fda_dmf" else (778.0, cep) if name == "edqm_cep" else real(name))
+    plants._filings_cache = None
+    plants._makers_cache.clear()
+    r = admin.get("/api/plants/for-molecule/telmisartan", headers=H).json()
+    assert r["dmf_total"] == 2 and r["cep_total"] == 1  # inactive DMF dropped
+    glen = next(x for x in r["dmf"] if x["number"] == "18990")
+    assert glen["plants"] and all("glenmark" in p["name"].lower() for p in glen["plants"])
+    assert r["dmf"][0]["number"] == "18990" and not next(x for x in r["dmf"] if x["number"] == "20002")["plants"]
+    assert r["cep"][0]["plants"] and r["dmf_in_registry"] == 1 and r["cep_in_registry"] == 1
+    plants._filings_cache = None
+    plants._makers_cache.clear()

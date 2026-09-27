@@ -22,6 +22,7 @@ flowchart LR
     CPL[CDSCO plant lists<br/>SUGAM · WHO-GMP PDF]
     EUG[EudraGMDP<br/>EU GMP certificates · NCRs]
     FDI[FDA Data Dashboard<br/>inspection classifications]
+    FIL[FDA DMF list · EDQM CEPs]
     SEED[Curated seeds]
     UP[(Upstash backup)]
     SCH([Scheduler]) --> RUN([Job runner])
@@ -76,7 +77,7 @@ flowchart LR
 
   CDSCO --> SYNC --> CSV
   FDA & EMA & CT & FDAS --> FETCH --> SRC
-  CPL & EUG & FDI -->|laptop, then push| FETCH
+  CPL & EUG & FDI & FIL -->|laptop, then push| FETCH
   UPL --> FETCH
   SEED --> UNI
   CSV --> LOAD --> RN & RO
@@ -176,6 +177,7 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | `sources/<source>.json`, `sources/manifest.json` | `fetch_source`, `sync_cdsco` (manifest) | build_universe, site directory, pipelines page, molecule lookup |
 | `sources/cdsco_plants.json` (+ `.csv`) | `fetch_source cdsco_plants` (`just fetch-plants`, job src-cdsco-plants / plant-registry) | plant registry (Plants tab, site directory match, Infrastructure "Match with CDSCO registry", "Add as plant") |
 | `sources/eudragmdp.json` | `fetch_source eudragmdp` (`just fetch-eudragmdp`, job src-eudragmdp / plant-registry) | plant registry (EU GMP status, stated capabilities, non-compliance findings) |
+| `sources/fda_dmf.json`, `sources/edqm_cep.json` | `fetch_source fda_dmf` / `edqm_cep` (`just fetch-fda-dmf [FILE]`, `just fetch-cep [FILE]`, jobs src-fda-dmf / src-edqm-cep) | "Who can make it" → API filings: active Type II DMF and valid CEP holders per ingredient, linked to registry plants by company name |
 | `sources/fda_inspections.json` | `fetch_source fda_inspections` (`just fetch-fda-inspections [FILE]`, job src-fda-inspections / plant-registry) — API key (FDA_DD_USER / FDA_DD_KEY) or Data Dashboard Excel export | plant registry (US FDA status: latest NAI / VAI / OAI per FEI, import-alert flag), "Who can make it" ranking, USFDA certification on "add as plant" |
 | `raw/cdsco_plants/*` | SUGAM pages + WHO-GMP PDF from the last crawl | the next `cdsco_plants` run when CDSCO is unreachable |
 | `uploads/*` | Data jobs → Upload | `--from-file` fetches, refresh-nsq |

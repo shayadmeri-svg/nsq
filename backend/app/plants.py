@@ -747,6 +747,59 @@ def _molecule_requirements(key: str) -> dict[str, Any]:
             "dosage_form": reg.dosage_form if reg else None, "names": [name, *(getattr(p, "aliases", None) or [])]}
 
 
+_filings_cache: Optional[tuple[tuple, dict[str, Any]]] = None
+
+
+def _filings() -> dict[str, Any]:
+    """FDA Type II DMFs (active) and EDQM CEPs (valid) by ingredient key, and an index of registry plants by company."""
+    global _filings_cache
+    import ingredients as ing
+
+    dm, dmf = _load("fda_dmf")
+    cm, cep = _load("edqm_cep")
+    reg = registry()
+    ck = (dm, cm, id(reg))
+    if _filings_cache and _filings_cache[0] == ck:
+        return _filings_cache[1]
+    by_ing: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: {"dmf": [], "cep": []})
+    for r in (dmf.get("data") or {}).values():
+        if r.get("status") == "active" and r.get("subject"):
+            by_ing[ing.ingredient_key(r["subject"])]["dmf"].append(r)
+    for r in (cep.get("data") or {}).values():
+        if r.get("valid") and r.get("substance"):
+            by_ing[ing.ingredient_key(r["substance"])]["cep"].append(r)
+    companies: dict[str, list[str]] = defaultdict(list)
+    for pid, p in reg["plants"].items():
+        t = _tokens(p["name"])
+        if t:
+            companies[t[0]].append(pid)
+    out = {"by_ing": dict(by_ing), "companies": dict(companies), "dmf_at": dmf.get("retrieved_at"), "cep_at": cep.get("retrieved_at")}
+    _filings_cache = (ck, out)
+    return out
+
+
+def _holder_plants(holder: str, f: dict[str, Any], plants: dict[str, dict[str, Any]]) -> list[str]:
+    """Registry plants of a DMF / CEP holder, by company name (the filings do not name the site)."""
+    from rapidfuzz import fuzz
+
+    t = _tokens(re.sub(r"\b(IN|INDIA)\s*$", "", holder or "", flags=re.I))
+    if not t or len(t[0]) < 3:
+        return []
+    hk = " ".join(t)
+    return [pid for pid in f["companies"].get(t[0], []) if fuzz.token_set_ratio(hk, " ".join(_tokens(plants[pid]["name"]))) >= 90]
+
+
+def _filing_rows(rows: list[dict[str, Any]], f: dict[str, Any], plants: dict[str, dict[str, Any]], label: str) -> list[dict[str, Any]]:
+    out = []
+    for r in sorted(rows, key=lambda r: r.get("date") or "", reverse=True):
+        pids = _holder_plants(r["holder"], f, plants)
+        out.append({"holder": r["holder"], "number": r["number"], "date": r.get("date"), "kind": label,
+                    "plants": [{"id": pid, "name": plants[pid]["name"], "state": plants[pid].get("state")} for pid in pids[:4]],
+                    "plants_total": len(pids)})
+    out.sort(key=lambda x: (-(1 if x["plants"] else 0), -(int((x["date"] or "0")[:4]))))
+    return out
+
+
 def makers(key: str, limit: int = 30) -> Optional[dict[str, Any]]:
     """Who can make a tracked molecule: plants EU-inspected for its API, plants whose CDSCO listing names it,
     plants that made it (NSQ alerts), and plants permitted to make its dosage form (with its segregated block)."""
@@ -757,7 +810,7 @@ def makers(key: str, limit: int = 30) -> Optional[dict[str, Any]]:
     if not req:
         return None
     reg = registry()
-    ck = (key, id(reg), id(data.frame()))
+    ck = (key, id(reg), id(data.frame()), _load("fda_dmf")[0], _load("edqm_cep")[0])
     if ck in _makers_cache:
         return _makers_cache[ck]
     plants = reg["plants"]
@@ -797,6 +850,16 @@ def makers(key: str, limit: int = 30) -> Optional[dict[str, Any]]:
                 e["alerts_for_molecule"] += 1
     made_list = sorted(made.values(), key=lambda x: -x["alerts_for_molecule"])
 
+    # companies with an FDA DMF / EDQM CEP for the API (company-level: the filings name the holder, not the site)
+    fil = _filings()
+    dmf_rows, cep_rows = [], []
+    for k in keys:
+        hit = fil["by_ing"].get(k) or {}
+        dmf_rows += hit.get("dmf", [])
+        cep_rows += hit.get("cep", [])
+    dmf_list = _filing_rows(list({r["number"]: r for r in dmf_rows}.values()), fil, plants, "US DMF")
+    cep_list = _filing_rows(list({r["number"]: r for r in cep_rows}.values()), fil, plants, "CEP")
+
     # plants permitted to make its dosage form (and with the segregated block it needs)
     capable = []
     if req["forms"]:
@@ -816,6 +879,9 @@ def makers(key: str, limit: int = 30) -> Optional[dict[str, Any]]:
         "api_makers": api_makers[:limit], "api_makers_total": len(api_makers),
         "listed": listed[:limit], "listed_total": len(listed),
         "made": made_list[:limit], "made_total": len(made_list), "nsq_alerts_unlinked": unlinked,
+        "dmf": dmf_list[:limit], "dmf_total": len(dmf_list), "dmf_in_registry": sum(1 for x in dmf_list if x["plants"]),
+        "cep": cep_list[:limit], "cep_total": len(cep_list), "cep_in_registry": sum(1 for x in cep_list if x["plants"]),
+        "filings_at": {"dmf": fil["dmf_at"], "cep": fil["cep_at"]},
         "capable_total": len(capable),
         "capable_eu": sum(1 for p in capable if (p.get("eu") or {}).get("certified")),
         "capable_who": sum(1 for p in capable if p.get("who_gmp_certified")),

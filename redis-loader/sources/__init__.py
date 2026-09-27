@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import cdsco_plants, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, pubchem, purple_book
+from . import api_filings, cdsco_plants, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, pubchem, purple_book
 from .common import Ctx
 
 CDSCO_META = {
@@ -32,6 +32,8 @@ SOURCES: dict[str, dict[str, Any]] = {
     "fda_import_alerts": {**fda_sites.IMPORT_ALERT, "run": fda_sites.run_import_alerts, "group": "sites"},
     "fda_recalls": {**fda_sites.RECALLS, "run": fda_sites.run_recalls, "group": "sites"},
     "fda_inspections": {**fda_inspections.META, "run": fda_inspections.run, "group": "sites", "min_interval_days": 7},
+    "fda_dmf": {**api_filings.DMF, "run": api_filings.run_dmf, "group": "molecules", "min_interval_days": 30},
+    "edqm_cep": {**api_filings.CEP, "run": api_filings.run_cep, "group": "molecules", "min_interval_days": 7},
 }
 
 

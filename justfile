@@ -306,6 +306,12 @@ fetch-eudragmdp:
 # FDA inspection outcomes for Indian sites: API (export FDA_DD_USER / FDA_DD_KEY first) or FILE = Data Dashboard Excel export
 fetch-fda-inspections FILE="":
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py fda_inspections {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
+# API makers per molecule: FDA Type II DMF list (quarterly .xls) and EDQM CEPs (daily .txt); FILE = a file you downloaded
+fetch-fda-dmf FILE="":
+    @cd {{LOADER}} && .venv/bin/python -c "import xlrd" 2>/dev/null || .venv/bin/pip install --quiet xlrd
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py fda_dmf {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
+fetch-cep FILE="":
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py edqm_cep {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
 # CDSCO + EU (the app merges them into one registry); add FDA with just fetch-fda-inspections
 fetch-plant-registry: fetch-plants fetch-eudragmdp
 
@@ -314,10 +320,10 @@ push-plant-registry HOST KEY="" DIR="/opt/nsq-platform":
     #!/usr/bin/env bash
     set -euo pipefail
     k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
-    files=$(ls data/sources/cdsco_plants.json data/sources/cdsco_plants.csv data/sources/eudragmdp.json data/sources/fda_inspections.json 2>/dev/null || true)
+    files=$(ls data/sources/cdsco_plants.json data/sources/cdsco_plants.csv data/sources/eudragmdp.json data/sources/fda_inspections.json data/sources/fda_dmf.json data/sources/edqm_cep.json 2>/dev/null || true)
     [ -n "$files" ] || { echo "No registry files — run just fetch-plant-registry first"; exit 1; }
     scp $k $files {{HOST}}:~/
-    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in cdsco_plants.json cdsco_plants.csv eudragmdp.json fda_inspections.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done && cd {{DIR}} && (docker compose restart api 2>/dev/null || sudo docker compose restart api)'
+    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in cdsco_plants.json cdsco_plants.csv eudragmdp.json fda_inspections.json fda_dmf.json edqm_cep.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done && cd {{DIR}} && (docker compose restart api 2>/dev/null || sudo docker compose restart api)'
     echo "Registry files copied; API restarted."
 
 _plant-deps:
