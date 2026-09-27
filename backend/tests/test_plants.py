@@ -152,3 +152,13 @@ def test_summary_can_leave_out_api_only_plants(admin):
     a = admin.get("/api/plants/summary", headers=H).json()
     f = admin.get("/api/plants/summary", params={"exclude_api_only": "true"}, headers=H).json()
     assert f["exclude_api_only"] and a["api_only_plants"] > 0 and f["plants"] == a["plants"] - a["api_only_plants"]
+
+
+def test_who_can_make_a_molecule(admin):
+    if not _have_registry():
+        pytest.skip("data/sources/cdsco_plants.json not present")
+    r = admin.get("/api/plants/for-molecule/telmisartan", headers=H).json()
+    assert r["molecule"]["forms"] == ["tablet"] and r["capable_total"] > 100
+    assert r["made_total"] > 0 and r["made"][0]["alerts_for_molecule"] >= r["made"][-1]["alerts_for_molecule"]
+    assert all("tablet" in p["dosage_forms"] for p in r["capable"])
+    assert admin.get("/api/plants/for-molecule/not-a-molecule", headers=H).status_code == 404

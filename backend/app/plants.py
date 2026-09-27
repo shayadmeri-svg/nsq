@@ -536,3 +536,137 @@ def candidates(names: list[str], state: str = "", city: str = "", limit: int = 8
         res.append({**brief(p), "address": p.get("address"), "name_score": round(score), "same_state": place in (1, 3),
                     "same_city": place >= 2, "derived": prof["required"] + prof["inferred"], "required": prof["required"]})
     return res
+
+
+# --------------------------------------------------------------------------- who can make a molecule
+
+_FORM_WORDS = [  # regulatory / Orange Book dosage-form words -> registry dosage forms
+    (r"lyophil|for injection|powder.*inject", ["lyophilised", "svp_dry_powder"]),
+    (r"pre-?filled|syringe|pen\b|cartridge", ["prefilled_syringe"]),
+    (r"inject|infusion|vial|ampoule|parenteral|intravenous|subcutaneous|intramuscular", ["svp_liquid", "svp_dry_powder", "lyophilised", "lvp"]),
+    (r"ophthalm|eye", ["ophthalmic"]),
+    (r"inhal|aerosol|nebul", ["inhalation"]),
+    (r"cream|ointment|gel|lotion|topical|external", ["topical"]),
+    (r"patch|transdermal", ["transdermal"]),
+    (r"suppositor", ["suppository"]),
+    (r"for (oral )?suspension|dry syrup", ["dry_syrup"]),
+    (r"syrup|suspension|solution;oral|oral solution|elixir|drops", ["oral_liquid"]),
+    (r"capsule", ["capsule_hard", "capsule_soft"]),
+    (r"tablet", ["tablet"]),
+    (r"powder|granule|sachet", ["oral_powder"]),
+]
+_BETA = re.compile(r"(cillin|penem)\b", re.I)
+_CEPH = re.compile(r"^(cef|ceph)", re.I)
+_HORMONE = re.compile(r"estr|progest|testoster|levonorg|norethist|medroxyprog|dydrogest|contracep", re.I)
+_makers_cache: dict[tuple, dict[str, Any]] = {}
+
+
+def _molecule_requirements(key: str) -> dict[str, Any]:
+    from . import data
+
+    m = data.cdmo()
+    p, reg, dem = m["patents"].get(key), m["regulatory"].get(key), m["demand"].get(key)
+    if p is None:
+        return {}
+    name = (p.api_name or key)
+    text = " ".join(filter(None, [reg.dosage_form if reg else "", p.therapeutic_area or ""])).lower()
+    forms: list[str] = []
+    for pat, fs in _FORM_WORDS:
+        if re.search(pat, (reg.dosage_form or "").lower() if reg else ""):
+            forms = fs
+            break
+    basis = "Orange Book / regulatory dosage form" if forms else None
+    seg = []
+    if _BETA.search(name):
+        seg.append("beta_lactam")
+    if _CEPH.search(name):
+        seg.append("cephalosporin")
+    if "oncolog" in text or "cancer" in text or ((dem.cluster if dem else "") or "").lower() == "oncology":
+        seg.append("cytotoxic")
+    if _HORMONE.search(name):
+        seg.append("hormone")
+    biologic = bool(p and getattr(p, "modality", "") and "small" not in (getattr(p, "modality", "") or "small"))
+    return {"key": key, "name": name, "forms": forms, "forms_basis": basis, "segregated": seg, "biologic": biologic,
+            "dosage_form": reg.dosage_form if reg else None, "names": [name, *(getattr(p, "aliases", None) or [])]}
+
+
+def makers(key: str, limit: int = 30) -> Optional[dict[str, Any]]:
+    """Who can make a tracked molecule: plants EU-inspected for its API, plants whose CDSCO listing names it,
+    plants that made it (NSQ alerts), and plants permitted to make its dosage form (with its segregated block)."""
+    import ingredients as ing
+    from . import data
+
+    req = _molecule_requirements(key)
+    if not req:
+        return None
+    reg = registry()
+    ck = (key, id(reg), id(data.frame()))
+    if ck in _makers_cache:
+        return _makers_cache[ck]
+    plants = reg["plants"]
+    keys = {ing.ingredient_key(n) for n in req["names"] if n}
+    keys |= {k.split()[0] for k in keys if k and len(k.split()[0]) >= 5}
+    keys.discard("")
+    word_re = re.compile(r"\b(" + "|".join(re.escape(k) for k in sorted(keys, key=len, reverse=True)) + r")", re.I) if keys else None
+
+    api_makers, listed = [], []
+    for p in plants.values():
+        subs = [s for s in ((p.get("eu") or {}).get("substances") or []) if ing.ingredient_key(s) in keys
+                or (ing.ingredient_key(s).split() or [""])[0] in keys]
+        if subs:
+            api_makers.append({**brief(p), "evidence": f"EU GMP inspection of the API: {', '.join(subs[:3])}"})
+            continue
+        raw = p["capabilities"].get("raw") or ""
+        if word_re and raw and word_re.search(raw):
+            m = word_re.search(raw)
+            listed.append({**brief(p), "evidence": "CDSCO WHO-GMP listing: …" + raw[max(0, m.start() - 60):m.end() + 60] + "…"})
+
+    # plants that made it: NSQ alerts for the molecule, through the site directory links
+    df = data.attributable(data.frame())
+    made: dict[str, dict[str, Any]] = {}
+    unlinked = 0
+    if not df.empty:
+        idx = {k: key for k in keys}
+        mask = df["Name of Product"].astype(str).map(lambda s: any(ing.match_tracked(i, idx) == key for i in ing.extract_ingredients(s)))
+        rows = df[mask]
+        site_ids = [sites.site_id_for(r) for _, r in rows.iterrows()]
+        for sid in site_ids:
+            link = reg["links"].get(sid)
+            if not link:
+                unlinked += 1
+                continue
+            for pid in link["plant_ids"]:
+                e = made.setdefault(pid, {**brief(plants[pid]), "alerts_for_molecule": 0, "match": link["match"]})
+                e["alerts_for_molecule"] += 1
+    made_list = sorted(made.values(), key=lambda x: -x["alerts_for_molecule"])
+
+    # plants permitted to make its dosage form (and with the segregated block it needs)
+    capable = []
+    if req["forms"]:
+        for p in plants.values():
+            c = p["capabilities"]
+            if not set(req["forms"]) & set(c.get("dosage_forms") or []):
+                continue
+            if req["segregated"] and not set(req["segregated"]) & set(c.get("segregated") or {}):
+                continue
+            capable.append(p)
+    rank = lambda p: (-(1 if (p.get("eu") or {}).get("certified") else 0), -(1 if p.get("who_gmp_certified") else 0),  # noqa: E731
+                      (p.get("nsq") or {}).get("alerts", 0), p["name"].lower())
+    capable.sort(key=rank)
+    out = {
+        "molecule": req,
+        "api_makers": api_makers[:limit], "api_makers_total": len(api_makers),
+        "listed": listed[:limit], "listed_total": len(listed),
+        "made": made_list[:limit], "made_total": len(made_list), "nsq_alerts_unlinked": unlinked,
+        "capable_total": len(capable),
+        "capable_eu": sum(1 for p in capable if (p.get("eu") or {}).get("certified")),
+        "capable_who": sum(1 for p in capable if p.get("who_gmp_certified")),
+        "capable_ncr": sum(1 for p in capable if (p.get("eu") or {}).get("status") == "non_compliant"),
+        "capable_by_state": dict(Counter(p.get("state") or "Unknown" for p in capable).most_common(8)),
+        "capable": [brief(p) for p in capable[:limit]],
+        "note": "Plants permitted to make the dosage form (and the segregated block it needs) — capability, not a claim that they make this molecule.",
+    }
+    if len(_makers_cache) > 200:
+        _makers_cache.clear()
+    _makers_cache[ck] = out
+    return out

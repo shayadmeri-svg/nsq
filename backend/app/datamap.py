@@ -336,7 +336,7 @@ EDGES: list[dict[str, Any]] = [
     _e("f_seeds", "p_admin_molecules", label="lookup"), _e("f_sources", "p_admin_molecules", label="lookup"),
     _e("s_sites", "p_admin_sites"), _e("pg_orgs", "p_admin_sites"),
     _e("f_sources", "s_plants", label="cdsco_plants.json + eudragmdp.json"),
-    _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_admin_sites", label="registry match"),
+    _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_workbench", label="who can make it"), _e("s_plants", "p_admin_sites", label="registry match"),
     _e("s_plants", "p_org_infra", label="stated capabilities on 'add as plant'"),
     _e("pg_audit", "p_admin_audit"),
     _e("pg_jobs", "p_admin_datamap", label="live counts"),

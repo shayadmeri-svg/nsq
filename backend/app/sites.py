@@ -149,6 +149,15 @@ def build_directory(df: pd.DataFrame) -> list[dict[str, Any]]:
     return out
 
 
+def site_id_for(row) -> str:
+    """The directory id of the site an NSQ alert row belongs to (same rule as build_directory)."""
+    val = lambda k: "" if pd.isna(row.get(k)) else str(row.get(k))  # noqa: E731
+    okey = val("Mfg_Ontology_Key")
+    pin = _pincode(val("Manufactured By"))
+    loc = pin or val("Mfg_City").lower()
+    return f"{_slug(okey)}-{loc if pin else _slug(loc) or 'na'}"
+
+
 def directory() -> list[dict[str, Any]]:
     global _cache
     df = data.frame()

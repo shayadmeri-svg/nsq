@@ -7,7 +7,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, BadgeCheck, ChevronLeft, ChevronRight, ExternalLink, Factory, FlaskConical, KeyRound, MapPin, Search, ShieldAlert, Syringe } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, PageSkeleton, Segmented, Stat } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, PageSkeleton, Segmented, Skeleton, Stat } from "../../components/ui";
 import { api } from "../../lib/api";
 import { BasisLegend, CoverageSections } from "../../components/capabilities";
 import { cn } from "../../lib/cn";
@@ -252,8 +252,8 @@ export function Plants() {
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [state, setState] = useState("");
-  const [capability, setCapability] = useState("");
-  const [segregated, setSegregated] = useState("");
+  const [capability, setCapability] = useState(params.get("capability") ?? "");
+  const [segregated, setSegregated] = useState(params.get("segregated") ?? "");
   const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "eu_ncr" | "schedule_c" | "loan">("");
   const [nsq, setNsq] = useState<"" | "yes" | "no">("");
   const [sort, setSort] = useState<"nsq" | "forms" | "name">("nsq");
@@ -380,5 +380,56 @@ export function SiteRegistryLink({ cdsco }: { cdsco: any }) {
         </Link>
       ))}
     </div>
+  );
+}
+
+
+// "Who can make it" — for the Molecule workbench.
+function MakerRow({ p, right, sub }: { p: any; right?: React.ReactNode; sub?: React.ReactNode }) {
+  return (
+    <Link to={`/playground/plants?plant=${encodeURIComponent(p.id)}`} className="flex items-start justify-between gap-3 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50">
+      <span className="min-w-0"><span className="block truncate font-semibold text-ink" title={p.name}>{p.name}</span>
+        <span className="block truncate text-ink-muted">{[p.district, p.state, p.pin].filter(Boolean).join(" · ")}{sub ? <> · {sub}</> : null}</span></span>
+      <span className="flex shrink-0 items-center gap-1">{right}<RegistryBadges p={p} /></span>
+    </Link>
+  );
+}
+
+export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
+  const { data: m, error, isLoading } = useQuery({ queryKey: ["makers", moleculeKey], queryFn: () => api<any>(`/api/plants/for-molecule/${moleculeKey}`), enabled: !!moleculeKey });
+  if (error || (!isLoading && !m)) return null;
+  const req = m?.molecule;
+  return (
+    <Card>
+      <CardHeader title="Who can make it" subtitle={req ? `Plant registry (CDSCO + EU GMP) · ${req.dosage_form || "dosage form unknown"}${req.segregated?.length ? ` · needs a separate ${req.segregated.map((x: string) => x.replace("_", "-")).join(" / ")} block` : ""}` : "Loading…"} />
+      {!m ? <div className="p-5"><Skeleton className="h-32" /></div> : (
+        <div className="grid gap-5 p-5 lg:grid-cols-3">
+          <div>
+            <div className="label mb-1.5">API makers <span className="font-normal normal-case text-ink-faint">· {m.api_makers_total} EU-inspected{m.listed_total ? ` · ${m.listed_total} named in CDSCO lists` : ""}</span></div>
+            {m.api_makers.length + m.listed.length === 0 && <div className="text-xs text-ink-muted">No plant in the registry is inspected or listed for this API. (EU inspections name the substances; CDSCO lists name forms, rarely molecules.)</div>}
+            {[...m.api_makers, ...m.listed].slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} sub={<span title={p.evidence}>{p.evidence.startsWith("EU") ? "EU-inspected API" : "CDSCO listing"}</span>} />)}
+          </div>
+          <div>
+            <div className="label mb-1.5">Made it and failed (NSQ) <span className="font-normal normal-case text-ink-faint">· {m.made_total} registry plants{m.nsq_alerts_unlinked ? ` · ${m.nsq_alerts_unlinked} alerts from unlisted makers` : ""}</span></div>
+            {m.made.length === 0 && <div className="text-xs text-ink-muted">No NSQ alert for this molecule traces to a registry plant.</div>}
+            {m.made.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} right={<Badge tone="rose">{p.alerts_for_molecule} NSQ</Badge>} />)}
+          </div>
+          <div>
+            <div className="label mb-1.5">Permitted to make the form <span className="font-normal normal-case text-ink-faint">· {m.capable_total} plants</span></div>
+            {!req?.forms?.length ? <div className="text-xs text-ink-muted">Dosage form not known for this molecule — add it in the molecule's Regulatory tab.</div> : (
+              <>
+                <div className="mb-2 flex flex-wrap gap-1 text-[11px]">
+                  <Badge tone="indigo">{m.capable_eu} EU GMP</Badge><Badge tone="brand">{m.capable_who} WHO-GMP</Badge>{m.capable_ncr > 0 && <Badge tone="rose">{m.capable_ncr} EU non-compliant</Badge>}
+                  {Object.entries(m.capable_by_state).slice(0, 4).map(([s, n]: any) => <Badge key={s}>{s} {n}</Badge>)}
+                </div>
+                {m.capable.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} />)}
+                <Link to={`/playground/plants?capability=${req.forms[0]}${req.segregated?.[0] ? `&segregated=${req.segregated[0]}` : ""}`} className="mt-1 block px-2 text-xs text-brand-700 hover:underline">All {m.capable_total} in the Plants tab →</Link>
+              </>
+            )}
+            <p className="mt-2 px-2 text-[11px] text-ink-faint">{m.note}</p>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }

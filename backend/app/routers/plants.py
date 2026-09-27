@@ -30,6 +30,14 @@ def plant_facets(user: User = Depends(current_user)):
     return plants.facets()
 
 
+@router.get("/for-molecule/{key}")
+def plant_makers(key: str, user: User = Depends(current_user)):
+    out = plants.makers(key)
+    if out is None:
+        raise HTTPException(404, "Molecule not tracked.")
+    return out
+
+
 @router.get("/{plant_id}")
 def plant_detail(plant_id: str, user: User = Depends(current_user)):
     p = plants.get(plant_id)

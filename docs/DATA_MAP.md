@@ -211,7 +211,7 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | Playground · Explorer & Ledger | NSQ frame | `nsq:frame:enriched`, `geo:india_states` |
 | Playground · Insights | NSQ frame, molecule intelligence, site directory | frame, `cdmo:*`, `sources/fda_*.json` |
 | Playground · Regulation map | molecule intelligence, built-in knowledge (`core/regulatory_regions.py`) | `cdmo:*` |
-| Playground · Molecule workbench | molecule intelligence, NSQ frame, built-in knowledge | `cdmo:*`, frame, `orgs` (your plants) |
+| Playground · Molecule workbench | molecule intelligence, NSQ frame, built-in knowledge, plant registry ("Who can make it") | `cdmo:*`, frame, `orgs` (your plants), `sources/cdsco_plants.json`, `sources/eudragmdp.json` |
 | Playground · Process lab | built-in knowledge (`core/process_models.py`) | none |
 | Playground · Plants | plant registry (CDSCO WHO-GMP + SUGAM + EudraGMDP), site directory | `sources/cdsco_plants.json`, `sources/eudragmdp.json`, frame |
 | Org · Overview / Opportunities / EU export | NSQ frame, molecule intelligence | frame, `cdmo:*`, `orgs` |

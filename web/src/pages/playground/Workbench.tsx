@@ -6,6 +6,7 @@ import { RankBars, TrendBars } from "../../components/charts";
 import { Badge, Card, CardHeader, ErrorNote, Skeleton } from "../../components/ui";
 import { Estimate } from "../../components/ui/Estimate";
 import { api } from "../../lib/api";
+import { MakersCard } from "./Plants";
 import { cn } from "../../lib/cn";
 import { fmtDate, titleCase } from "../../lib/format";
 
@@ -146,6 +147,8 @@ export function Workbench({ initial }: { initial?: string }) {
               </div>
             </Card>
           )}
+
+          <MakersCard moleculeKey={key} />
 
           {(d.orange_book_curated || d.pharmacopeia) && (
             <div className="grid gap-5 xl:grid-cols-2">
