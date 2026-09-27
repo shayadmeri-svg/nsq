@@ -40,7 +40,7 @@ def test_registry_summary_list_detail(admin):
     d = admin.get(f"/api/plants/{top[0]['id']}", headers=H).json()
     assert d["nsq"]["sites"] and d["capabilities"]["evidence"] is not None
     assert admin.get("/api/plants/nope", headers=H).status_code == 404
-    for cert in ("who_gmp", "eu_gmp", "eu_ncr", "sugam", "schedule_c", "loan"):
+    for cert in ("who_gmp", "eu_gmp", "eu_ncr", "us_fda", "fda_oai", "sugam", "schedule_c", "loan"):
         assert admin.get("/api/plants", params={"cert": cert}, headers=H).status_code == 200, cert
 
 
@@ -223,3 +223,30 @@ def test_eu_sites_split_by_plot_numbers():
     plant2 = [p for pid, p in reg.items() if pid.startswith("eu-")]
     assert len(plant2) == 1 and plant2[0]["eu_records"] == ["b", "c"] and plant2[0]["eu"]["key"] == "b"
     assert stats["eu_matched"] == 1 and stats["eu_added"] == 1 and stats["eu_folded"] == 1
+
+
+def test_fda_inspections_attach_by_pin_and_plot():
+    """FDA sites join registry plants like EU sites; unmatched inspected sites become plants; import alert blocks 'acceptable'."""
+    from app import plants as pl
+
+    reg = {"indoco--403722--l14": {"id": "indoco--403722--l14", "name": "Indoco Remedies Ltd", "pin": "403722", "state": "Goa",
+                                   "district": "South Goa", "address": "(Plant I), L14, Verna Indl. Area, Verna Salcete Goa 403 722",
+                                   "capabilities": {"dosage_forms": ["tablet"]}, "sources": ["cdsco_who_gmp"]}}
+    recent = "2025-11-24"
+    fda = {"3002807456": {"fei": "3002807456", "key": "3002807456", "name": "INDOCO REMEDIES LIMITED", "address": "L-14 Verna Industrial Area",
+                          "city": "Verna", "postcode": "403722", "last_inspection": recent, "last_code": "VAI", "oai_count": 0,
+                          "inspections": [{"date": recent, "code": "VAI"}]},
+           "3005550001": {"fei": "3005550001", "key": "3005550001", "name": "Indoco Remedies Limited", "address": "L-32, 33 & 34 Verna",
+                          "city": "Verna", "postcode": "403722", "last_inspection": recent, "last_code": "NAI", "oai_count": 0, "inspections": []},
+           "3005550002": {"fei": "3005550002", "key": "3005550002", "name": "Redlist Labs Pvt Ltd", "address": "Plot 7", "city": "Hyderabad",
+                          "postcode": "500076", "last_inspection": "2024-01-01", "last_code": "NAI", "oai_count": 0, "inspections": []}}
+    stats = pl._merge_fda(reg, fda, {"3005550002"})
+    p1 = reg["indoco--403722--l14"]
+    assert p1["fda"]["fei"] == "3002807456" and p1["fda"]["acceptable"] and "fda_inspections" in p1["sources"]
+    assert stats == {"fda_sites": 3, "fda_matched": 1, "fda_added": 2, "fda_folded": 0}  # Plant II (L-32) is a separate plant
+    red = next(p for pid, p in reg.items() if pid.startswith("fda-redlist"))
+    assert red["fda"]["import_alert"] and not red["fda"]["acceptable"] and red["state"] == "Telangana"
+    b = pl.brief(p1)
+    assert b["fda_ok"] and b["fda_code"] == "VAI" and not b["fda_oai"]
+    assert pl._matches(p1, "", "", "", "", "us_fda", "") and not pl._matches(red, "", "", "", "", "us_fda", "")
+    assert pl._matches(red, "", "", "", "", "fda_oai", "")

@@ -296,6 +296,9 @@ def plant_from_site(site: dict[str, Any], asset_id: str, cdsco: Optional[dict[st
         if reg[0].get("eu_gmp"):
             certs.append("EU_GMP")
             cert_basis["EU_GMP"] = f"EudraGMDP certificate, inspected {reg[0].get('eu_last')}"
+        if reg[0].get("fda_ok"):
+            certs.append("USFDA")
+            cert_basis["USFDA"] = f"FDA inspection {reg[0].get('fda_last')} classified {reg[0].get('fda_code')} (Data Dashboard)"
         sources.append({"label": "CDSCO WHO-GMP certified units / approved manufacturing sites", "url": "https://cdscoonline.gov.in/CDSCO/manuf_site"})
         summary += f" CDSCO lists this plant ({reg[0]['name']}): {', '.join(reg[0].get('dosage_forms', [])) or 'no forms parsed'}" + \
             (f"; segregated blocks: {', '.join(reg[0].get('segregated') or {})}" if reg[0].get("segregated") else "") + "."

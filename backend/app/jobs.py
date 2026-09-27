@@ -227,6 +227,7 @@ SOURCE_TITLES = {
     "pubchem": "PubChem structures & melting points",
     "cdsco_plants": "CDSCO plant registry (WHO-GMP + SUGAM)",
     "eudragmdp": "EU GMP certificates (EudraGMDP, India)",
+    "fda_inspections": "FDA inspection classifications (India)",
 }
 _SOURCE_JOB_DESC = {
     "orange_book": "US patents, exclusivity, RLD/TE codes and ANDA competitors per ingredient. Rebuilds the molecule universe after.",
@@ -237,6 +238,7 @@ _SOURCE_JOB_DESC = {
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
     "eudragmdp": "Every EU GMP certificate and statement of non-compliance for Indian sites, with the approved operations (Union coded scope) — stated capabilities and EU status in the plant registry. Needs a network EudraGMDP answers (a laptop works).",
+    "fda_inspections": "Every FDA drug / biologic inspection of an Indian site with its outcome (NAI / VAI / OAI) — US FDA status in the plant registry. Needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API access), or upload the Inspections table exported to Excel.",
     "fda_import_alerts": "Indian firms on the drug-GMP red list — feeds the site directory.",
     "fda_recalls": "US recalls of drugs made by Indian firms — feeds the site directory.",
 }
@@ -301,8 +303,8 @@ REGISTRY: dict[str, Job] = {j.key: j for j in [
           params=[Param("force", "Re-download even if unchanged", default=False),
                   Param("file", "Or parse an uploaded file (for when the server cannot reach the source)", kind="file", default="")])
       for k in SOURCE_TITLES],
-    Job("plant-registry", "Rebuild plant registry", "Fetch CDSCO's approved sites + WHO-GMP list, then EU GMP certificates (EudraGMDP). The Plants tab, site matches and 'Match with CDSCO registry' pick the new files up on their own. CDSCO / EudraGMDP often refuse cloud servers — then run `just fetch-plant-registry` on a laptop and `just push-plant-registry`.",
-        "Sources", lambda p: _source_steps(["cdsco_plants", "eudragmdp"], p), invalidates=False,
+    Job("plant-registry", "Rebuild plant registry", "Fetch CDSCO's approved sites + WHO-GMP list, then EU GMP certificates (EudraGMDP), then FDA inspection outcomes (needs the Data Dashboard API key; skipped otherwise). The Plants tab, site matches and 'Match with CDSCO registry' pick the new files up on their own. CDSCO / EudraGMDP often refuse cloud servers — then run `just fetch-plant-registry` on a laptop and `just push-plant-registry`.",
+        "Sources", lambda p: _source_steps(["cdsco_plants", "eudragmdp", "fda_inspections"], p), invalidates=False,
         params=[Param("force", "Re-download even if unchanged", default=False)]),
     Job("load-seeds", "Reload CDMO seeds", "Rebuild the molecule universe from data/*.json seeds (+ fetched sources) and reload seeded plants. User plants are kept.",
         "Data", _seed_steps, role="super_admin", destructive=lambda p: True, before=export_watchlist, after=sync_plants_to_redis),

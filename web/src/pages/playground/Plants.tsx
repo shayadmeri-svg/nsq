@@ -46,6 +46,10 @@ export function RegistryBadges({ p }: { p: any }) {
       {p.eu_status === "non_compliant" ? <span title={`EU statement of non-compliance ${p.eu_ncr ?? ""}`}><Badge tone="rose"><ShieldAlert size={11} /> EU non-compliant</Badge></span>
         : p.eu_gmp ? <span title={`EU GMP certificate, last inspected ${p.eu_last}`}><Badge tone="indigo"><BadgeCheck size={11} /> EU GMP</Badge></span>
           : p.eu_status === "compliant" ? <span title={`EU GMP inspection ${p.eu_last} — older than 3 years`}><Badge>EU GMP (old)</Badge></span> : null}
+      {p.fda_import_alert ? <span title="On FDA Import Alert 66-40 (drug GMP red list)"><Badge tone="rose"><ShieldAlert size={11} /> FDA import alert</Badge></span>
+        : p.fda_oai ? <span title={`FDA inspection ${p.fda_last} classified OAI (Official Action Indicated)`}><Badge tone="rose"><ShieldAlert size={11} /> FDA OAI</Badge></span>
+          : p.fda_ok ? <span title={`FDA inspection ${p.fda_last} classified ${p.fda_code}`}><Badge tone="sky"><BadgeCheck size={11} /> US FDA</Badge></span>
+            : p.fda_code ? <span title={`FDA inspection ${p.fda_last} classified ${p.fda_code} — older than 5 years`}><Badge>US FDA (old)</Badge></span> : null}
       {p.schedule_c && <Badge tone="indigo"><Syringe size={11} /> Schedule C</Badge>}
       {p.sterile && !p.schedule_c && <Badge tone="sky">Sterile</Badge>}
       {p.api && <Badge><FlaskConical size={11} /> API</Badge>}
@@ -106,6 +110,38 @@ function RatesCard({ s: all, onPick }: { s: any; onPick: (dim: string, key: stri
 }
 
 // ---------------------------------------------------------------------------------- detail
+
+const FDA_CODE: Record<string, [string, string]> = {
+  NAI: ["No Action Indicated", "brand"], VAI: ["Voluntary Action Indicated", "amber"], OAI: ["Official Action Indicated", "rose"],
+};
+
+function FdaPanel({ fda, records }: { fda: any; records?: any[] }) {
+  const recs = records?.length ? records : [fda];
+  return (
+    <div>
+      <div className="label mb-1.5 flex items-center gap-2">US FDA — inspection classifications
+        {fda.import_alert ? <Badge tone="rose">Import Alert 66-40</Badge> : fda.acceptable ? <Badge tone="sky">acceptable · {fda.last_code} {fda.last_inspection}</Badge>
+          : fda.last_code ? <Badge tone={(FDA_CODE[fda.last_code]?.[1] ?? "slate") as any}>{fda.last_code} {fda.last_inspection}</Badge> : null}
+      </div>
+      {recs.map((r: any) => (
+        <div key={r.fei} className="mb-2 rounded-lg border border-line p-2.5 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-medium">{r.name} <span className="font-normal text-ink-muted">· FEI {r.fei}{r.address ? ` · ${r.address}` : ""}</span></span>
+            {r.profile && <a href={r.profile} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">FDA firm profile</a>}
+          </div>
+          <ul className="mt-1.5 space-y-0.5">{(r.inspections ?? []).slice(0, 6).map((i: any, n: number) => (
+            <li key={(i.id ?? "") + n} className="flex flex-wrap items-center gap-2">
+              <span className="w-20 tabular-nums text-ink-muted">{i.date ?? "—"}</span>
+              <Badge tone={(FDA_CODE[i.code]?.[1] ?? "slate") as any}>{i.code || "?"}</Badge>
+              <span className="text-ink-soft">{FDA_CODE[i.code]?.[0] ?? ""}{i.project_area ? ` · ${i.project_area}` : ""}{i.citations ? " · citations posted" : ""}</span>
+            </li>
+          ))}</ul>
+          {r.oai_count > 0 && <div className="mt-1 text-rose-700">{r.oai_count} OAI outcome{r.oai_count > 1 ? "s" : ""} on record</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function EuPanel({ eu }: { eu: any }) {
   const [all, setAll] = useState(false);
@@ -198,6 +234,7 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
           </div>
 
           {p.eu && <EuPanel eu={p.eu} />}
+          {p.fda && <FdaPanel fda={p.fda} records={p.fda_records} />}
 
           {p.licences?.length > 0 && (
             <div>
@@ -254,7 +291,7 @@ export function Plants() {
   const [state, setState] = useState("");
   const [capability, setCapability] = useState(params.get("capability") ?? "");
   const [segregated, setSegregated] = useState(params.get("segregated") ?? "");
-  const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "eu_ncr" | "schedule_c" | "loan">("");
+  const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "eu_ncr" | "us_fda" | "fda_oai" | "schedule_c" | "loan">("");
   const [nsq, setNsq] = useState<"" | "yes" | "no">("");
   const [sort, setSort] = useState<"nsq" | "forms" | "name">("nsq");
   const [page, setPage] = useState(1);
@@ -286,7 +323,7 @@ export function Plants() {
   return (
     <>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
-        <Stat label="Plants in the registry" value={s.plants} icon={<Factory size={18} />} hint={`${nf(s.who_gmp)} WHO-GMP · ${nf(s.eu_gmp)} EU GMP · ${nf(s.sugam)} in SUGAM${s.eu_ncr ? ` · ${nf(s.eu_ncr)} under EU non-compliance` : ""}`} />
+        <Stat label="Plants in the registry" value={s.plants} icon={<Factory size={18} />} hint={`${nf(s.who_gmp)} WHO-GMP · ${nf(s.eu_gmp)} EU GMP · ${nf(s.us_fda ?? 0)} US FDA · ${nf(s.sugam)} in SUGAM${s.eu_ncr ? ` · ${nf(s.eu_ncr)} under EU non-compliance` : ""}${s.fda_oai ? ` · ${nf(s.fda_oai)} FDA OAI / import alert` : ""}`} />
         <Stat label="Sterile-capable" value={s.sterile} tone="indigo" delay={0.04} hint="Injectables, ophthalmics or a Schedule C licence" />
         <Stat label="API makers" value={s.api} tone="amber" delay={0.08} hint="Bulk drugs / raw materials" />
         <Stat label="Plants with NSQ alerts" value={s.with_nsq} tone="rose" delay={0.12} hint={`${nf(s.nsq_sites_linked)} of ${nf(s.nsq_sites)} NSQ sites linked`} />
@@ -301,6 +338,7 @@ export function Plants() {
           <div className="space-y-3 px-5 pb-5 pt-3 text-[13px] leading-relaxed text-ink-soft">
             <p><b>WHO-GMP certified units</b> ({nf(s.who_gmp)}): CDSCO's list of plants certified for export certificates (COPP), with the "category of drugs permitted" for each — dosage forms, separate blocks for beta-lactams, cephalosporins, hormones or cytotoxics, and certificate dates.</p>
             <p><b>EU GMP (EudraGMDP)</b>{s.meta?.eudragmdp ? ` — ${nf(s.meta.eudragmdp.eu_sites)} Indian sites, ${nf(s.meta.eudragmdp.eu_added)} not on CDSCO's lists` : " — not fetched yet"}: certificates from EU / EEA inspections, each listing the approved operations in the EU's coded format (e.g. 1.1.1.2 lyophilisates, 1.6.1 sterility testing, 3.1 API synthesis) — marked "stated" on the plant — and statements of non-compliance with what failed.</p>
+            <p><b>US FDA inspections</b>{s.meta?.fda_inspections ? ` — ${nf(s.meta.fda_inspections.fda_sites)} Indian drug sites, ${nf(s.meta.fda_inspections.fda_added)} not on the other lists` : " — not fetched yet"}: FDA's classification of each inspection — NAI (clean), VAI (observations, fixed voluntarily), OAI (official action: warning letter or import alert). "US FDA" on a plant means its latest inspection was NAI or VAI within 5 years and it is not on Import Alert 66-40. FDA does not state dosage forms, so FDA-only plants have no capabilities listed.</p>
             <p><b>Approved manufacturing sites</b> (SUGAM, {nf(s.sugam)}): licence number, form (Form 28 = Schedule C: sterile and biological products), own or loan licence, and the brand owner making there on loan.</p>
             <p><b>NSQ link</b>: an NSQ "Manufactured By" site is joined to a plant on company name and PIN code ({nf(s.match_kinds?.site ?? 0)} exact, {nf(s.match_kinds?.site_fuzzy ?? 0)} near-identical names), or on company and state when either side has no PIN ({nf(s.match_kinds?.company ?? 0)}).</p>
             {s.outside_capabilities?.length > 0 && <p className="flex items-start gap-2 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-900"><ShieldAlert size={14} className="mt-0.5 shrink-0" />
@@ -323,7 +361,7 @@ export function Plants() {
             <select className="input h-9 w-40 text-xs" value={segregated} onChange={(e) => { setSegregated(e.target.value); setPage(1); }}>
               <option value="">Any block</option>{facets.data?.segregated.map((x: any) => <option key={x.key} value={x.key}>{x.label}</option>)}
             </select>
-            <Segmented value={cert} onChange={(v) => { setCert(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "who_gmp", label: "WHO-GMP" }, { value: "eu_gmp", label: "EU GMP" }, { value: "eu_ncr", label: "EU NCR" }, { value: "schedule_c", label: "Sched. C" }, { value: "loan", label: "Loan" }]} />
+            <Segmented value={cert} onChange={(v) => { setCert(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "who_gmp", label: "WHO-GMP" }, { value: "eu_gmp", label: "EU GMP" }, { value: "eu_ncr", label: "EU NCR" }, { value: "us_fda", label: "US FDA" }, { value: "fda_oai", label: "FDA OAI" }, { value: "schedule_c", label: "Sched. C" }, { value: "loan", label: "Loan" }]} />
             <Segmented value={nsq} onChange={(v) => { setNsq(v); setPage(1); }} options={[{ value: "", label: "Any" }, { value: "yes", label: "With NSQ" }, { value: "no", label: "Clean" }]} />
             <select className="input h-9 w-32 text-xs" value={sort} onChange={(e) => setSort(e.target.value as any)}>
               <option value="nsq">Most alerts</option><option value="forms">Most forms</option><option value="name">Name</option>
@@ -401,7 +439,7 @@ export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
   const req = m?.molecule;
   return (
     <Card>
-      <CardHeader title="Who can make it" subtitle={req ? `Plant registry (CDSCO + EU GMP) · ${req.dosage_form || "dosage form unknown"}${req.segregated?.length ? ` · needs a separate ${req.segregated.map((x: string) => x.replace("_", "-")).join(" / ")} block` : ""}` : "Loading…"} />
+      <CardHeader title="Who can make it" subtitle={req ? `Plant registry (CDSCO + EU GMP + US FDA) · ${req.dosage_form || "dosage form unknown"}${req.segregated?.length ? ` · needs a separate ${req.segregated.map((x: string) => x.replace("_", "-")).join(" / ")} block` : ""}` : "Loading…"} />
       {!m ? <div className="p-5"><Skeleton className="h-32" /></div> : (
         <div className="grid gap-5 p-5 lg:grid-cols-3">
           <div>
@@ -419,7 +457,7 @@ export function MakersCard({ moleculeKey }: { moleculeKey: string }) {
             {!req?.forms?.length ? <div className="text-xs text-ink-muted">Dosage form not known for this molecule — add it in the molecule's Regulatory tab.</div> : (
               <>
                 <div className="mb-2 flex flex-wrap gap-1 text-[11px]">
-                  <Badge tone="indigo">{m.capable_eu} EU GMP</Badge><Badge tone="brand">{m.capable_who} WHO-GMP</Badge>{m.capable_ncr > 0 && <Badge tone="rose">{m.capable_ncr} EU non-compliant</Badge>}
+                  <Badge tone="sky">{m.capable_fda ?? 0} US FDA</Badge><Badge tone="indigo">{m.capable_eu} EU GMP</Badge><Badge tone="brand">{m.capable_who} WHO-GMP</Badge>{m.capable_ncr > 0 && <Badge tone="rose">{m.capable_ncr} EU non-compliant</Badge>}
                   {Object.entries(m.capable_by_state).slice(0, 4).map(([s, n]: any) => <Badge key={s}>{s} {n}</Badge>)}
                 </div>
                 {m.capable.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} />)}

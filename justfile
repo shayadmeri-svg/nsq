@@ -303,7 +303,10 @@ fetch-plants FILE="": _plant-deps
 # EU GMP certificates + non-compliance statements for India (~1,050 documents, ~15 min first run; later runs fetch only new ones)
 fetch-eudragmdp:
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py eudragmdp
-# Both, in order (the app merges them into one registry)
+# FDA inspection outcomes for Indian sites: API (export FDA_DD_USER / FDA_DD_KEY first) or FILE = Data Dashboard Excel export
+fetch-fda-inspections FILE="":
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py fda_inspections {{ if FILE != "" { "--from-file '" + FILE + "'" } else { "" } }}
+# CDSCO + EU (the app merges them into one registry); add FDA with just fetch-fda-inspections
 fetch-plant-registry: fetch-plants fetch-eudragmdp
 
 # Copy the registry files to the server (HOST = user@host, KEY = .pem) and restart the API
@@ -311,10 +314,10 @@ push-plant-registry HOST KEY="" DIR="/opt/nsq-platform":
     #!/usr/bin/env bash
     set -euo pipefail
     k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
-    files=$(ls data/sources/cdsco_plants.json data/sources/cdsco_plants.csv data/sources/eudragmdp.json 2>/dev/null || true)
+    files=$(ls data/sources/cdsco_plants.json data/sources/cdsco_plants.csv data/sources/eudragmdp.json data/sources/fda_inspections.json 2>/dev/null || true)
     [ -n "$files" ] || { echo "No registry files — run just fetch-plant-registry first"; exit 1; }
     scp $k $files {{HOST}}:~/
-    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in cdsco_plants.json cdsco_plants.csv eudragmdp.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done && cd {{DIR}} && (docker compose restart api 2>/dev/null || sudo docker compose restart api)'
+    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in cdsco_plants.json cdsco_plants.csv eudragmdp.json fda_inspections.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done && cd {{DIR}} && (docker compose restart api 2>/dev/null || sudo docker compose restart api)'
     echo "Registry files copied; API restarted."
 
 _plant-deps:

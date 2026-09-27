@@ -58,7 +58,8 @@ NSQ_FORM_CAPS = {
 }
 SOURCE_URL = {"cdsco_who_gmp": "https://cdsco.gov.in/opencms/opencms/en/Home/",
               "cdsco_sugam": "https://cdscoonline.gov.in/CDSCO/manuf_site",
-              "eudragmdp": "https://eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do"}
+              "eudragmdp": "https://eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do",
+              "fda_inspections": "https://datadashboard.fda.gov/oii/cd/inspections.htm"}
 
 
 def _path(name: str = "cdsco_plants"):
@@ -272,11 +273,7 @@ def _attach_eu(p: dict[str, Any], eu: dict[str, Any]) -> None:
         p["sources"] = [*p.get("sources", []), "eudragmdp"]
 
 
-def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, Any]]) -> dict[str, int]:
-    """Attach EudraGMDP sites to registry plants (company + PIN, or company + town, and no conflicting plot numbers);
-    unmatched sites become plants, with re-registrations of one site folded together."""
-    from rapidfuzz import fuzz
-
+def _indexes(plants: dict[str, dict[str, Any]]) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
     by_pin: dict[str, list[str]] = defaultdict(list)
     by_token: dict[str, set[str]] = defaultdict(set)
     for pid, p in plants.items():
@@ -284,44 +281,68 @@ def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, A
             by_pin[p["pin"]].append(pid)
         for t in _tokens(p["name"])[:2]:
             by_token[t].add(pid)
+    return by_pin, by_token
+
+
+def _find_plants(plants: dict[str, dict[str, Any]], by_pin: dict[str, list[str]], by_token: dict[str, set[str]],
+                 site_name: str, pin: str, address: Optional[str], city: Optional[str]) -> list[str]:
+    """Registry plants an outside site record (EU GMP, US FDA) belongs to: company + PIN, or company + town,
+    and no conflicting plot numbers."""
+    from rapidfuzz import fuzz
+
+    name = " ".join(_tokens(site_name or "", keep_generic=True))
+    best, best_score = [], 0.0
+    for pid in set(by_pin.get(pin, [])) | set().union(*(by_token.get(t, set()) for t in _tokens(site_name or "")[:2])):
+        p = plants[pid]
+        pn = " ".join(_tokens(p["name"], drop=_town_words(p.get("district"), p.get("address")), keep_generic=True))
+        if not pn or not name:
+            continue
+        score = fuzz.token_sort_ratio(name, pn)
+        if p.get("pin") and pin:
+            if p["pin"] != pin or score < 80 or not _same_site(address, p.get("address"), pin):
+                continue
+            score += 20
+        else:
+            town = _town_words(city, address) - _ADDRESS_STOP
+            if score < 92 or p.get("state") != pin_state(pin) or not (town & _town_words(p.get("district"), p.get("address"))):
+                continue
+            if not _same_site(address, p.get("address"), pin or None):
+                continue
+        if score > best_score:
+            best, best_score = [pid], score
+        elif score == best_score:
+            best.append(pid)  # e.g. two CDSCO units of one company at the same PIN: the record covers the site
+    return best
+
+
+def _fold_target(plants: dict[str, dict[str, Any]], made_by_pin: dict[str, list[str]], site_name: str, pin: str,
+                 address: Optional[str]) -> Optional[str]:
+    """A plant this run already created for the same site (same company, PIN and plot numbers)."""
+    first = (_tokens(site_name or "") or [""])[0]
+    for pid in made_by_pin.get(pin, []):
+        if pin and first and (_tokens(plants[pid]["name"]) or [""])[0] == first and _same_site(address, plants[pid].get("address"), pin):
+            return pid
+    return None
+
+
+def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """Attach EudraGMDP sites to registry plants; unmatched sites become plants, with re-registrations of one
+    site folded together."""
+    by_pin, by_token = _indexes(plants)
     eu_by_pin: dict[str, list[str]] = defaultdict(list)
     matched = added = folded = 0
     for site in eu_sites.values():
         eu = _eu_summary(site)
-        name = " ".join(_tokens(site.get("name") or "", keep_generic=True))
         pin = _eu_pin(site) or ""
-        best, best_score = [], 0.0
-        for pid in set(by_pin.get(pin, [])) | set().union(*(by_token.get(t, set()) for t in _tokens(site.get("name") or "")[:2])):
-            p = plants[pid]
-            pn = " ".join(_tokens(p["name"], drop=_town_words(p.get("district"), p.get("address")), keep_generic=True))
-            if not pn or not name:
-                continue
-            score = fuzz.token_sort_ratio(name, pn)
-            if p.get("pin") and pin:
-                if p["pin"] != pin or score < 80 or not _same_site(site.get("address"), p.get("address"), pin):
-                    continue
-                score += 20
-            else:
-                town = _town_words(site.get("city"), site.get("address")) - _ADDRESS_STOP
-                if score < 92 or p.get("state") != pin_state(pin) or not (town & _town_words(p.get("district"), p.get("address"))):
-                    continue
-                if not _same_site(site.get("address"), p.get("address"), pin or None):
-                    continue
-            if score > best_score:
-                best, best_score = [pid], score
-            elif score == best_score:
-                best.append(pid)  # e.g. two CDSCO units of one company at the same PIN: the certificate covers the site
+        best = _find_plants(plants, by_pin, by_token, site.get("name") or "", pin, site.get("address"), site.get("city"))
         if best:
             for pid in best:
                 _attach_eu(plants[pid], eu)
             matched += 1
             continue
-        # Unmatched: fold into an EU-only plant already made for this site (same company, PIN, plot numbers).
-        first = (_tokens(site.get("name") or "") or [""])[0]
-        same = [pid for pid in eu_by_pin.get(pin, []) if pin and first and (_tokens(plants[pid]["name"]) or [""])[0] == first
-                and _same_site(site.get("address"), plants[pid].get("address"), pin)]
+        same = _fold_target(plants, eu_by_pin, site.get("name") or "", pin, site.get("address"))
         if same:
-            _attach_eu(plants[same[0]], eu)
+            _attach_eu(plants[same], eu)
             folded += 1
             continue
         np = _eu_plant(site, eu)
@@ -335,13 +356,88 @@ def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, A
     return {"eu_sites": len(eu_sites), "eu_matched": matched, "eu_added": added, "eu_folded": folded}
 
 
+# --- US FDA inspections -----------------------------------------------------------------------------
+
+FDA_URL = "https://datadashboard.fda.gov/oii/cd/inspections.htm"
+FDA_ACCEPTABLE_YEARS = 5  # FDA re-inspects foreign drug sites roughly every 2–5 years
+
+
+def _fda_summary(site: dict[str, Any], import_alert_feis: set[str]) -> dict[str, Any]:
+    last, code = site.get("last_inspection"), site.get("last_code")
+    recent = bool(last) and last >= time.strftime("%Y-%m-%d", time.gmtime(time.time() - FDA_ACCEPTABLE_YEARS * 365.25 * 86400))
+    return {**{k: site.get(k) for k in ("key", "fei", "name", "address", "city", "postcode", "profile", "last_inspection",
+                                         "last_code", "oai_count")},
+            "inspections": (site.get("inspections") or [])[:10],
+            "import_alert": site.get("fei") in import_alert_feis,
+            "acceptable": code in ("NAI", "VAI") and recent and site.get("fei") not in import_alert_feis}
+
+
+def _attach_fda(p: dict[str, Any], f: dict[str, Any]) -> None:
+    """A plant can hold several FEIs (API and finished-dose blocks registered apart); `fda` is the latest inspected."""
+    recs = {r["fei"]: r for r in (p.get("fda_records") or ([p["fda"]] if p.get("fda") else []))}
+    recs[f["fei"]] = f
+    p["fda_records"] = sorted(recs.values(), key=lambda r: r.get("last_inspection") or "", reverse=True)
+    p["fda"] = {**p["fda_records"][0],
+                "acceptable": any(r["acceptable"] for r in p["fda_records"]),
+                "oai_recent": any(r.get("last_code") == "OAI" for r in p["fda_records"]),
+                "import_alert": any(r["import_alert"] for r in p["fda_records"])}
+    if "fda_inspections" not in p.get("sources", []):
+        p["sources"] = [*p.get("sources", []), "fda_inspections"]
+
+
+def _fda_plant(site: dict[str, Any], f: dict[str, Any]) -> dict[str, Any]:
+    pin = site.get("postcode") or None
+    pid = f"fda-{re.sub(r'[^a-z0-9]+', '-', (site.get('name') or '').lower()).strip('-')[:50]}--{pin or site.get('fei')}"
+    return {"id": pid, "name": site.get("name") or "?", "aliases": [], "address": site.get("address"),
+            "district": site.get("city"), "state": pin_state(pin), "pin": pin, "phones": [], "sources": [],
+            "licences": [], "loan_licensees": [], "who_gmp": [], "who_gmp_certified": False,
+            "capabilities": {"dosage_forms": [], "segregated": {}, "therapeutic": [], "evidence": [], "raw": "",
+                             "sterile": False, "api": False, "finished_dose": False, "licence_classes": [], "schedule_c": False}}
+
+
+def _merge_fda(plants: dict[str, dict[str, Any]], fda_sites: dict[str, dict[str, Any]], import_alert_feis: set[str]) -> dict[str, int]:
+    """Attach FDA-inspected Indian drug sites (by FEI) to registry plants; unmatched ones become plants."""
+    by_pin, by_token = _indexes(plants)
+    made: dict[str, list[str]] = defaultdict(list)
+    matched = added = folded = 0
+    for site in fda_sites.values():
+        f = _fda_summary(site, import_alert_feis)
+        pin = site.get("postcode") or ""
+        best = _find_plants(plants, by_pin, by_token, site.get("name") or "", pin, site.get("address"), site.get("city"))
+        if best:
+            for pid in best:
+                _attach_fda(plants[pid], f)
+            matched += 1
+            continue
+        same = _fold_target(plants, made, site.get("name") or "", pin, site.get("address"))
+        if same:
+            _attach_fda(plants[same], f)
+            folded += 1
+            continue
+        np = _fda_plant(site, f)
+        if np["id"] in plants:
+            np["id"] = f"{np['id']}-{site.get('fei')}"
+        _attach_fda(np, f)
+        plants[np["id"]] = np
+        if pin:
+            made[pin].append(np["id"])
+        added += 1
+    return {"fda_sites": len(fda_sites), "fda_matched": matched, "fda_added": added, "fda_folded": folded}
+
+
+def _import_alert_feis() -> set[str]:
+    _m, ia = _load("fda_import_alerts")
+    return {re.sub(r"\D", "", str(r.get("fei") or "")).lstrip("0") for r in (ia.get("data") or {}).values() if r.get("fei")} - {""}
+
+
 def registry() -> dict[str, Any]:
     """{'meta', 'plants', 'links'}; rebuilt when a source file or the NSQ frame changes."""
     global _cache
     mtime, raw = _load()
     eu_mtime, eu_raw = _load("eudragmdp")
+    fda_mtime, fda_raw = _load("fda_inspections")
     directory = sites.directory()
-    key = (mtime, eu_mtime, id(directory))
+    key = (mtime, eu_mtime, fda_mtime, _load("fda_import_alerts")[0], id(directory))
     c = _cache
     if c is not None and c[0] == key:
         return c[1]
@@ -350,11 +446,13 @@ def registry() -> dict[str, Any]:
             t0 = time.time()
             plants = {pid: {**p} for pid, p in (raw.get("data") or {}).items()}
             eu_stats = _merge_eu(plants, eu_raw.get("data") or {}) if eu_raw.get("data") else {}
+            fda_stats = _merge_fda(plants, fda_raw.get("data") or {}, _import_alert_feis()) if fda_raw.get("data") else {}
             links = _link(plants, directory) if plants else {}
             meta = {k: raw.get(k) for k in ("title", "publisher", "url", "retrieved_at", "records", "inputs", "stats")}
             meta["eudragmdp"] = {"retrieved_at": eu_raw.get("retrieved_at"), "listed": eu_raw.get("total_listed"), **eu_stats} if eu_raw else None
+            meta["fda_inspections"] = {"retrieved_at": fda_raw.get("retrieved_at"), "inspections": fda_raw.get("inspections"), **fda_stats} if fda_raw else None
             _cache = (key, {"meta": meta, "plants": plants, "links": links})
-            print(f"[plants] {len(plants)} plants ({eu_stats or 'no EU data'}), {len(links)} NSQ sites linked in {time.time() - t0:.1f}s")
+            print(f"[plants] {len(plants)} plants ({eu_stats or 'no EU data'}; {fda_stats or 'no FDA data'}), {len(links)} NSQ sites linked in {time.time() - t0:.1f}s")
         return _cache[1]
 
 
@@ -384,7 +482,10 @@ def brief(p: dict[str, Any]) -> dict[str, Any]:
             "nsq_alerts": (p.get("nsq") or {}).get("alerts", 0), "nsq_last": (p.get("nsq") or {}).get("last"),
             "eu_status": (p.get("eu") or {}).get("status"), "eu_gmp": bool((p.get("eu") or {}).get("certified")),
             "eu_last": (p.get("eu") or {}).get("last_gmp_inspection"), "eu_ncr": (p.get("eu") or {}).get("last_ncr"),
-            "eu_stated": (p.get("eu") or {}).get("stated") or {}}
+            "eu_stated": (p.get("eu") or {}).get("stated") or {},
+            "fda_code": (p.get("fda") or {}).get("last_code"), "fda_last": (p.get("fda") or {}).get("last_inspection"),
+            "fda_ok": bool((p.get("fda") or {}).get("acceptable")), "fda_oai": bool((p.get("fda") or {}).get("oai_recent")),
+            "fda_import_alert": bool((p.get("fda") or {}).get("import_alert"))}
 
 
 def rule_input(p: dict[str, Any]) -> dict[str, Any]:
@@ -435,6 +536,10 @@ def _matches(p: dict[str, Any], q: str, state: str, capability: str, segregated:
     if cert == "eu_gmp" and not (p.get("eu") or {}).get("certified"):
         return False
     if cert == "eu_ncr" and (p.get("eu") or {}).get("status") != "non_compliant":
+        return False
+    if cert == "us_fda" and not (p.get("fda") or {}).get("acceptable"):
+        return False
+    if cert == "fda_oai" and not ((p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert")):
         return False
     if cert == "loan" and not p.get("loan_licensees"):
         return False
@@ -503,7 +608,9 @@ def summary(exclude_api_only: bool = False) -> dict[str, Any]:
     states = group(lambda p: [p.get("state") or "Unknown"])
     tiers = group(lambda p: (["WHO-GMP certified"] if p.get("who_gmp_certified") else ["SUGAM only (not WHO-GMP)"] if "cdsco_sugam" in p.get("sources", []) else [])
                   + (["EU GMP certified (last 3 years)"] if (p.get("eu") or {}).get("certified") else [])
-                  + (["EU non-compliance statement"] if (p.get("eu") or {}).get("status") == "non_compliant" else []))
+                  + (["EU non-compliance statement"] if (p.get("eu") or {}).get("status") == "non_compliant" else [])
+                  + (["US FDA acceptable (NAI/VAI, last 5 years)"] if (p.get("fda") or {}).get("acceptable") else [])
+                  + (["US FDA OAI or import alert"] if (p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert") else []))
     breadth = group(lambda p: [("1 form" if n == 1 else "2–3 forms" if n <= 3 else "4–6 forms" if n <= 6 else "7+ forms")
                                for n in [len([f for f in p["capabilities"]["dosage_forms"] if f not in ("api", "finished_unspecified")])] if n])
     alerts_all = sum(s["alerts"] for s in directory)
@@ -519,6 +626,10 @@ def summary(exclude_api_only: bool = False) -> dict[str, Any]:
         "eu_gmp": sum(1 for p in plants if (p.get("eu") or {}).get("certified")),
         "eu_ncr": sum(1 for p in plants if (p.get("eu") or {}).get("status") == "non_compliant"),
         "eu_only": sum(1 for p in plants if p.get("sources") == ["eudragmdp"]),
+        "us_fda": sum(1 for p in plants if (p.get("fda") or {}).get("acceptable")),
+        "fda_oai": sum(1 for p in plants if (p.get("fda") or {}).get("oai_recent") or (p.get("fda") or {}).get("import_alert")),
+        "fda_inspected": sum(1 for p in plants if p.get("fda")),
+        "fda_only": sum(1 for p in plants if p.get("sources") == ["fda_inspections"]),
         "with_pin": sum(1 for p in plants if p.get("pin")),
         "with_nsq": sum(1 for p in plants if (p.get("nsq") or {}).get("alerts")),
         "sterile": sum(1 for p in plants if p["capabilities"].get("sterile")),
@@ -536,7 +647,7 @@ def summary(exclude_api_only: bool = False) -> dict[str, Any]:
         "breadth": [{"key": k, "label": k, **v} for k, v in sorted(breadth.items(), key=lambda kv: ["1 form", "2–3 forms", "4–6 forms", "7+ forms"].index(kv[0]))],
         "outside_capabilities": [{"form": k, "plants": v} for k, v in outside.most_common()],
         "labels": {"capabilities": CAPABILITY_LABELS, "segregated": SEGREGATED_LABELS},
-        "caveat": f"Rates are per plant in CDSCO's WHO-GMP and SUGAM lists and EudraGMDP ({len(plants):,} plants), not every licensed plant in India. "
+        "caveat": f"Rates are per plant in CDSCO's WHO-GMP and SUGAM lists, EudraGMDP and FDA's inspection classifications ({len(plants):,} plants), not every licensed plant in India. "
                   "NSQ alerts are linked by company name and PIN; unlinked alerts are from makers on none of these lists.",
     }
 
@@ -696,7 +807,8 @@ def makers(key: str, limit: int = 30) -> Optional[dict[str, Any]]:
             if req["segregated"] and not set(req["segregated"]) & set(c.get("segregated") or {}):
                 continue
             capable.append(p)
-    rank = lambda p: (-(1 if (p.get("eu") or {}).get("certified") else 0), -(1 if p.get("who_gmp_certified") else 0),  # noqa: E731
+    rank = lambda p: (-(1 if (p.get("fda") or {}).get("acceptable") else 0) - (1 if (p.get("eu") or {}).get("certified") else 0),  # noqa: E731
+                      -(1 if p.get("who_gmp_certified") else 0),
                       (p.get("nsq") or {}).get("alerts", 0), p["name"].lower())
     capable.sort(key=rank)
     out = {
@@ -708,6 +820,7 @@ def makers(key: str, limit: int = 30) -> Optional[dict[str, Any]]:
         "capable_eu": sum(1 for p in capable if (p.get("eu") or {}).get("certified")),
         "capable_who": sum(1 for p in capable if p.get("who_gmp_certified")),
         "capable_ncr": sum(1 for p in capable if (p.get("eu") or {}).get("status") == "non_compliant"),
+        "capable_fda": sum(1 for p in capable if (p.get("fda") or {}).get("acceptable")),
         "capable_by_state": dict(Counter(p.get("state") or "Unknown" for p in capable).most_common(8)),
         "capable": [brief(p) for p in capable[:limit]],
         "note": "Plants permitted to make the dosage form (and the segregated block it needs) — capability, not a claim that they make this molecule.",

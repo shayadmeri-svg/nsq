@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/plants", tags=["plants"])
 
 @router.get("")
 def plant_list(q: str = "", state: str = "", capability: str = "", segregated: str = "",
-               cert: str = Query("", pattern="^(|who_gmp|eu_gmp|eu_ncr|sugam|schedule_c|loan)$"), nsq: str = Query("", pattern="^(|yes|no)$"),
+               cert: str = Query("", pattern="^(|who_gmp|eu_gmp|eu_ncr|us_fda|fda_oai|sugam|schedule_c|loan)$"), nsq: str = Query("", pattern="^(|yes|no)$"),
                sort: str = Query("nsq", pattern="^(nsq|name|forms)$"), page: int = Query(1, ge=1), size: int = Query(25, ge=5, le=100),
                user: User = Depends(current_user)):
     return plants.search(q=q, state=state, capability=capability, segregated=segregated, cert=cert, nsq=nsq, sort=sort, page=page, size=size)
