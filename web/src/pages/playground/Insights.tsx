@@ -3,7 +3,7 @@ import { useState } from "react";
 import { BadgeCheck, CalendarRange, CloudRain, FlaskConical, Globe2, Lightbulb, MapPin, ShieldAlert, Timer, Users } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { RankBars } from "../../components/charts";
-import { Badge, Card, CardHeader, ErrorNote, PageSkeleton, Segmented, Skeleton } from "../../components/ui";
+import { Badge, ErrorNote, PageSkeleton, Segmented, Skeleton } from "../../components/ui";
 import { api } from "../../lib/api";
 import { ExpandedProvider, Frame, Tile, type Section } from "../../components/ui/Expanded";
 
