@@ -347,7 +347,18 @@ def fetch_structure(key: str) -> dict[str, Any]:
     got = med_mod.enrich_ingredient({"name": rec["name"], "molecule_key": key, "role": "active", "source": "lab"})
     if not got.get("smiles"):
         status = {k: v.get("status") for k, v in (got.get("sources") or {}).items()}
-        raise ValueError(f"No structure found for {rec['name']} (PubChem: {status.get('pubchem')}, ChEMBL: {status.get('chembl')}).")
+        # A ChEMBL/PubChem "match" with no SMILES usually means the record found is
+        # unnamed, a related-but-different drug, or a complex/colloid with no single
+        # well-defined structure (e.g. iron-carbohydrate complexes, some aluminum/
+        # sulfate salts) — not a lookup bug. Say that plainly instead of implying
+        # the databases just need to be retried.
+        no_structure_hint = (status.get("chembl") == "ok" or status.get("pubchem") == "ok")
+        detail = f"(PubChem: {status.get('pubchem')}, ChEMBL: {status.get('chembl')})"
+        if no_structure_hint:
+            raise ValueError(f"{rec['name']} has no small-molecule structure in PubChem/ChEMBL {detail} — "
+                              "likely a biologic, colloid, or complex/salt with no single defined structure. "
+                              "Enter a SMILES manually if you have one.")
+        raise ValueError(f"No structure found for {rec['name']} {detail}.")
     live_p = settings.data_dir / "generated" / "structures_live.json"
     live_p.parent.mkdir(parents=True, exist_ok=True)
     cur = json.loads(live_p.read_text(encoding="utf-8")) if live_p.exists() else {}
