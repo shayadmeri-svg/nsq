@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -154,3 +155,27 @@ def molecule_synthesis(key: str, user: User = Depends(current_user)):
     from .. import signals
 
     return signals.synthesis(key)
+
+
+# --- CDSCO Written Confirmations (API exports to the EU) --------------------------------------
+
+@router.get("/wc")
+def wc_list(q: str = Query("", max_length=120), kind: str = Query("wc", pattern="^(wc|notice|all)$"), year: str = Query("", pattern=r"^(|\d{4})$"),
+            latest: bool = False, page: int = Query(1, ge=1), size: int = Query(25, ge=5, le=100), user: User = Depends(current_user)):
+    from .. import wc
+    return wc.listing(q, kind, year, latest, page, size)
+
+
+@router.get("/wc/{rid}.pdf")
+def wc_pdf(rid: str, user: User = Depends(current_user)):
+    """The letter itself, shown inline (the page embeds it; CDSCO's own site refuses to be framed)."""
+    from fastapi.responses import FileResponse
+
+    from .. import wc
+    p = wc.pdf_path(rid)
+    if p is None:
+        raise HTTPException(404, "This PDF is not on the server yet — run just fetch-cdsco-wc and just push-wc.")
+    r = wc.record(rid.removesuffix(".pdf")) or {}
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{r.get('wc') or 'CDSCO'}_{r.get('company') or rid}")[:80] + ".pdf"
+    return FileResponse(p, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"',
+                                                                   "Cache-Control": "private, max-age=86400"})

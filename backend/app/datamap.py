@@ -81,6 +81,9 @@ NODES: list[dict[str, Any]] = [
     _n("ext_health", "origin", "external", "Health signals", "NFHS fact sheets · IDSP outbreaks",
        "NFHS district / state indicators (high blood sugar, raised blood pressure, obesity, anaemia, child diarrhoea / ARI) across survey rounds, and IDSP weekly outbreak reports (PDF tables).",
        keys=["data.gov.in NFHS-5 districts factsheet", "nfhsiips.in NFHS-6 compendiums", "idsp.mohfw.gov.in weekly outbreaks"]),
+    _n("ext_cdsco_wc", "origin", "external", "CDSCO Written Confirmations", "International Cell · API exports to the EU",
+       "Every Written Confirmation CDSCO has issued since 2013 (EU Directive 2011/62/EU): WC number, company, products, release date and the letter as a PDF. Refuses cloud servers — fetched on a laptop.",
+       keys=["cdsco.gov.in/opencms/opencms/en/International-cell1/"]),
     _n("ext_comtrade", "origin", "external", "UN Comtrade", "India pharma trade by partner",
        "India's exports and imports of pharmaceutical HS codes (3002–3006, 2933–2942) by partner and year. Full API with COMTRADE_KEY, public preview otherwise.",
        keys=["comtradeapi.un.org/data/v1/get/C/A/HS"]),
@@ -106,7 +109,7 @@ NODES: list[dict[str, Any]] = [
     _n("in_sources", "ingest", "script", "fetch_source.py", "one per public source",
        "Downloads with conditional GET (ETag / Last-Modified), parses and writes one normalised JSON per source plus a status line in the manifest. Accepts an uploaded file instead of downloading.",
        jobs=["sync-sources", "src-orange-book", "src-purple-book", "src-ema", "src-clinical-trials", "src-fda-establishments", "src-fda-import-alerts", "src-fda-recalls",
-             "src-cdsco-plants", "src-eudragmdp", "src-fda-inspections", "src-fda-dmf", "src-edqm-cep", "src-ord", "src-nfhs", "src-idsp", "src-comtrade", "plant-registry"]),
+             "src-cdsco-plants", "src-eudragmdp", "src-fda-inspections", "src-fda-dmf", "src-edqm-cep", "src-ord", "src-nfhs", "src-idsp", "src-comtrade", "src-cdsco-wc", "plant-registry"]),
 
     # --- files --------------------------------------------------------------------------------------
     _n("f_csv", "files", "file", "NSQ CSV", "cumulative, all months",
@@ -231,6 +234,8 @@ NODES: list[dict[str, Any]] = [
     _n("p_plants", "pages", "page", "Playground · Plants", "/playground/plants", "", group="Playground", route="/playground/plants", endpoints=["/api/plants", "/api/plants/summary", "/api/plants/{id}"]),
     _n("p_health", "pages", "page", "Playground · Health & trade", "/playground/health", "", group="Playground", route="/playground/health",
        endpoints=["/api/playground/signals/nfhs", "/api/playground/signals/outbreaks", "/api/playground/signals/trade"]),
+    _n("p_wc", "pages", "page", "Playground · Written confirmations", "/playground/wc", "", group="Playground", route="/playground/wc",
+       endpoints=["/api/playground/wc", "/api/playground/wc/{id}.pdf"]),
     _n("p_process", "pages", "page", "Playground · Lab", "/playground/process", "", group="Playground", route="/playground/process", endpoints=["/api/lab/*", "/api/process/*"]),
     _n("p_org_overview", "pages", "page", "Org · Overview", "/o/:slug", "", group="Organisation", endpoints=["/api/orgs/{slug}/overview"]),
     _n("p_org_quality", "pages", "page", "Org · Quality", "/o/:slug/quality", "", group="Organisation", endpoints=["/api/orgs/{slug}/quality", "/quality/issues"]),
@@ -266,7 +271,7 @@ EDGES: list[dict[str, Any]] = [
                                                  ("ext_ct", "count queries"), ("ext_fdasites", "DECRS · import alert · recalls"),
                                                  ("ext_cdsco_plants", "SUGAM pages + WHO-GMP PDF · laptop"), ("ext_eudragmdp", "certificate pages · laptop"),
                                                  ("ext_fda_insp", "API key or Excel export"), ("ext_filings", "quarterly .xls · daily .txt"),
-                                                 ("ext_ord", "Parquet · laptop"), ("ext_health", "CSV files · weekly PDFs"), ("ext_comtrade", "API / public preview"))],
+                                                 ("ext_ord", "Parquet · laptop"), ("ext_health", "CSV files · weekly PDFs"), ("ext_comtrade", "API / public preview"), ("ext_cdsco_wc", "page + PDFs · laptop"))],
     _e("in_sources", "f_raw", "write", "downloads + ETags", "sync-sources · daily 02:30 IST, or src-*"),
     _e("in_sources", "f_sources", "write", "normalised JSON", "sync-sources, src-*"),
     _e("in_sources", "f_manifest", "write", "status per source", "sync-sources, src-*"),
@@ -360,6 +365,7 @@ EDGES: list[dict[str, Any]] = [
     _e("pg_audit", "p_admin_audit"),
     _e("pg_jobs", "p_admin_datamap", label="live counts"),
     _e("f_sources", "p_health", label="nfhs · idsp · comtrade .json"),
+    _e("f_sources", "p_wc", label="cdsco_wc.json + data/docs/cdsco_wc/*.pdf"),
     _e("f_sources", "p_workbench", label="ord.json — how it's made"),
     # pages: mutations (every one is also written to audit_log)
     _e("p_login", "pg_auth", "write", "sign in / out, change password, accept invite", "user action"),
@@ -468,7 +474,7 @@ def _source_stats() -> dict[str, dict[str, Any]]:
     return {"ext_cdsco": s(["cdsco"]), "ext_orange": s(["orange_book"]), "ext_purple": s(["purple_book"]), "ext_ema": s(["ema"]),
             "ext_ct": s(["clinical_trials"]), "ext_fdasites": s(["fda_establishments", "fda_import_alerts", "fda_recalls"]),
             "ext_cdsco_plants": s(["cdsco_plants"]), "ext_eudragmdp": s(["eudragmdp"]), "ext_fda_insp": s(["fda_inspections"]), "ext_filings": s(["fda_dmf", "edqm_cep"]),
-            "ext_health": s(["nfhs", "idsp"]), "ext_ord": s(["ord"]), "ext_comtrade": s(["comtrade"])}
+            "ext_health": s(["nfhs", "idsp"]), "ext_ord": s(["ord"]), "ext_comtrade": s(["comtrade"]), "ext_cdsco_wc": s(["cdsco_wc"])}
 
 
 def _file_stats() -> dict[str, dict[str, Any]]:

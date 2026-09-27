@@ -19,4 +19,5 @@ redis-loader/.venv
 # public-source pipeline outputs (rebuilt on the server)
 data/raw/
 data/sources/
+data/docs/
 data/generated/

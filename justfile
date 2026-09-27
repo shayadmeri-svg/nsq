@@ -321,6 +321,21 @@ fetch-nfhs FILE="":
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py nfhs {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
 fetch-idsp FILE="": _plant-deps
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py idsp {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
+# CDSCO Written Confirmations (API exports to the EU): the list + every PDF not yet downloaded (~1.5 GB the first time). LIMIT caps new PDFs per run
+fetch-cdsco-wc LIMIT="": _plant-deps
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py cdsco_wc {{ if LIMIT != "" { "--limit " + LIMIT } else { "" } }}
+# Copy the Written Confirmations list and any new PDFs to the server (rsync: only what the server lacks)
+push-wc HOST KEY="" DIR="/opt/nsq-platform":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -f data/sources/cdsco_wc.json ] || { echo "Run just fetch-cdsco-wc first"; exit 1; }
+    k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
+    ssh $k {{HOST}} 'command -v rsync >/dev/null || sudo yum install -y rsync >/dev/null || sudo apt-get install -y rsync >/dev/null; sudo mkdir -p {{DIR}}/data/docs/cdsco_wc {{DIR}}/data/sources'
+    rsync -rt --chmod=D755,F644 --info=progress2 --rsync-path="sudo rsync" -e "ssh $k" data/docs/cdsco_wc/ {{HOST}}:{{DIR}}/data/docs/cdsco_wc/ 2>/dev/null \
+      || rsync -rt --chmod=D755,F644 --progress --rsync-path="sudo rsync" -e "ssh $k" data/docs/cdsco_wc/ {{HOST}}:{{DIR}}/data/docs/cdsco_wc/
+    scp $k data/sources/cdsco_wc.json {{HOST}}:~/
+    ssh $k {{HOST}} 'sudo mv ~/cdsco_wc.json {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/cdsco_wc.json'
+    echo "Written Confirmations copied: $(ls data/docs/cdsco_wc | wc -l | tr -d ' ') files."
 fetch-comtrade:
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py comtrade
 # Open Reaction Database: download (~1.3 GB, once) and scan for reactions that make tracked molecules (10–20 min)
@@ -337,12 +352,13 @@ pull-structures HOST KEY="" DIR="/opt/nsq-platform":
 laptop-refresh HOST KEY="":
     #!/usr/bin/env bash
     failed=()
-    for r in fetch-plants fetch-eudragmdp fetch-fda-inspections fetch-cep fetch-nfhs fetch-comtrade fetch-idsp; do
+    for r in fetch-plants fetch-eudragmdp fetch-fda-inspections fetch-cep fetch-nfhs fetch-comtrade fetch-idsp fetch-cdsco-wc; do
       echo "━━ $r"; just $r || failed+=("$r")
     done
     just pull-structures {{HOST}} {{KEY}} && { echo "━━ fetch-ord"; just fetch-ord || failed+=("fetch-ord"); } || failed+=("pull-structures")
     just push-plant-registry {{HOST}} {{KEY}}
     just push-signals {{HOST}} {{KEY}}
+    just push-wc {{HOST}} {{KEY}}
     [ ${#failed[@]} -eq 0 ] && echo "All sources refreshed and pushed." || echo "Pushed. Failed (older files kept): ${failed[*]}"
 
 # Copy the signal files to the server (HOST = user@host, KEY = .pem); the API re-reads them on the next request
