@@ -183,13 +183,33 @@ def rxnav(name: str) -> Optional[dict[str, Any]]:
 
 # --- per-ingredient chemistry -------------------------------------------------------------------------
 
+# Some approved-drug names are mixtures/generic names that PubChem's and
+# ChEMBL's exact name-lookup don't map to a single well-structured compound
+# record, even though the dominant component does resolve cleanly. Tried in
+# order after the plain name.
+_NAME_ALIASES: dict[str, list[str]] = {
+    "ivermectin": ["Ivermectin B1a", "22,23-Dihydroavermectin B1a"],
+}
+
+
 def chembl(name: str) -> Optional[dict[str, Any]]:
-    d = _get("https://www.ebi.ac.uk/chembl/api/data/molecule/search.json", {"q": name, "limit": 5})
-    mols = (d or {}).get("molecules") or []
+    candidates = [name, *_NAME_ALIASES.get(_fold(name), [])]
+    mols: list[dict[str, Any]] = []
+    for cand in candidates:
+        d = _get("https://www.ebi.ac.uk/chembl/api/data/molecule/search.json", {"q": cand, "limit": 5})
+        mols = (d or {}).get("molecules") or []
+        if not mols:
+            continue
+        exact = [x for x in mols if _fold(x.get("pref_name") or "") == _fold(cand)]
+        # prefer a match that actually has a structure over an exact name match with none
+        with_smiles = [x for x in (exact or mols) if (x.get("molecule_structures") or {}).get("canonical_smiles")]
+        if with_smiles:
+            mols = with_smiles
+            break
+        mols = exact or mols
     if not mols:
         return None
-    exact = [m for m in mols if _fold(m.get("pref_name") or "") == _fold(name)]
-    m = (exact or mols)[0]
+    m = mols[0]
     props = m.get("molecule_properties") or {}
     structs = m.get("molecule_structures") or {}
     out = {"chembl_id": m.get("molecule_chembl_id"), "pref_name": m.get("pref_name"), "max_phase": _num(m.get("max_phase")),
@@ -215,7 +235,8 @@ def _num(v: Any) -> Optional[float]:
 
 def pubchem(name: str) -> Optional[dict[str, Any]]:
     from sources import pubchem as pc  # redis-loader/sources (on sys.path)
-    r = pc.lookup([name])
+    names = [name, *_NAME_ALIASES.get(_fold(name), [])]
+    r = pc.lookup(names)
     return r if r.get("found") else None
 
 
