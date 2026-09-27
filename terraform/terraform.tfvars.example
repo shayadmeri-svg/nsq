@@ -2,7 +2,7 @@
 # it's already gitignored (it will contain your Redis URL).
 
 aws_region    = "us-east-1"
-instance_type = "t3.micro" # free-tier eligible; bump to t3.small if Streamlit feels sluggish
+instance_type = "t2.small" # 2 GB: the minimum for the image builds (1 GB micro instances run out of memory)
 
 # Create this first if you don't have one:
 #   aws ec2 create-key-pair --key-name nsq-platform \

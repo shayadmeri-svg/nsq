@@ -17,9 +17,9 @@ variable "environment" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type. t3.micro / t4g.micro are free-tier eligible in most accounts."
+  description = "EC2 instance type. 2 GB is the minimum for building the stack (RDKit, web bundle, PharmaPy sim); t3.micro/t4g.micro (1 GB) run out of memory."
   type        = string
-  default     = "t3.micro"
+  default     = "t2.small"
 }
 
 variable "root_volume_size_gb" {
