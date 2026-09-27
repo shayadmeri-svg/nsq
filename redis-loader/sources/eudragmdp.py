@@ -36,6 +36,7 @@ from urllib.parse import urlencode
 from .common import Ctx, Unreachable, now_iso, read_normalized, write_normalized
 
 BASE = "https://eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do"
+BACK = "https://eudragmdp.ema.europa.eu/inspections/gmpc/prepReviewSubmittedGMPC.do"
 INDIA = "c=in,dc=countries,dc=ecd,dc=emea,dc=eu,dc=int"
 META = {
     "title": "EudraGMDP — EU GMP certificates (India)",
@@ -333,6 +334,10 @@ class Session:
             raise Unreachable("EudraGMDP search returned no result list (form changed?)")
         return rows, total
 
+    def back_to_list(self) -> None:
+        """The detail view's 'Back To Search' button: without it the next page request returns an empty shell."""
+        self._req("POST", BACK, data={"btnBackToList": "clicked", "fromwhere": ""})
+
     def page(self, n: int) -> list[dict[str, Any]]:
         return parse_list(self._req("GET", f"{BASE}?{urlencode({'ctrl': 'searchGMPCResultControlList', 'action': 'Page', 'param': n})}"))[0]
 
@@ -393,9 +398,21 @@ def run(ctx: Ctx) -> int:
     docs: dict[str, dict[str, Any]] = {}
     fetched = reused = 0
     limit = ctx.limit or 10 ** 9
+    drilled = False  # a detail view is open: go 'Back To Search' before the next page
+    empty_pages: list[int] = []
     for n in range(pages):
         if n:
+            if drilled:
+                sess.back_to_list()
+                drilled = False
             rows = sess.page(n)
+            if not rows:  # session lost its list: search again, then ask for the page
+                sess.search()
+                rows = sess.page(n)
+            if not rows:
+                empty_pages.append(n)
+                ctx.log(f"    page {n + 1}: no rows")
+                continue
         for r in rows:
             old = prev_docs.get(r["id"])
             if old and old.get("scope") is not None and not ctx.force:
@@ -405,19 +422,30 @@ def run(ctx: Ctx) -> int:
             if fetched >= limit:
                 continue
             try:
-                parsed = parse_certificate(sess.detail(r["id"]))
+                html = sess.detail(r["id"])
+                drilled = True
+                parsed = parse_certificate(html)
             except Unreachable:
                 raise
             except Exception as exc:  # a malformed page must not stop the crawl
                 ctx.log(f"    {r['id']} {r['site_name']}: {exc}")
+                continue
+            if not parsed.get("number"):
+                ctx.log(f"    {r['id']} {r['site_name']}: detail page did not load")
                 continue
             docs[r["id"]] = {**parsed, **{k: v for k, v in r.items() if k not in ("address",)}, "list_address": r["address"],
                              "fetched_at": now_iso()}
             fetched += 1
         if n % 10 == 0:
             ctx.log(f"  page {n + 1}/{pages}: {len(docs)} documents ({fetched} fetched, {reused} unchanged)")
+    # keep documents seen before but not listed this time (a lost page must not drop them)
+    for k, v in prev_docs.items():
+        docs.setdefault(k, v)
+    if len(docs) < 0.9 * total:
+        ctx.log(f"  WARNING: only {len(docs)} of {total} documents — {len(empty_pages)} pages came back empty; run again to fill in")
     sites = build_sites(docs)
     ncr = sum(1 for s in sites.values() if s["status"] == "non_compliant")
     ctx.log(f"  {len(docs)} documents → {len(sites)} sites · {ncr} currently under an EU non-compliance statement")
-    write_normalized(ctx, META, sites, len(sites), extra={"documents": docs, "total_listed": total})
+    write_normalized(ctx, META, sites, len(sites), extra={"documents": docs, "total_listed": total, "complete": len(docs) >= 0.9 * total,
+                                                          "empty_pages": empty_pages})
     return len(sites)

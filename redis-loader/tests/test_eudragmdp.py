@@ -60,3 +60,46 @@ def test_sites_status():
     assert s["status"] == "non_compliant" and s["last_ncr"] == "2026-07-14" and s["last_gmp_inspection"] == "2024-01-10"
     assert any(c["code"] == "1.2.1.13" for c in s["scope"])  # scope comes from certificates only
     assert all(not c["code"].startswith("1.1.1") for c in s["scope"])  # the NCR's (non-compliant) operations are not capabilities
+
+
+def test_crawl_goes_back_to_the_list_before_paging(monkeypatch, tmp_path):
+    """EudraGMDP returns an empty page unless 'Back To Search' follows an opened certificate."""
+    import json
+
+    from sources.common import Ctx
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    html = (FX / "gmpc_fdf_emcure.html").read_text()
+    log: list[str] = []
+
+    class Fake:
+        def __init__(self, ctx, sleep):
+            self.open = False
+
+        def _rows(self, n):
+            return [{"id": f"{n}{i}", "number": f"N{n}{i}", "doc_ref": "", "type": "GMPC", "mia": None, "oms_org": None,
+                     "oms_loc": f"LOC-{n}{i}", "site_name": f"Site {n}{i}", "address": "a", "city": "c", "postcode": "382865",
+                     "country": "India", "inspection_date": "2026-01-01"} for i in range(10)]
+
+        def search(self):
+            log.append("search")
+            self.open = False
+            return self._rows(0), 25
+
+        def detail(self, _id):
+            self.open = True
+            return html
+
+        def back_to_list(self):
+            log.append("back")
+            self.open = False
+
+        def page(self, n):
+            log.append(f"page{n}")
+            return [] if self.open else self._rows(n)[: 5 if n == 2 else 10]
+
+    monkeypatch.setattr(e, "Session", Fake)
+    ctx = Ctx(name="eudragmdp")
+    e.run(ctx)
+    out = json.loads((tmp_path / "sources" / "eudragmdp.json").read_text())
+    assert len(out["documents"]) == 25 and out["complete"] and log == ["search", "back", "page1", "back", "page2"]
