@@ -1,4 +1,4 @@
-import { Compass, Cpu, Factory, FlaskConical, Globe2, Lightbulb, Map, Pill, Table2 } from "lucide-react";
+import { Compass, Cpu, Factory, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -10,6 +10,7 @@ import { Lab } from "./Lab";
 import { Medicines } from "./Medicines";
 import { Plants } from "./Plants";
 import { RegulatoryMap } from "./RegulatoryMap";
+import { Signals } from "./Signals";
 import { Workbench } from "./Workbench";
 
 const TABS = [
@@ -19,6 +20,7 @@ const TABS = [
   { id: "world", label: "Regulation map", icon: Globe2, hint: "India vs US vs EU vs Africa…" },
   { id: "molecule", label: "Molecule workbench", icon: FlaskConical, hint: "Passport, demand, scores, monographs" },
   { id: "plants", label: "Plants", icon: Factory, hint: "CDSCO plant registry: what each plant may make, and its NSQ record" },
+  { id: "health", label: "Health & trade", icon: HeartPulse, hint: "Disease burden by district (NFHS), outbreaks (IDSP), pharma trade (UN Comtrade)" },
   { id: "medicines", label: "Medicines", icon: Pill, hint: "Add a medicine: composition from open databases, gaps" },
   { id: "process", label: "Lab", icon: Cpu, hint: "Structure-based molecule and process models" },
 ] as const;
@@ -51,6 +53,7 @@ export function Playground() {
         {tab === "world" && <RegulatoryMap />}
         {tab === "molecule" && <Workbench />}
         {tab === "plants" && <Plants />}
+        {tab === "health" && <Signals />}
         {tab === "medicines" && <Medicines />}
         {tab === "process" && <Lab />}
       </motion.div>

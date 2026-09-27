@@ -75,6 +75,12 @@ NODES: list[dict[str, Any]] = [
     _n("ext_filings", "origin", "external", "API filings", "FDA DMF list · EDQM CEPs",
        "Holders of active US Drug Master Files (Type II) and valid European Certificates of Suitability per active ingredient. Company-level: neither names the site.",
        keys=["fda.gov/drugs/drug-master-files-dmfs/list-drug-master-files-dmfs", "extranet.edqm.eu/publications/recherches_CEP.shtml"]),
+    _n("ext_health", "origin", "external", "Health signals", "NFHS fact sheets · IDSP outbreaks",
+       "NFHS district / state indicators (high blood sugar, raised blood pressure, obesity, anaemia, child diarrhoea / ARI) across survey rounds, and IDSP weekly outbreak reports (PDF tables).",
+       keys=["data.gov.in NFHS-5 districts factsheet", "nfhsiips.in NFHS-6 compendiums", "idsp.mohfw.gov.in weekly outbreaks"]),
+    _n("ext_comtrade", "origin", "external", "UN Comtrade", "India pharma trade by partner",
+       "India's exports and imports of pharmaceutical HS codes (3002–3006, 2933–2942) by partner and year. Full API with COMTRADE_KEY, public preview otherwise.",
+       keys=["comtradeapi.un.org/data/v1/get/C/A/HS"]),
     _n("ext_pubchem", "origin", "external", "PubChem", "structures · XLogP3 · melting points",
        "Chemical structure (SMILES), InChIKey, XLogP3 and experimental melting points per molecule, for the lab's structure-based models.",
        keys=["pubchem.ncbi.nlm.nih.gov/rest/pug", "…/pug_view (Melting Point)"]),
@@ -97,7 +103,7 @@ NODES: list[dict[str, Any]] = [
     _n("in_sources", "ingest", "script", "fetch_source.py", "one per public source",
        "Downloads with conditional GET (ETag / Last-Modified), parses and writes one normalised JSON per source plus a status line in the manifest. Accepts an uploaded file instead of downloading.",
        jobs=["sync-sources", "src-orange-book", "src-purple-book", "src-ema", "src-clinical-trials", "src-fda-establishments", "src-fda-import-alerts", "src-fda-recalls",
-             "src-cdsco-plants", "src-eudragmdp", "src-fda-inspections", "src-fda-dmf", "src-edqm-cep", "plant-registry"]),
+             "src-cdsco-plants", "src-eudragmdp", "src-fda-inspections", "src-fda-dmf", "src-edqm-cep", "src-nfhs", "src-idsp", "src-comtrade", "plant-registry"]),
 
     # --- files --------------------------------------------------------------------------------------
     _n("f_csv", "files", "file", "NSQ CSV", "cumulative, all months",
@@ -220,6 +226,8 @@ NODES: list[dict[str, Any]] = [
     _n("p_world", "pages", "page", "Playground · Regulation map", "/playground/world", "", group="Playground", route="/playground/world", endpoints=["/api/playground/world"]),
     _n("p_workbench", "pages", "page", "Playground · Molecule workbench", "/playground/molecule", "", group="Playground", route="/playground/molecule", endpoints=["/api/playground/molecule/{key}"]),
     _n("p_plants", "pages", "page", "Playground · Plants", "/playground/plants", "", group="Playground", route="/playground/plants", endpoints=["/api/plants", "/api/plants/summary", "/api/plants/{id}"]),
+    _n("p_health", "pages", "page", "Playground · Health & trade", "/playground/health", "", group="Playground", route="/playground/health",
+       endpoints=["/api/playground/signals/nfhs", "/api/playground/signals/outbreaks", "/api/playground/signals/trade"]),
     _n("p_process", "pages", "page", "Playground · Lab", "/playground/process", "", group="Playground", route="/playground/process", endpoints=["/api/lab/*", "/api/process/*"]),
     _n("p_org_overview", "pages", "page", "Org · Overview", "/o/:slug", "", group="Organisation", endpoints=["/api/orgs/{slug}/overview"]),
     _n("p_org_quality", "pages", "page", "Org · Quality", "/o/:slug/quality", "", group="Organisation", endpoints=["/api/orgs/{slug}/quality", "/quality/issues"]),
@@ -254,7 +262,8 @@ EDGES: list[dict[str, Any]] = [
     *[_e(s, "in_sources", label=l) for s, l in (("ext_orange", "zip, weekly at most"), ("ext_purple", "monthly CSV"), ("ext_ema", "JSON report"),
                                                  ("ext_ct", "count queries"), ("ext_fdasites", "DECRS · import alert · recalls"),
                                                  ("ext_cdsco_plants", "SUGAM pages + WHO-GMP PDF · laptop"), ("ext_eudragmdp", "certificate pages · laptop"),
-                                                 ("ext_fda_insp", "API key or Excel export"), ("ext_filings", "quarterly .xls · daily .txt"))],
+                                                 ("ext_fda_insp", "API key or Excel export"), ("ext_filings", "quarterly .xls · daily .txt"),
+                                                 ("ext_health", "CSV files · weekly PDFs"), ("ext_comtrade", "API / public preview"))],
     _e("in_sources", "f_raw", "write", "downloads + ETags", "sync-sources · daily 02:30 IST, or src-*"),
     _e("in_sources", "f_sources", "write", "normalised JSON", "sync-sources, src-*"),
     _e("in_sources", "f_manifest", "write", "status per source", "sync-sources, src-*"),
@@ -347,6 +356,7 @@ EDGES: list[dict[str, Any]] = [
     _e("s_plants", "p_org_infra", label="stated capabilities on 'add as plant'"),
     _e("pg_audit", "p_admin_audit"),
     _e("pg_jobs", "p_admin_datamap", label="live counts"),
+    _e("f_sources", "p_health", label="nfhs · idsp · comtrade .json"),
     # pages: mutations (every one is also written to audit_log)
     _e("p_login", "pg_auth", "write", "sign in / out, change password, accept invite", "user action"),
     _e("p_admin_users", "pg_auth", "write", "create user or invite, change role, deactivate, reset password, revoke sessions", "admin or org admin"),
@@ -453,7 +463,8 @@ def _source_stats() -> dict[str, dict[str, Any]]:
         return {"ok": not bad, "text": " · ".join(parts) or "fetched", "updated_at": last or None}
     return {"ext_cdsco": s(["cdsco"]), "ext_orange": s(["orange_book"]), "ext_purple": s(["purple_book"]), "ext_ema": s(["ema"]),
             "ext_ct": s(["clinical_trials"]), "ext_fdasites": s(["fda_establishments", "fda_import_alerts", "fda_recalls"]),
-            "ext_cdsco_plants": s(["cdsco_plants"]), "ext_eudragmdp": s(["eudragmdp"]), "ext_fda_insp": s(["fda_inspections"]), "ext_filings": s(["fda_dmf", "edqm_cep"])}
+            "ext_cdsco_plants": s(["cdsco_plants"]), "ext_eudragmdp": s(["eudragmdp"]), "ext_fda_insp": s(["fda_inspections"]), "ext_filings": s(["fda_dmf", "edqm_cep"]),
+            "ext_health": s(["nfhs", "idsp"]), "ext_comtrade": s(["comtrade"])}
 
 
 def _file_stats() -> dict[str, dict[str, Any]]:

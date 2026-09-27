@@ -314,6 +314,26 @@ fetch-fda-dmf FILE="":
 fetch-cep FILE="":
     @cd {{LOADER}} && .venv/bin/python -c "import openpyxl" 2>/dev/null || .venv/bin/pip install --quiet openpyxl
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py edqm_cep {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
+# Health & trade signals (Playground): NFHS needs a file or folder (NFHS-5 district CSV from data.gov.in, NFHS-6 table);
+# IDSP downloads the latest weekly PDFs (or FILE = folder of PDFs); Comtrade uses COMTRADE_KEY if set, else the public preview.
+fetch-nfhs FILE:
+    @cd {{LOADER}} && .venv/bin/python -c "import openpyxl" 2>/dev/null || .venv/bin/pip install --quiet openpyxl
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py nfhs --from-file '{{ join(invocation_directory(), FILE) }}'
+fetch-idsp FILE="": _plant-deps
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py idsp {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
+fetch-comtrade:
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py comtrade
+# Copy the signal files to the server (HOST = user@host, KEY = .pem); the API re-reads them on the next request
+push-signals HOST KEY="" DIR="/opt/nsq-platform":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
+    files=$(ls data/sources/nfhs.json data/sources/idsp.json data/sources/comtrade.json 2>/dev/null || true)
+    [ -n "$files" ] || { echo "No signal files — run just fetch-nfhs / fetch-idsp / fetch-comtrade first"; exit 1; }
+    scp $k $files {{HOST}}:~/
+    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in nfhs.json idsp.json comtrade.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done'
+    echo "Signal files copied."
+
 # CDSCO + EU (the app merges them into one registry); add FDA with just fetch-fda-inspections
 fetch-plant-registry: fetch-plants fetch-eudragmdp
 

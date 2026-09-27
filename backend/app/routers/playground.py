@@ -115,3 +115,34 @@ def molecule_plant_fit(key: str, limit: int = Query(25, ge=1, le=100), state: st
 def survival(group: str = Query("form", pattern="^(form|category|drug_type|source|state)$"), measure: str = Query("months", pattern="^(months|shelf)$"),
              f: dict = Depends(_filters), user: User = Depends(current_user)):
     return playground.survival(group, measure, f)
+
+
+# --- Health & trade signals (NFHS, IDSP, UN Comtrade) -------------------------------------------
+
+@router.get("/signals/meta")
+def signals_meta(user: User = Depends(current_user)):
+    from .. import signals
+
+    return signals.meta()
+
+
+@router.get("/signals/nfhs")
+def signals_nfhs(ind: str = "sugar_women", round: str = "", state: str = "", user: User = Depends(current_user)):  # noqa: A002
+    from .. import signals
+
+    return signals.nfhs(ind, round, state)
+
+
+@router.get("/signals/outbreaks")
+def signals_outbreaks(weeks: int = Query(26, ge=1, le=260), disease: str = "", state: str = "", user: User = Depends(current_user)):
+    from .. import signals
+
+    return signals.outbreaks(weeks, disease, state)
+
+
+@router.get("/signals/trade")
+def signals_trade(hs: str = Query("", pattern=r"^(|\d{4})$"), flow: str = Query("export", pattern="^(export|import)$"),
+                  user: User = Depends(current_user)):
+    from .. import signals
+
+    return signals.trade(hs, flow)
