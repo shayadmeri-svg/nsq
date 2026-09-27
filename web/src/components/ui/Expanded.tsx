@@ -36,11 +36,12 @@ export function ExpandedView({ sections, active, onChange, title, subtitle }: {
   const cur = sections.find((s) => s.id === active);
   useEffect(() => {
     if (!active) return;
-    const idx = sections.findIndex((s) => s.id === active);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onChange(null);
+      if (e.key === "Escape") { e.preventDefault(); onChange(null); return; }
       if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.altKey) {
         e.preventDefault();
+        const idx = sections.findIndex((s) => s.id === active);
+        if (idx === -1) return;
         const n = sections[(idx + (e.key === "ArrowDown" ? 1 : sections.length - 1)) % sections.length];
         onChange(n.id);
       }
@@ -49,7 +50,12 @@ export function ExpandedView({ sections, active, onChange, title, subtitle }: {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
-  }, [active, sections, onChange]);
+    // Only re-run when the modal opens/closes, not on every re-render of the
+    // caller's `sections` array (a fresh array/function identity each render
+    // would tear down and re-attach these listeners continuously, which can
+    // eat clicks meant for the close button and make the page feel frozen).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, onChange]);
   return (
     <AnimatePresence>
       {cur && (

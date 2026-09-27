@@ -458,7 +458,7 @@ export function Workbench({ initial }: { initial?: string }) {
 
   const [active, setActive] = useState<string | null>(null);
   const open = (id: string) => setActive(id);
-  const sections: Section[] = d ? [
+  const sections: Section[] = useMemo(() => d ? [
     { id: "score", title: "Why these scores", icon: <Gauge size={16} />, subtitle: "Each pillar's explanation and the plant fit part by part", render: () => <ScoreDetail d={d} /> },
     { id: "passport", title: "Regulatory passport", icon: <ScrollText size={16} />, subtitle: d.patent.brand_name ? `${d.patent.brand_name} · ${d.patent.originator}` : d.patent.originator, render: () => <PassportDetail d={d} /> },
     { id: "markets", title: "Where it can be sold", icon: <Globe2 size={16} />, subtitle: "Patent status per country", render: () => <MarketsDetail d={d} /> },
@@ -467,7 +467,7 @@ export function Workbench({ initial }: { initial?: string }) {
     { id: "fit", title: "Plant fit across the registry", icon: <Factory size={16} />, subtitle: "Every plant scored for this molecule's form", render: () => <FitRanking bare moleculeKey={key} onScore={(id) => { setPlant(`reg:${id}`); }} /> },
     { id: "makers", title: "Who can make it", icon: <Users size={16} />, subtitle: "API makers, plants that made it, plants permitted to make the form, API filings", render: () => <MakersCard bare moleculeKey={key} /> },
     { id: "synthesis", title: "How it's made", icon: <FlaskConical size={16} />, subtitle: "Reactions from the Open Reaction Database", render: () => <Synthesis bare moleculeKey={key} /> },
-  ] : [];
+  ] : [], [d, key]);
 
   return (
     <ExpandedProvider sections={sections} active={active} onActive={setActive} title={d?.patent.api_name ?? "Molecule"} subtitle={d?.patent.therapeutic_area}>
