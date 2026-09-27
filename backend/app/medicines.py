@@ -201,12 +201,17 @@ def chembl(name: str) -> Optional[dict[str, Any]]:
         mols = (d or {}).get("molecules") or []
         if not mols:
             continue
-        exact = [x for x in mols if _fold(x.get("pref_name") or "") == _fold(cand)]
-        # prefer a match that actually has a structure over an exact name match with none
-        with_smiles = [x for x in (exact or mols) if (x.get("molecule_structures") or {}).get("canonical_smiles")]
+        # An exact pref_name match is preferred, but ChEMBL sometimes splits one
+        # drug across several molecule records (e.g. the named parent with no
+        # structure, plus unnamed related entries that do have one) — so search
+        # every result this query returned for a usable structure, not just the
+        # exact-name subset, before falling further back to any other candidate name.
+        with_smiles = [x for x in mols if (x.get("molecule_structures") or {}).get("canonical_smiles")]
         if with_smiles:
-            mols = with_smiles
+            exact_with_smiles = [x for x in with_smiles if _fold(x.get("pref_name") or "") == _fold(cand)]
+            mols = exact_with_smiles or with_smiles
             break
+        exact = [x for x in mols if _fold(x.get("pref_name") or "") == _fold(cand)]
         mols = exact or mols
     if not mols:
         return None
