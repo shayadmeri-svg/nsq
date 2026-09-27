@@ -68,6 +68,7 @@ DOSAGE_FORMS: dict[str, list[str]] = {
     "capsule_hard": [r"(?<!gelatin )(?<!gelatine )(?<!geletin )(?<!soft )\bca[po]s?\s?u?les?\b", r"\bcaps\b", r"hard gelatin"],
     "capsule_soft": [r"soft\s*ge[lt]", r"\bsgc\b"],
     "lozenge": [r"lozenges?", r"pastilles?"],
+    "oral_film_gum": [r"mouth dissolving (strip|film)", r"oral (thin )?films?", r"\bstrips?\b", r"chew\w* gum", r"medicated gum"],
     "oral_liquid": [r"oral\s*liquid", r"liquid\s*orals?", r"(?<!dry )\bsyrups?\b", r"(?<!dry )(?<!oral )\bsuspensions?\b", r"\belixirs?\b",
                     r"oral solution", r"oral jelly", r"(?<!eye )(?<!ear )(?<!nasal )(?<!cough )\bdrops\b",
                     r"(?<!svp )(?<!svp,)(?<!svp ,)\bliquids?\b(?!\s*\(?\s*(inj|amp|vial|&\s*dry|and\s*dry|&\s*lyo))"],
@@ -78,20 +79,21 @@ DOSAGE_FORMS: dict[str, list[str]] = {
     "svp_dry_powder": [r"dry\s*powder\s*(inj|vial|fill)", r"powder for inject", r"parenteral\s*\(dry\)", r"injections?\s*\(liquid and dry\)",
                        r"\(\s*dry\s*\)", r"dry\s*powder", r"dry\s*inj"],
     "lyophilised": [r"lyoph?il+i?[sz]", r"lyohili[sz]", r"freeze[- ]dried"],
-    "lvp": [r"large volume parenteral", r"\blvp\b", r"i\.?v\.? fluids?", r"infusions?\b"],
+    "lvp": [r"large volume parenteral", r"\bl\.?\s?v\.?\s?p\b", r"i\.?v\.? fluids?", r"infusions?\b"],
     "prefilled_syringe": [r"pre-?filled", r"\bpfs\b", r"cartridges?"],
     "ophthalmic": [r"ophthal", r"opthal", r"\beye\b"],
     "otic_nasal": [r"\bear\b", r"\bnasal\b", r"\botic\b"],
-    "topical": [r"ointments?", r"creams?", r"\bgels?\b", r"lotions?", r"external\s*prep", r"topical", r"\bpastes?\b", r"dusting powder",
+    "topical": [r"ointments?", r"creams?", r"\bgels?\b", r"lotions?", r"ext\w*rnal\s*prep", r"topical", r"\bpastes?\b", r"dusting powder",
                 r"liniments?", r"shampoos?", r"disinfectants?", r"mouth ?wash", r"\bemulsions?\b"],
     "transdermal": [r"transdermal", r"\bpatch(es)?\b"],
     "suppository": [r"suppositor", r"pessar", r"vaginal"],
-    "inhalation": [r"inhal", r"aerosol", r"\bmdi\b", r"meter(ed)? dose", r"rotacap", r"respule", r"nebuli[sz]"],
-    "api": [r"\bapi'?s?\b", r"bulk\s*drugs?", r"active pharmaceutical ingredient", r"drug substance", r"intermediates?"],
+    "inhalation": [r"inhal", r"aerosol", r"respiratory solution", r"respirator solution", r"\bmdi\b", r"meter(ed)? dose", r"rotacap", r"respule", r"nebuli[sz]"],
+    "api": [r"\bapi'?s?\b", r"bulk\s*drugs?", r"active pharmaceutical", r"drug substance", r"intermediates?", r"raw materials?",
+            r"\b(usp|bp|ep|ip)(/(usp|bp|ep|ip))+\b"],
     "finished_unspecified": [r"^\s*formulations?\s*$"],
     "biological": [r"vaccines?", r"\bsera\b", r"biologic", r"monoclonal", r"recombinant", r"insulin", r"blood product", r"r-?dna", r"toxoid",
                    r"immunoglobulin"],
-    "medical_device": [r"medical devices?", r"sutures?", r"\bstents?\b", r"catheters?"],
+    "medical_device": [r"medical devices?", r"sutures?", r"\bstents?\b", r"catheters?", r"intra-?uterine", r"\biud\b"],
 }
 
 # Products that Schedule M requires in dedicated, segregated facilities. A plant with a
@@ -161,17 +163,18 @@ _STATE_CANON = {"orissa": "Odisha", "pondicherry": "Puducherry", "uttaranchal": 
 _STATE_RE = re.compile(r"\b(" + "|".join(re.escape(s) for s in sorted(STATES, key=len, reverse=True)) + r")\b", re.I)
 
 
+def _compact(s: str) -> str:
+    return re.sub(r"[^a-z]", "", s.lower().replace("&", "and"))
+
+
+_STATE_BY_COMPACT = {_compact(st): _STATE_CANON.get(st.lower(), st) for st in STATES}
+
+
 def canon_state(s: Optional[str]) -> Optional[str]:
-    if not s:
+    """'TamilNadu', 'TAMIL NADU', 'Orissa', 'Jammu & Kashmir' -> canonical state name (or None)."""
+    if not s or len(s) > 45:
         return None
-    s = re.sub(r"\s+", " ", s).strip()
-    low = s.lower()
-    if low in _STATE_CANON:
-        return _STATE_CANON[low]
-    for st in STATES:
-        if st.lower() == low:
-            return _STATE_CANON.get(low, st)
-    return None
+    return _STATE_BY_COMPACT.get(_compact(s))
 
 
 # --------------------------------------------------------------------------- text helpers
@@ -233,6 +236,10 @@ def split_name_address(text: str) -> tuple[str, str]:
     head = t.split(",", 1)[0]
     ends = [m.end() for m in _COMPANY_WORD.finditer(head)]
     cut = ends[-1] if ends and ends[-1] <= 120 else len(head)
+    if t[:cut].count("(") > t[:cut].count(")"):  # "X Labs (a division of Y Ltd) Plot 4..." -> close the bracket
+        close = t.find(")", cut)
+        if close != -1 and close - cut < 60:
+            cut = close + 1
     name, rest = t[:cut].strip(" ,.-"), t[cut:].strip(" ,.-")
     m = re.match(r"^[,\s-]*(\(?unit\s*[-–:]?\s*(?:[ivx]+|\d+)\)?)[,\s]*", rest, flags=re.I)
     if m:
@@ -397,22 +404,36 @@ class _Table(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
         a = dict(attrs)
         if tag == "tr":
+            self._close_row()  # CDSCO leaves </td></tr> off the last cell of each row
             self._row = []
         elif tag in ("td", "th") and self._row is not None:
+            self._close_cell()
             self._cell = []
         elif tag == "input" and (a.get("type") or "").lower() == "hidden" and a.get("name"):
             self.hidden[a["name"]] = a.get("value") or ""
         elif tag == "br" and self._cell is not None:
             self._cell.append(" ")
 
-    def handle_endtag(self, tag: str) -> None:
-        if tag in ("td", "th") and self._cell is not None and self._row is not None:
+    def _close_cell(self) -> None:
+        if self._cell is not None and self._row is not None:
             self._row.append(clean("".join(self._cell)))
-            self._cell = None
-        elif tag == "tr" and self._row is not None:
-            if self._row:
-                self.rows.append(self._row)
-            self._row = None
+        self._cell = None
+
+    def _close_row(self) -> None:
+        self._close_cell()
+        if self._row:
+            self.rows.append(self._row)
+        self._row = None
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("td", "th"):
+            self._close_cell()
+        elif tag in ("tr", "table", "form"):
+            self._close_row()
+
+    def close(self) -> None:
+        super().close()
+        self._close_row()
 
     def handle_data(self, data: str) -> None:
         if self._cell is not None:
@@ -425,6 +446,7 @@ SUGAM_COLS = ["sr", "licence_no", "premise_name", "loan_premise_name", "address"
 def parse_sugam_page(page_html: str) -> tuple[list[dict[str, Any]], dict[str, str]]:
     p = _Table()
     p.feed(page_html)
+    p.close()
     out = []
     for r in p.rows:
         if len(r) != 9 or not r[0].strip().isdigit():
@@ -492,76 +514,147 @@ def crawl_sugam(ctx: Ctx, *, sleep: float = 1.0) -> list[dict[str, Any]]:
 
 # --------------------------------------------------------------------------- WHO-GMP PDF
 
-def _state_heading(row: list[str]) -> Optional[str]:
-    vals = [c for c in row if c]
-    if len(vals) == 1 and len(vals[0]) < 45:
-        return canon_state(vals[0])
-    return None
+_SERIAL = re.compile(r"^\d{1,4}\.?$")
+_SUMMARY = re.compile(r"^(\d+|nil)$", re.I)
 
 
-def parse_who_gmp_rows(rows: Iterable[list[Optional[str]]]) -> list[dict[str, Any]]:
-    """Table rows (any page order, header rows included) -> one entry per certified unit.
+def _cluster(vals: Iterable[float], tol: float = 2.0) -> list[float]:
+    out: list[float] = []
+    for v in sorted(vals):
+        if not out or v - out[-1] > tol:
+            out.append(v)
+    return out
 
-    Expected columns: S.No | Sub Sr. No | Name and address | Category of drugs.
-    A row with no serial number and no name continues the previous unit (page breaks).
+
+def _columns(vedges: list[dict[str, float]], width: float) -> tuple[float, float]:
+    """(name_left, category_left) from the page's vertical rules.
+
+    The two widest columns are name/address (left) and category (right); the narrow columns
+    left of the name hold the serial numbers. Slivers from misaligned cell borders are ignored.
+    """
+    xs = _cluster([e["x0"] for e in vedges if e["bottom"] - e["top"] > 8], tol=4)
+    cols = [c for c in zip(xs, xs[1:]) if c[1] - c[0] > 0.12 * width]
+    if len(cols) >= 2:
+        a, b = sorted(sorted(cols, key=lambda c: c[1] - c[0])[-2:])
+        if a[0] > 0.08 * width:  # there is room for the serial columns
+            return a[0], b[0]
+    return 0.20 * width, 0.62 * width  # CDSCO's usual layout on A4: 120 / 370 of 595 pt
+
+
+def _row_rules(hedges: list[dict[str, float]], name_left: float) -> list[float]:
+    """y of the horizontal rules that separate table rows.
+
+    A row border runs unbroken from the serial columns into the name column. Word also draws
+    text boxes inset ~5 pt inside each cell; their edges stop short of the cell borders, leave
+    gaps between columns, and must not split a row.
+    """
+    out = []
+    for y in _cluster([e["top"] for e in hedges]):
+        segs = sorted((e["x0"], e["x1"]) for e in hedges if abs(e["top"] - y) <= 2.0)
+        run_start, run_end = None, None
+        for x0, x1 in segs:
+            if run_end is not None and x0 <= run_end + 1.0:
+                run_end = max(run_end, x1)
+            else:
+                if run_start is not None and run_start < name_left - 5 and run_end > name_left + 40:
+                    break
+                run_start, run_end = x0, x1
+        if run_start is not None and run_start < name_left - 5 and run_end > name_left + 40:
+            out.append(y)
+    return out
+
+
+def _col_text(words: list[dict[str, Any]]) -> str:
+    lines: list[list[dict[str, Any]]] = []
+    for w in sorted(words, key=lambda w: (w["top"], w["x0"])):
+        if lines and abs(w["top"] - lines[-1][0]["top"]) <= 3:
+            lines[-1].append(w)
+        else:
+            lines.append([w])
+    return clean("\n".join(" ".join(x["text"] for x in sorted(l, key=lambda w: w["x0"])) for l in lines))
+
+
+def units_from_layout(pages: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Certified units from positioned words and ruling lines, page by page.
+
+    Each page: {"width", "height", "words": [{text,x0,x1,top,bottom}], "hedges": [...], "vedges": [...]}.
+    Rows are the bands between horizontal rules that cross the serial-number column (rules drawn
+    only inside the category cell don't split a unit). A band with a serial number starts a unit;
+    a band without one continues the previous unit (rows split over a page break); a band holding
+    only a state name sets the state. The per-state summary table (State | count) is skipped.
     """
     units: list[dict[str, Any]] = []
     state: Optional[str] = None
-    for raw in rows:
-        row = [clean(c) for c in raw if c is not None]
-        row = row + [""] * (4 - len(row)) if len(row) < 4 else row
-        joined = " ".join(row).lower()
-        if not joined.strip() or "name and address" in joined or "category of drugs" in joined or "total no" in joined:
-            continue
-        st = _state_heading(row)
-        if st:
-            state = st
-            continue
-        if len(row) > 4:  # merged / split columns: serials first, category last, the rest is name+address
-            row = [row[0], row[1], " ".join(row[2:-1]), row[-1]]
-        sno, sub, name_addr, cat = row[:4]
-        if not re.match(r"^\d+\.?$", sno or "") and not name_addr and units:
-            units[-1]["category"] = clean(units[-1]["category"] + " " + cat)
-            continue
-        if not re.match(r"^\d+\.?$", sno or "") and units and not re.match(r"^\d+\.?$", sub or ""):
-            # continuation that carries both name and category fragments
-            units[-1]["name_address"] = clean(units[-1]["name_address"] + " " + name_addr)
-            units[-1]["category"] = clean(units[-1]["category"] + " " + cat)
-            continue
-        units.append({"serial": sno.rstrip("."), "state_serial": (sub or "").rstrip("."), "state": state,
-                      "name_address": name_addr, "category": cat})
+    for page_no, pg in enumerate(pages, 1):
+        name_left, cat_left = _columns(pg.get("vedges") or [], pg["width"])
+        ys = _row_rules(pg.get("hedges") or [], name_left)
+        bounds = [0.0] + ys + [pg["height"] + 1]
+        for y0, y1 in zip(bounds, bounds[1:]):
+            ws = [w for w in pg["words"] if y0 - 1 <= (w["top"] + w["bottom"]) / 2 < y1]
+            if not ws:
+                continue
+            serial_ws = [w for w in ws if w["x1"] <= name_left + 3 and _SERIAL.match(w["text"])]
+            name_ws = [w for w in ws if w["x0"] < cat_left - 2 and w not in serial_ws and not (w["x1"] <= name_left + 3 and w["x0"] < name_left - 3)]
+            cat_ws = [w for w in ws if w["x0"] >= cat_left - 2]
+            name, cat = _col_text(name_ws), _col_text(cat_ws)
+            low = (name + " " + cat).lower()
+            if "name and address" in low or "category of drugs" in low or "total no" in low:
+                continue
+            outside = y0 == 0.0 or y1 == pg["height"] + 1  # above the first rule / below the last
+            everything = _col_text([w for w in ws if w not in serial_ws])
+            if re.match(r"^[A-Za-z &.]+\s+(\d+|nil)$", everything, re.I) and canon_state(re.sub(r"\s+(\d+|nil)$", "", everything, flags=re.I)):
+                continue  # summary table row "Gujarat 1077", whatever its column layout
+            st = canon_state(everything) or canon_state(name) or (canon_state(cat) if not name else None)
+            if st and (not cat or _SUMMARY.match(cat) or not name):
+                if _SUMMARY.match(cat or ""):
+                    continue  # summary table row "Gujarat | 1077"
+                state = st
+                continue
+            if outside:
+                continue  # titles, dates and remarks around the table
+            serials = sorted(serial_ws, key=lambda w: w["x0"])
+            if serials and (name or cat):
+                units.append({"serial": serials[0]["text"].rstrip("."),
+                              "state_serial": serials[1]["text"].rstrip(".") if len(serials) > 1 else "",
+                              "state": state, "name_address": name, "category": cat, "page": page_no})
+            elif units and (name or cat):
+                u = units[-1]
+                u["name_address"] = clean(f"{u['name_address']} {name}")
+                u["category"] = clean(f"{u['category']} {cat}")
     return units
 
 
-def extract_pdf_rows(pdf_path: Path, log=print) -> list[list[Optional[str]]]:
+def read_pdf_layout(pdf_path: Path, log=print) -> list[dict[str, Any]]:
     try:
         import pdfplumber
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("pip install pdfplumber (needed to read CDSCO's WHO-GMP PDF)") from exc
-    rows: list[list[Optional[str]]] = []
+    pages = []
     with pdfplumber.open(str(pdf_path)) as pdf:
         for i, page in enumerate(pdf.pages, 1):
-            items: list[tuple[float, list[list[Optional[str]]]]] = []
-            boxes = []
-            for tb in page.find_tables({"vertical_strategy": "lines", "horizontal_strategy": "lines"}):
-                t = tb.extract()
-                boxes.append(tb.bbox)
-                # skip the per-state summary table on page 1 (S.No, State, Total)
-                if t and t[0] and any("total no" in (c or "").lower() for c in t[0]):
-                    continue
-                items.append((tb.bbox[1], t))
-            # state headings sometimes sit between tables as plain paragraphs
-            for line in page.extract_text_lines() if hasattr(page, "extract_text_lines") else []:
-                inside = any(b[0] - 1 <= line["x0"] and line["x1"] <= b[2] + 1 and b[1] - 1 <= line["top"] <= b[3] + 1 for b in boxes)
-                if not inside and canon_state(line["text"]):
-                    items.append((line["top"], [[line["text"]]]))
-            for _, t in sorted(items, key=lambda x: x[0]):
-                rows.extend(t)
+            words = page.extract_words(x_tolerance=1.5, y_tolerance=2, keep_blank_chars=False)
+            pages.append({"width": float(page.width), "height": float(page.height),
+                          "words": [{k: (w[k] if k == "text" else float(w[k])) for k in ("text", "x0", "x1", "top", "bottom")} for w in words],
+                          "hedges": [{k: float(e[k]) for k in ("x0", "x1", "top")} for e in page.horizontal_edges],
+                          "vedges": [{k: float(e[k]) for k in ("x0", "top", "bottom")} for e in page.vertical_edges]})
             if i % 25 == 0:
                 log(f"  WHO-GMP PDF: page {i}/{len(pdf.pages)}")
-        if len(pdf.pages) > 20 and len(rows) < 3 * len(pdf.pages):
-            log(f"  WARNING: only {len(rows)} table rows in {len(pdf.pages)} pages — CDSCO may have changed the PDF layout")
-    return rows
+    return pages
+
+
+def extract_who_units(pdf_path: Path, log=print) -> list[dict[str, Any]]:
+    units = units_from_layout(read_pdf_layout(pdf_path, log))
+    if not units:
+        log("  WARNING: no units read — CDSCO may have changed the PDF layout")
+    return units
+
+
+_DISTRICT = re.compile(r"\b(?:distt?|district)\b\.?\s*[:\-]*\s*([A-Za-z][A-Za-z ]{2,24}?)(?=\s*(?:[,.(\-]|\d|$|pin\b|h\.?p|himachal|assam|gujarat|\(|india))", re.I)
+
+
+def district_of(address: str) -> Optional[str]:
+    m = _DISTRICT.search(address or "")
+    return m.group(1).strip().title() if m else None
 
 
 def who_record(u: dict[str, Any], ref: str) -> dict[str, Any]:
@@ -573,6 +666,7 @@ def who_record(u: dict[str, Any], ref: str) -> dict[str, Any]:
         "address": address,
         "state": st or (canon_state(m.group(1)) if m else None),
         "pin": find_pin(address),
+        "district": district_of(address),
         "who_gmp": {"serial": u["serial"], "state_serial": u["state_serial"], "category": u["category"], "list": ref},
         "capabilities": parse_capabilities(u["category"], source="cdsco_who_gmp", ref=ref),
     }
@@ -580,9 +674,23 @@ def who_record(u: dict[str, Any], ref: str) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- merge
 
-def plant_id(name: str, state: Optional[str], pin: Optional[str], district: Optional[str]) -> str:
+def _street_key(address: Optional[str]) -> str:
+    """First plot / survey / khasra number in an address, to tell apart plants sharing a PIN."""
+    m = re.search(r"\b(?:plot|survey|sy|s\.?\s?no|gat|gut|khasra|kh|r\.?s|block|sector|shed|site)\b[\s.:-]*(?:no\.?)?[\s.:-]*([a-z]?[-/]?\d[\w/-]*)",
+                  (address or "").lower())
+    if m:
+        return re.sub(r"[^a-z0-9]+", "", m.group(1))
+    m = re.search(r"\b([a-z]{0,2}-?\d{1,4}[a-z]?)\b", (address or "").lower())
+    return re.sub(r"[^a-z0-9]+", "", m.group(1)) if m else ""
+
+
+def plant_id(name: str, state: Optional[str], pin: Optional[str], district: Optional[str], address: Optional[str] = None) -> str:
     loc = pin or re.sub(r"[^a-z0-9]+", "-", (district or state or "in").lower()).strip("-")
-    return f"{re.sub(r'[^a-z0-9]+', '-', name_key(name)).strip('-')}--{loc}"
+    street = _street_key(address)
+    if not street and not pin and address:
+        import hashlib
+        street = hashlib.sha1(re.sub(r"[^a-z0-9]", "", address.lower())[:60].encode()).hexdigest()[:6]
+    return f"{re.sub(r'[^a-z0-9]+', '-', name_key(name)).strip('-')}--{loc}" + (f"--{street}" if street else "")
 
 
 def _empty_caps() -> dict[str, Any]:
@@ -618,7 +726,7 @@ def build_registry(sugam: list[dict[str, Any]], who: list[dict[str, Any]]) -> tu
     plants: dict[str, dict[str, Any]] = {}
 
     def upsert(rec: dict[str, Any], src: str) -> str:
-        pid = plant_id(rec["name"], rec.get("state"), rec.get("pin"), rec.get("district"))
+        pid = plant_id(rec["name"], rec.get("state"), rec.get("pin"), rec.get("district"), rec.get("address"))
         p = plants.get(pid)
         if p is None:
             p = plants[pid] = {"id": pid, "name": rec["name"], "name_key": name_key(rec["name"]), "unit": unit_of(rec["name"]),
@@ -741,7 +849,10 @@ def run(ctx: Ctx) -> int:
         try:
             sugam_raw = crawl_sugam(ctx, sleep=float(ctx.options.get("sleep", 1.0)))
         except Unreachable as exc:
-            ctx.log(f"  SUGAM unreachable ({exc}); continuing with the WHO-GMP list only")
+            cached = sorted(ctx.raw_dir.glob("sugam_p*.html"))
+            ctx.log(f"  SUGAM unreachable ({exc}); using the {len(cached)} pages saved by the last crawl")
+            for f in cached:
+                sugam_raw.extend(parse_sugam_page(f.read_text(encoding="utf-8"))[0])
     sugam = [sugam_record(r) for r in sugam_raw]
 
     # 2. WHO-GMP certified units (PDF)
@@ -756,7 +867,7 @@ def run(ctx: Ctx) -> int:
             pdf, ref = None, None
     who: list[dict[str, Any]] = []
     if pdf:
-        units = parse_who_gmp_rows(extract_pdf_rows(pdf, ctx.log))
+        units = extract_who_units(pdf, ctx.log)
         who = [who_record(u, ref) for u in units if u["name_address"]]
         ctx.log(f"  WHO-GMP list: {len(who)} certified units")
 
