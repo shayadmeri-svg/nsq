@@ -72,20 +72,25 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
   const k = d.kpis;
   const hm = heat === "mfr_reason" ? d.heat_mfr_reason : heat === "mfr_molecule" ? d.heat_mfr_molecule : d.heat_form_lab;
 
-  const breakdowns = [
+  const breakdowns = useMemo(() => [
     { id: "categories", title: "Failure categories", hint: "Click to filter", icon: <ShieldAlert size={14} />, rows: d.categories, color: "#e11d48", onClick: (n: string) => set({ ...f, category: toggle(f.category, n) }) },
     { id: "forms", title: "Dosage forms", hint: "Click to filter", icon: <Pill size={14} />, rows: d.forms, color: "#f59e0b", onClick: (n: string) => set({ ...f, form: toggle(f.form, n) }) },
     { id: "classes", title: "Therapeutic class", hint: "Click to filter", icon: <Stethoscope size={14} />, rows: d.drug_types, color: "#10b996", onClick: (n: string) => set({ ...f, drug_type: toggle(f.drug_type, n) }) },
     { id: "makers", title: "Most-flagged manufacturers", hint: "Click to search", icon: <Factory size={14} />, rows: d.top_manufacturers, color: "#f59e0b", onClick: (n: string) => set({ ...f, q: n }) },
     { id: "products", title: "Most-flagged products", hint: "Brand and strength as labelled", icon: <Package size={14} />, rows: d.top_products, color: "#8b5cf6", onClick: undefined },
     { id: "labs", title: "Testing labs", hint: "Who found them", icon: <FlaskConical size={14} />, rows: d.labs, color: "#0ea5e9", onClick: undefined },
-  ];
-  const cells: { row: string; col: string; v: number }[] = [];
-  (d.heat_mfr_reason?.rows ?? []).forEach((r: string, i: number) => (d.heat_mfr_reason.cols ?? []).forEach((c: string, j: number) => cells.push({ row: r, col: c, v: d.heat_mfr_reason.values[i][j] })));
-  const hot = cells.sort((a, b2) => b2.v - a.v)[0];
-  const hmPreview: number[] = (d.heat_mfr_reason?.values ?? []).slice(0, 6).flatMap((r: number[]) => r.slice(0, 12).concat(Array(Math.max(0, 12 - r.length)).fill(0)));
-  const hmMax = Math.max(1, ...hmPreview);
-  const sections: Section[] = [
+  ], [d, f, set]);
+
+  const { hot, hmPreview, hmMax } = useMemo(() => {
+    const cells: { row: string; col: string; v: number }[] = [];
+    (d.heat_mfr_reason?.rows ?? []).forEach((r: string, i: number) => (d.heat_mfr_reason.cols ?? []).forEach((c: string, j: number) => cells.push({ row: r, col: c, v: d.heat_mfr_reason.values[i][j] })));
+    const hot = cells.sort((a, b2) => b2.v - a.v)[0];
+    const hmPreview: number[] = (d.heat_mfr_reason?.values ?? []).slice(0, 6).flatMap((r: number[]) => r.slice(0, 12).concat(Array(Math.max(0, 12 - r.length)).fill(0)));
+    const hmMax = Math.max(1, ...hmPreview);
+    return { hot, hmPreview, hmMax };
+  }, [d]);
+
+  const sections: Section[] = useMemo(() => [
     ...breakdowns.map((b) => ({ id: b.id, title: b.title, icon: b.icon, subtitle: b.hint, render: () => <div className="max-w-3xl"><RankBars rows={b.rows} color={b.color} onClick={b.onClick ? (n: string) => { b.onClick!(n); setActive(null); } : undefined} /></div> })),
     { id: "heatmap", title: "Heatmap", icon: <Grid3x3 size={16} />, subtitle: "Where problems concentrate — darker = more alerts", render: () => (
       <div>
@@ -102,7 +107,8 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
         <div className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-line"><SankeyChart data={flow === "state" ? d.sankey_state : d.sankey_molecule} height={620} /></div>
       </div>
     ) },
-  ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [breakdowns, heat, topMfr, flow, hm, d, f, set]);
 
   return (
     <ExpandedProvider sections={sections} active={active} onActive={setActive} title="NSQ explorer" subtitle={`${k.alerts.toLocaleString("en-IN")} alerts in view`}>

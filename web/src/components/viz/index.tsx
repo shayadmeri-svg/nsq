@@ -4,7 +4,7 @@ import { geoMercator, geoNaturalEarth1, geoPath } from "d3-geo";
 import type { FeatureCollection, Geometry } from "geojson";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, ChevronDown, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
 import { feature } from "topojson-client";
 import worldTopo from "world-atlas/countries-110m.json";
@@ -56,18 +56,29 @@ export function IndiaMap({ geo, values, selected, onPick, height = 460, metricLa
   const max = Math.max(1, ...values.filter((v) => v.name !== "Unknown").map((v) => v.count));
   const path = useMemo(() => geoPath(geoMercator().fitSize([w, height], geo as any)), [w, height, geo]);
   const unmapped = values.filter((v) => v.name !== "Unknown" && !geo.features.some((f) => normState(f.properties.name) === normState(v.name)));
+  const raf = useRef<number>();
+  const onMove = (e: ReactMouseEvent<SVGSVGElement>) => {
+    const target = e.target as SVGElement;
+    const name = target instanceof SVGPathElement ? target.dataset.name : undefined;
+    if (raf.current) cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      const r = ref.current!.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      if (!name) { setHover(null); return; }
+      setHover((prev) => (prev?.name === name && prev.x === x && prev.y === y) ? prev : { name, x, y, row: byName[normState(name)] });
+    });
+  };
   return (
     <div ref={ref} className="relative">
-      <svg width={w} height={height} className="block">
+      <svg width={w} height={height} className="block" onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
         {geo.features.map((f, i) => {
           const row = byName[normState(f.properties.name)];
           const sel = selected?.some((s) => normState(s) === normState(f.properties.name));
           return (
-            <motion.path key={f.properties.name + i} d={path(f as any) ?? ""} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.01 }}
+            <motion.path key={f.properties.name + i} data-name={f.properties.name} d={path(f as any) ?? ""} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.01 }}
               fill={shade(row?.count ?? 0, max)} stroke={sel ? "#0f172a" : "#fff"} strokeWidth={sel ? 1.6 : 0.6}
               className={cn("transition-[fill]", onPick && row && "cursor-pointer hover:brightness-95")}
-              onMouseMove={(e) => { const r = ref.current!.getBoundingClientRect(); setHover({ name: f.properties.name, x: e.clientX - r.left, y: e.clientY - r.top, row }); }}
-              onMouseLeave={() => setHover(null)} onClick={() => row && onPick?.(row.name)} />
+              onClick={() => row && onPick?.(row.name)} />
           );
         })}
       </svg>
@@ -110,17 +121,31 @@ export function WorldMap({ colorFor, isSelected, onPick, tooltip, height = 420 }
   }, []);
   const feats = useMemo(() => ({ ...WORLD, features: WORLD.features.filter((f) => f.properties.name !== "Antarctica") }), []);
   const path = useMemo(() => geoPath(geoNaturalEarth1().fitSize([w, height], feats as any)), [w, height, feats]);
+  const byId = useMemo(() => Object.fromEntries(feats.features.map((f: any) => [String(f.id), f])), [feats]);
+  const raf = useRef<number>();
+  const onMove = (e: ReactMouseEvent<SVGSVGElement>) => {
+    const target = e.target as SVGElement;
+    const id = target instanceof SVGPathElement ? target.dataset.id : undefined;
+    if (raf.current) cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      const r = ref.current!.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      if (!id) { setHover(null); return; }
+      const f = byId[id];
+      const code = ISO_NUM[id.padStart(3, "0")] ?? null;
+      setHover((prev) => (prev?.code === code && prev.x === x && prev.y === y) ? prev : { code, name: f?.properties.name, x, y });
+    });
+  };
   return (
     <div ref={ref} className="relative">
-      <svg width={w} height={height} className="block">
+      <svg width={w} height={height} className="block" onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
         {feats.features.map((f: any, i) => {
           const code = ISO_NUM[String(f.id).padStart(3, "0")] ?? null;
           const sel = !!code && !!isSelected?.(code);
           return (
-            <path key={i} d={path(f) ?? ""} fill={colorFor(code)} stroke={sel ? "#0f172a" : "#fff"} strokeWidth={sel ? 1.2 : 0.4}
+            <path key={i} data-id={String(f.id)} d={path(f) ?? ""} fill={colorFor(code)} stroke={sel ? "#0f172a" : "#fff"} strokeWidth={sel ? 1.2 : 0.4}
               className={cn(code && onPick && "cursor-pointer hover:brightness-95")}
-              onMouseMove={(e) => { const r = ref.current!.getBoundingClientRect(); setHover({ code, name: f.properties.name, x: e.clientX - r.left, y: e.clientY - r.top }); }}
-              onMouseLeave={() => setHover(null)} onClick={() => code && onPick?.(code)} />
+              onClick={() => code && onPick?.(code)} />
           );
         })}
       </svg>
