@@ -242,6 +242,18 @@ class Sources:
             n = read_normalized(name)
             self.data[name] = (n or {}).get("data", {}) or {}
             self.meta[name] = {k: v for k, v in (n or {}).items() if k != "data"}
+        # Fallback index by salt-free ingredient key ("clopidogrel bisulfate" -> "clopidogrel")
+        self.folded: dict[str, dict[str, Any]] = {
+            name: {fk: v for k, v in d.items() if (fk := ing.ingredient_key(k)) and fk != k}
+            for name, d in self.data.items()}
+
+    def _fold(self, name: str, names: list[str]) -> Optional[dict[str, Any]]:
+        idx = self.folded.get(name) or {}
+        for n in names:
+            for k in (ing.ingredient_key(n), ing.ingredient_key(ing.us_name(ing.ingredient_key(n)))):
+                if k and k in idx and not idx[k].get("combination_only"):
+                    return idx[k]
+        return None
 
     def at(self, name: str) -> str:
         return (self.meta.get(name) or {}).get("retrieved_at", "")
@@ -256,7 +268,7 @@ class Sources:
                     e = d.get(cand)
                     if e and not e.get("combination_only"):
                         return e
-        return None
+        return self._fold("orange_book", names)
 
     def ema(self, names: list[str]) -> Optional[dict[str, Any]]:
         d = self.data["ema"]
@@ -265,7 +277,7 @@ class Sources:
             for cand in (k, ing.us_name(k), k.split()[0] if k else ""):
                 if cand and cand in d:
                     return d[cand]
-        return None
+        return self._fold("ema", names)
 
     def pb(self, names: list[str]) -> Optional[dict[str, Any]]:
         d = self.data["purple_book"]
@@ -273,7 +285,7 @@ class Sources:
             k = proper_key(n)
             if k in d:
                 return d[k]
-        return None
+        return self._fold("purple_book", names)
 
 
 # --- record builders -------------------------------------------------------------------

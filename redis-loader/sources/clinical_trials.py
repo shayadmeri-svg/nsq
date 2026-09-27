@@ -54,9 +54,19 @@ def query_molecule(names: list[str]) -> dict[str, Any]:
 
 def _candidates() -> list[dict[str, Any]]:
     p = data_dir() / "generated" / "candidates.json"
-    if not p.exists():
+    out = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+    # Molecules just added in the app (exported before every build) are queried
+    # straight away, before the universe build that would list them.
+    seen = {c["key"] for c in out}
+    e = data_dir() / "generated" / "molecules.json"
+    if e.exists():
+        for m in json.loads(e.read_text(encoding="utf-8")):
+            if m.get("added") and m["key"] not in seen:
+                v = m.get("values") or {}
+                out.append({"key": m["key"], "names": [v.get("api_name") or m["name"], *(v.get("aliases") or [])]})
+    if not out:
         raise RuntimeError("No molecule candidates yet — run 'Build molecule universe' (build_universe.py) first.")
-    return json.loads(p.read_text(encoding="utf-8"))
+    return out
 
 
 def run(ctx: Ctx) -> int:
@@ -78,7 +88,13 @@ def run(ctx: Ctx) -> int:
             return float("inf")
         return (now - datetime.fromisoformat(f)).total_seconds()
 
-    due = [c for c in cands if ctx.force or age(c["key"]) > max_age.total_seconds()]
+    if ctx.options.get("missing_only"):
+        due = [c for c in cands if c["key"] not in prev]
+        if not due:
+            ctx.log(f"{len(cands)} molecules, all have trial counts")
+            return len(prev)
+    else:
+        due = [c for c in cands if ctx.force or age(c["key"]) > max_age.total_seconds()]
     due.sort(key=lambda c: -age(c["key"]))
     todo = due[:limit]
     ctx.log(f"{len(cands)} molecules, {len(due)} due, querying {len(todo)} this run (4 requests each; the rest follow on later runs)")

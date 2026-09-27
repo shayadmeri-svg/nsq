@@ -177,12 +177,13 @@ def _universe_steps(p: dict[str, Any]):
     if str(p.get("min_alerts") or "").strip().isdigit():
         build += ["--min-alerts", str(p["min_alerts"]).strip()]
     return [
+        # Newly added molecules get trial counts and a structure before the build, so one pass is complete
+        Step("Trial counts for new molecules (ClinicalTrials.gov)", [PY, "fetch_source.py", "clinical_trials", "--missing-only"], allow_fail=True, ok_codes={3}),
+        Step("Structures for new molecules (PubChem)", [PY, "fetch_source.py", "pubchem", "--missing-only"], allow_fail=True, ok_codes={3}),
         Step("Build molecule universe (curated seeds + public sources + NSQ ingredients)", build),
         Step("Load patents", [PY, "load_patents.py", "--input", _gen("patents.json"), "--redis-url", _local(), "--flush"]),
         Step("Load regulatory passports", [PY, "load_regulatory.py", "--input", _gen("regulatory.json"), "--redis-url", _local(), "--flush"]),
         Step("Load demand profiles", [PY, "load_demand.py", "--input", _gen("demand.json"), "--redis-url", _local(), "--flush"]),
-        # New molecules get a chemical structure straight away (only never-seen ones; PubChem may be unreachable)
-        Step("Fetch structures for new molecules (PubChem)", [PY, "fetch_source.py", "pubchem", "--missing-only"], allow_fail=True, ok_codes={3}),
     ]
 
 

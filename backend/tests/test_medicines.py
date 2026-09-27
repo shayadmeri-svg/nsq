@@ -68,7 +68,7 @@ def test_save_list_and_lab_structures(root):
     body = {"name": "Telmisartan 40 mg Tablets", "dosage_form": "Tablet", "route": "Oral", "excipients": ["meglumine"],
             "ingredients": [{"name": "Zzmedicinib", "role": "active", "strength": {"value": 40, "unit": "mg"},
                              "smiles": "CC(=O)Nc1ccc(OC)cc1", "structure_source": "typed", "pka_base": 5.1}]}
-    r = root.post("/api/medicines", json=body, headers=H)
+    r = root.post("/api/medicines", json={**body, "track": False}, headers=H)
     assert r.status_code == 200, r.text
     mid = r.json()["id"]
     assert r.json()["gap_score"]["total"] > 5

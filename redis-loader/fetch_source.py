@@ -81,7 +81,7 @@ def main() -> int:
     ap.add_argument("--from-file", help="Parse a file you downloaded instead of fetching.")
     ap.add_argument("--force", action="store_true", help="Ignore HTTP caching / refresh everything.")
     ap.add_argument("--limit", type=int, help="Per-run cap (clinical_trials, pubchem).")
-    ap.add_argument("--missing-only", action="store_true", help="pubchem: only molecules never looked up (fast; runs after every universe build).")
+    ap.add_argument("--missing-only", action="store_true", help="pubchem / clinical_trials: only molecules never looked up (fast; runs before every universe build).")
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
     if args.list or not args.source:

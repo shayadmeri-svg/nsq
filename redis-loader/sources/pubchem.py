@@ -122,6 +122,12 @@ def _targets() -> list[dict[str, Any]]:
     if p.exists():
         for c in json.loads(p.read_text(encoding="utf-8")):
             out[c["key"]] = {"key": c["key"], "names": c.get("names") or [c["key"]]}
+    entered = data_dir() / "generated" / "molecules.json"
+    if entered.exists():
+        for m in json.loads(entered.read_text(encoding="utf-8")):
+            if m.get("added"):
+                v = m.get("values") or {}
+                out.setdefault(m["key"], {"key": m["key"], "names": [v.get("api_name") or m["name"], *(v.get("aliases") or [])]})
     seed = data_dir() / "structures_seed.json"
     if seed.exists():
         for k, v in json.loads(seed.read_text(encoding="utf-8")).get("molecules", {}).items():

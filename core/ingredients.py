@@ -39,12 +39,17 @@ _STOP = {
     "fumarate", "acetate", "trihydrate", "monohydrate", "dihydrate", "hemihydrate", "anhydrous",
     "bromide", "dipropionate", "propionate", "valerate", "nitrate", "lactate", "gluconate", "carbonate",
     "oxide", "hyclate", "disodium", "dimaleate", "bitartrate", "palmitate", "stearate", "benzoate",
+    "bisulfate", "bisulphate", "oxalate", "tosylate", "napsylate", "pamoate", "embonate", "mesilate", "camsylate",
+    "edisylate", "esylate", "isethionate", "hemifumarate", "sesquihydrate", "tromethamine", "trometamol", "olamine",
+    "hydroiodide", "dimesylate", "decanoate", "enanthate", "undecanoate", "hemitartrate",
     "salt", "base", "dihydrochloride", "compound", "combination", "kit", "equivalent", "eq", "to", "as", "ip2022", "ip2018",
 }
 
 # The API name of each tracked molecule reduces to one of these keys.
 def ingredient_key(text: str) -> str:
-    raw = re.findall(r"[a-z]+", text.lower())
+    # "hydrogen sulphate" is a salt (clopidogrel hydrogen sulphate); "hydrogen peroxide" is not
+    text = re.sub(r"\bhydrogen\s+sul(?:ph|f)ate\b", "sulfate", text.lower())
+    raw = re.findall(r"[a-z]+", text)
     words: list[str] = []
     for w in raw:
         if w == "vit":
