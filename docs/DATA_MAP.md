@@ -243,3 +243,10 @@ beta-lactam or cytotoxic blocks, export barcoding for WHO-GMP units) or `inferre
 coating for tablets), each with the rule text. It feeds the plant drawer's coverage view, "Add as plant", and
 Infrastructure → "Match with CDSCO registry", which adds these tokens to an existing plant without downgrading anything
 stated or entered.
+
+`redis-loader/sources/eudragmdp.py` crawls EudraGMDP for every Indian GMP certificate and statement of non-compliance
+(a Struts session: form POST search, `action=Page&param=N`, `action=Drilldown&param=<id>` only for rows on the current
+page). Part 2 scope lines (Union coded format) become stated capabilities through `capability_rules.from_eu_scope`;
+statements of non-compliance keep the inspectors' "nature of non-compliance". `plants.py` attaches each EU site to a
+registry plant (company + PIN, or company + town) or adds it as an EU-only plant; the site's status is
+non-compliant when its latest document is a statement of non-compliance.

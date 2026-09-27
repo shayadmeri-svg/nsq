@@ -230,6 +230,15 @@ def apply_registry(approved: list[str], caps: list[str], basis: dict[str, str], 
         elif v["basis"] == "required" and basis.get(t) in (None, "inferred", "derived"):
             basis[t] = "required"
             upgraded.append(t)
+    for t, lines in (reg.get("eu_stated") or {}).items():  # stated by an EU GMP certificate
+        why[t] = "EU GMP certificate scope: " + "; ".join(lines)
+        if t not in caps:
+            caps.append(t)
+            added.append(t)
+        if basis.get(t) != "stated":
+            if t not in added:
+                upgraded.append(t)
+            basis[t] = "stated"
     for f in capability_rules.approved_forms(rin):
         if f not in approved:
             approved.append(f)
@@ -275,6 +284,9 @@ def plant_from_site(site: dict[str, Any], asset_id: str, cdsco: Optional[dict[st
         if reg[0].get("who_gmp"):
             certs.append("WHO_GMP")
             cert_basis["WHO_GMP"] = "CDSCO WHO-GMP certified units list"
+        if reg[0].get("eu_gmp"):
+            certs.append("EU_GMP")
+            cert_basis["EU_GMP"] = f"EudraGMDP certificate, inspected {reg[0].get('eu_last')}"
         sources.append({"label": "CDSCO WHO-GMP certified units / approved manufacturing sites", "url": "https://cdscoonline.gov.in/CDSCO/manuf_site"})
         summary += f" CDSCO lists this plant ({reg[0]['name']}): {', '.join(reg[0].get('dosage_forms', [])) or 'no forms parsed'}" + \
             (f"; segregated blocks: {', '.join(reg[0].get('segregated') or {})}" if reg[0].get("segregated") else "") + "."

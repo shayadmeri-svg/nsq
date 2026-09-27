@@ -226,6 +226,7 @@ SOURCE_TITLES = {
     "clinical_trials": "ClinicalTrials.gov trial counts",
     "pubchem": "PubChem structures & melting points",
     "cdsco_plants": "CDSCO plant registry (WHO-GMP + SUGAM)",
+    "eudragmdp": "EU GMP certificates (EudraGMDP, India)",
 }
 _SOURCE_JOB_DESC = {
     "orange_book": "US patents, exclusivity, RLD/TE codes and ANDA competitors per ingredient. Rebuilds the molecule universe after.",
@@ -235,6 +236,7 @@ _SOURCE_JOB_DESC = {
     "pubchem": "SMILES, XLogP3 and experimental melting points per molecule for the lab (80 per run; each re-checked monthly).",
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
+    "eudragmdp": "Every EU GMP certificate and statement of non-compliance for Indian sites, with the approved operations (Union coded scope) — stated capabilities and EU status in the plant registry. Needs a network EudraGMDP answers (a laptop works).",
     "fda_import_alerts": "Indian firms on the drug-GMP red list — feeds the site directory.",
     "fda_recalls": "US recalls of drugs made by Indian firms — feeds the site directory.",
 }

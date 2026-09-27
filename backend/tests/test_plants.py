@@ -92,3 +92,55 @@ def test_org_plant_registry_match_and_apply(admin):
     assert have and "Grade A" in have[0]["why"]
     assert p["reference"]["registry"]["id"] == target["id"]
     request_cleanup()
+
+
+def _eu_fixture():
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(root / "redis-loader"))
+    from sources import eudragmdp as e
+
+    fx = root / "redis-loader" / "tests" / "fixtures" / "eudragmdp"
+    docs = {}
+    for i, (f, pc, city) in enumerate([("gmpc_fdf_emcure", "382865", "Vijapur"), ("gmpc_api_pharmazell", "600045", "Chennai"),
+                                       ("ncr_aculife", "382150", "Ahmedabad"), ("gmpc_bio_serum", "411028", "Pune")]):
+        d = e.parse_certificate((fx / f"{f}.html").read_text())
+        docs[str(i)] = {**d, "id": str(i), "site_name": d["manufacturer"], "postcode": pc, "city": city}
+    # a site on no CDSCO list
+    docs["9"] = {**docs["0"], "id": "9", "oms_loc": "LOC-999", "site_name": "Zzyzx Remedies Private Limited", "manufacturer": "Zzyzx Remedies",
+                 "postcode": "500090", "city": "Hyderabad", "address": "Plot 1, Hyderabad, 500090"}
+    return {"data": e.build_sites(docs), "retrieved_at": "2026-09-27", "total_listed": 5}
+
+
+def test_eu_gmp_merged_into_registry(monkeypatch):
+    from app import plants
+
+    if not _have_registry():
+        pytest.skip("data/sources/cdsco_plants.json not present")
+    eu = _eu_fixture()
+    real = plants._load
+    monkeypatch.setattr(plants, "_load", lambda name="cdsco_plants": (123.0, eu) if name == "eudragmdp" else real(name))
+    monkeypatch.setattr(plants, "_cache", None)
+    reg = plants.registry()
+    ps = reg["plants"].values()
+    emcure = next(p for p in ps if p.get("pin") == "382865" and "emcure" in p["name"].lower())
+    assert emcure["eu"]["status"] == "compliant" and "eudragmdp" in emcure["sources"]
+    prof = plants.catalog_profile(emcure)
+    comp = [h for s in prof["sections"] for h in s["have"] if h["token"] == "compression"][0]
+    assert comp["basis"] == "stated" and "1.2.1.13 Tablets" in comp["why"][0]
+    aculife = [p for p in ps if p.get("pin") == "382150" and "aculife" in p["name"].lower()]
+    assert aculife and all(p["eu"]["status"] == "non_compliant" for p in aculife)
+    assert "critical deficiency" in aculife[0]["eu"]["documents"][0]["ncr"]["nature"]
+    pz = next(p for p in ps if p.get("pin") == "600045" and "pharmazell" in p["name"].lower())
+    assert pz["eu"]["substances"] and "api" in pz["capabilities"]["dosage_forms"]
+    new = next(p for p in ps if p["id"].startswith("eu-zzyzx"))
+    assert new["sources"] == ["eudragmdp"] and new["state"] == "Telangana" and "tablet" in new["capabilities"]["dosage_forms"]
+    assert reg["meta"]["eudragmdp"]["eu_added"] >= 1
+    s = plants.summary()
+    assert s["eu_ncr"] >= 1 and any(t["key"] == "EU non-compliance statement" for t in s["tiers"])
+    assert plants.search(cert="eu_ncr")["total"] >= 1
+    b = plants.brief(emcure)
+    assert b["eu_stated"]["compression"]
+    monkeypatch.setattr(plants, "_cache", None)

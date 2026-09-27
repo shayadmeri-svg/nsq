@@ -66,6 +66,9 @@ NODES: list[dict[str, Any]] = [
     _n("ext_cdsco_plants", "origin", "external", "CDSCO plant lists", "WHO-GMP PDF · SUGAM approved sites",
        "CDSCO's WHO-GMP certified manufacturing units (what each is permitted to make, segregated blocks, certificate dates) and the SUGAM approved-manufacturing-site table (licences, own/loan).",
        keys=["cdsco.gov.in/…/Final WHO GMP data for website.pdf", "cdscoonline.gov.in/CDSCO/manuf_site"]),
+    _n("ext_eudragmdp", "origin", "external", "EudraGMDP (EU GMP)", "certificates · non-compliance statements",
+       "EU / EEA inspection outcomes for Indian sites: GMP certificates with the approved operations in the Union coded format, and statements of non-compliance with what failed.",
+       keys=["eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do"]),
     _n("ext_pubchem", "origin", "external", "PubChem", "structures · XLogP3 · melting points",
        "Chemical structure (SMILES), InChIKey, XLogP3 and experimental melting points per molecule, for the lab's structure-based models.",
        keys=["pubchem.ncbi.nlm.nih.gov/rest/pug", "…/pug_view (Melting Point)"]),
@@ -330,7 +333,7 @@ EDGES: list[dict[str, Any]] = [
     _e("s_universe", "p_admin_molecules"), _e("s_cdmo", "p_admin_molecules"), _e("pg_mol", "p_admin_molecules"),
     _e("f_seeds", "p_admin_molecules", label="lookup"), _e("f_sources", "p_admin_molecules", label="lookup"),
     _e("s_sites", "p_admin_sites"), _e("pg_orgs", "p_admin_sites"),
-    _e("ext_cdsco_plants", "f_sources", label="cdsco_plants.json"), _e("f_sources", "s_plants", label="registry"),
+    _e("ext_cdsco_plants", "f_sources", label="cdsco_plants.json"), _e("ext_eudragmdp", "f_sources", label="eudragmdp.json"), _e("f_sources", "s_plants", label="registry"),
     _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_admin_sites", label="registry match"),
     _e("s_plants", "p_org_infra", label="stated capabilities on 'add as plant'"),
     _e("pg_audit", "p_admin_audit"),
@@ -441,7 +444,7 @@ def _source_stats() -> dict[str, dict[str, Any]]:
         return {"ok": not bad, "text": " · ".join(parts) or "fetched", "updated_at": last or None}
     return {"ext_cdsco": s(["cdsco"]), "ext_orange": s(["orange_book"]), "ext_purple": s(["purple_book"]), "ext_ema": s(["ema"]),
             "ext_ct": s(["clinical_trials"]), "ext_fdasites": s(["fda_establishments", "fda_import_alerts", "fda_recalls"]),
-            "ext_cdsco_plants": s(["cdsco_plants"])}
+            "ext_cdsco_plants": s(["cdsco_plants"]), "ext_eudragmdp": s(["eudragmdp"])}
 
 
 def _file_stats() -> dict[str, dict[str, Any]]:

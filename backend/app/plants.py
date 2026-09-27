@@ -56,19 +56,32 @@ NSQ_FORM_CAPS = {
     "Powder/Granules": {"oral_powder", "dry_syrup"}, "Drops": {"ophthalmic", "otic_nasal", "oral_liquid"},
 }
 SOURCE_URL = {"cdsco_who_gmp": "https://cdsco.gov.in/opencms/opencms/en/Home/",
-              "cdsco_sugam": "https://cdscoonline.gov.in/CDSCO/manuf_site"}
+              "cdsco_sugam": "https://cdscoonline.gov.in/CDSCO/manuf_site",
+              "eudragmdp": "https://eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do"}
 
 
-def _path():
-    return settings.data_dir / "sources" / "cdsco_plants.json"
+def _path(name: str = "cdsco_plants"):
+    return settings.data_dir / "sources" / f"{name}.json"
 
 
-def _load() -> tuple[float, dict[str, Any]]:
-    p = _path()
+_files: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _load(name: str = "cdsco_plants") -> tuple[float, dict[str, Any]]:
+    """Parsed source file, re-read only when its mtime changes."""
+    p = _path(name)
     try:
-        return p.stat().st_mtime, json.loads(p.read_text(encoding="utf-8"))
+        mtime = p.stat().st_mtime
+    except OSError:
+        return 0.0, {}
+    hit = _files.get(name)
+    if hit and hit[0] == mtime:
+        return hit
+    try:
+        _files[name] = (mtime, json.loads(p.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return 0.0, {}
+    return _files[name]
 
 
 def _tokens(name: str, drop: set[str] = frozenset(), keep_generic: bool = False) -> list[str]:
@@ -198,12 +211,91 @@ def _link(plants: dict[str, dict[str, Any]], directory: list[dict[str, Any]]) ->
     return links
 
 
+EU_URL = "https://eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do"
+
+
+def _eu_summary(site: dict[str, Any]) -> dict[str, Any]:
+    forms, stated = capability_rules.from_eu_scope(site.get("scope") or [])
+    recent = bool(site.get("last_gmp_inspection")) and site["last_gmp_inspection"] >= time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 365.25 * 86400))
+    return {**{k: site.get(k) for k in ("key", "name", "address", "city", "postcode", "oms_org", "oms_loc", "duns", "status",
+                                         "last_gmp_inspection", "last_ncr", "roles", "scope", "substances", "documents")},
+            "forms": sorted(forms), "stated": stated, "certified": site.get("status") == "compliant" and recent}
+
+
+def _eu_plant(site: dict[str, Any], eu: dict[str, Any]) -> dict[str, Any]:
+    pin = (site.get("postcode") or "").replace(" ", "")[:6] or None
+    forms = eu["forms"]
+    pid = f"eu-{re.sub(r'[^a-z0-9]+', '-', (site.get('name') or '').lower()).strip('-')[:50]}--{pin or site.get('key')}"
+    return {"id": pid, "name": site.get("name") or site.get("manufacturer") or "?", "aliases": [], "address": site.get("address"),
+            "district": site.get("city"), "state": pin_state(pin), "pin": pin, "phones": [], "sources": ["eudragmdp"],
+            "licences": [], "loan_licensees": [], "who_gmp": [], "who_gmp_certified": False,
+            "capabilities": {"dosage_forms": forms, "segregated": {}, "therapeutic": [], "evidence": [], "raw": "",
+                             "sterile": bool(set(forms) & capability_rules.STERILE), "api": "api" in forms,
+                             "finished_dose": bool(set(forms) - {"api"}), "licence_classes": [], "schedule_c": False}}
+
+
+def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """Attach EudraGMDP sites to registry plants (company + PIN, or company + town); unmatched sites become plants."""
+    from rapidfuzz import fuzz
+
+    by_pin: dict[str, list[str]] = defaultdict(list)
+    by_token: dict[str, set[str]] = defaultdict(set)
+    for pid, p in plants.items():
+        if p.get("pin"):
+            by_pin[p["pin"]].append(pid)
+        for t in _tokens(p["name"])[:2]:
+            by_token[t].add(pid)
+    matched = added = 0
+    for site in eu_sites.values():
+        eu = _eu_summary(site)
+        name = " ".join(_tokens(site.get("name") or "", keep_generic=True))
+        pin = (site.get("postcode") or "").replace(" ", "")[:6]
+        best, best_score = [], 0.0
+        for pid in set(by_pin.get(pin, [])) | set().union(*(by_token.get(t, set()) for t in _tokens(site.get("name") or "")[:2])):
+            p = plants[pid]
+            pn = " ".join(_tokens(p["name"], drop=_town_words(p.get("district"), p.get("address")), keep_generic=True))
+            if not pn or not name:
+                continue
+            score = fuzz.token_sort_ratio(name, pn)
+            if p.get("pin") and pin:
+                if p["pin"] != pin or score < 80:
+                    continue
+                score += 20
+            else:
+                town = _town_words(site.get("city"), site.get("address")) - _ADDRESS_STOP
+                if score < 92 or p.get("state") != pin_state(pin) or not (town & _town_words(p.get("district"), p.get("address"))):
+                    continue
+            if score > best_score:
+                best, best_score = [pid], score
+            elif score == best_score:
+                best.append(pid)  # e.g. two CDSCO units of one company at the same PIN: the certificate covers the site
+        if best:
+            for pid in best:
+                p = plants[pid]
+                p["eu"] = eu
+                caps = dict(p["capabilities"])
+                caps["dosage_forms"] = sorted(set(caps.get("dosage_forms") or []) | set(eu["forms"]))
+                caps["sterile"] = caps.get("sterile") or bool(set(eu["forms"]) & capability_rules.STERILE)
+                caps["api"] = caps.get("api") or "api" in eu["forms"]
+                p["capabilities"] = caps
+                if "eudragmdp" not in p.get("sources", []):
+                    p["sources"] = [*p.get("sources", []), "eudragmdp"]
+            matched += 1
+        else:
+            np = _eu_plant(site, eu)
+            np["eu"] = eu
+            plants[np["id"]] = np
+            added += 1
+    return {"eu_sites": len(eu_sites), "eu_matched": matched, "eu_added": added}
+
+
 def registry() -> dict[str, Any]:
-    """{'meta', 'plants', 'links'}; rebuilt when the registry file or the NSQ frame changes."""
+    """{'meta', 'plants', 'links'}; rebuilt when a source file or the NSQ frame changes."""
     global _cache
     mtime, raw = _load()
+    eu_mtime, eu_raw = _load("eudragmdp")
     directory = sites.directory()
-    key = (mtime, id(directory))
+    key = (mtime, eu_mtime, id(directory))
     c = _cache
     if c is not None and c[0] == key:
         return c[1]
@@ -211,10 +303,12 @@ def registry() -> dict[str, Any]:
         if _cache is None or _cache[0] != key:
             t0 = time.time()
             plants = {pid: {**p} for pid, p in (raw.get("data") or {}).items()}
+            eu_stats = _merge_eu(plants, eu_raw.get("data") or {}) if eu_raw.get("data") else {}
             links = _link(plants, directory) if plants else {}
             meta = {k: raw.get(k) for k in ("title", "publisher", "url", "retrieved_at", "records", "inputs", "stats")}
+            meta["eudragmdp"] = {"retrieved_at": eu_raw.get("retrieved_at"), "listed": eu_raw.get("total_listed"), **eu_stats} if eu_raw else None
             _cache = (key, {"meta": meta, "plants": plants, "links": links})
-            print(f"[plants] {len(plants)} plants, {len(links)} NSQ sites linked in {time.time() - t0:.1f}s")
+            print(f"[plants] {len(plants)} plants ({eu_stats or 'no EU data'}), {len(links)} NSQ sites linked in {time.time() - t0:.1f}s")
         return _cache[1]
 
 
@@ -241,7 +335,10 @@ def brief(p: dict[str, Any]) -> dict[str, Any]:
             "sterile": c.get("sterile", False), "api": c.get("api", False), "schedule_c": c.get("schedule_c", False),
             "dosage_forms": c.get("dosage_forms", []), "segregated": c.get("segregated", {}), "therapeutic": c.get("therapeutic", []),
             "loan_licensees": p.get("loan_licensees", []), "sources": p.get("sources", []),
-            "nsq_alerts": (p.get("nsq") or {}).get("alerts", 0), "nsq_last": (p.get("nsq") or {}).get("last")}
+            "nsq_alerts": (p.get("nsq") or {}).get("alerts", 0), "nsq_last": (p.get("nsq") or {}).get("last"),
+            "eu_status": (p.get("eu") or {}).get("status"), "eu_gmp": bool((p.get("eu") or {}).get("certified")),
+            "eu_last": (p.get("eu") or {}).get("last_gmp_inspection"), "eu_ncr": (p.get("eu") or {}).get("last_ncr"),
+            "eu_stated": (p.get("eu") or {}).get("stated") or {}}
 
 
 def rule_input(p: dict[str, Any]) -> dict[str, Any]:
@@ -251,6 +348,8 @@ def rule_input(p: dict[str, Any]) -> dict[str, Any]:
 def catalog_profile(p: dict[str, Any]) -> dict[str, Any]:
     """The plant in the capability catalog's 7 sections, from CDSCO's listing via capability_rules."""
     derived = capability_rules.derive(rule_input(p))
+    for t, lines in ((p.get("eu") or {}).get("stated") or {}).items():
+        derived[t] = {"basis": "stated", "why": [f"EU GMP certificate scope: {'; '.join(lines)}"]}
     sections = []
     for sec in capability_catalog.SECTIONS:
         have = [{"token": c.token, "label": c.label, **derived[c.token]} for c in sec.capabilities if c.token in derived]
@@ -259,6 +358,7 @@ def catalog_profile(p: dict[str, Any]) -> dict[str, Any]:
     other = [{"token": t, "label": t.replace("_", " ").capitalize(), **v} for t, v in derived.items() if t not in cat]
     return {"sections": sections, "other": other, "containment": capability_rules.containment(rule_input(p)),
             "approved_forms": capability_rules.approved_forms(p["capabilities"]),
+            "stated": sum(1 for v in derived.values() if v["basis"] == "stated"),
             "required": sum(1 for v in derived.values() if v["basis"] == "required"),
             "inferred": sum(1 for v in derived.values() if v["basis"] == "inferred")}
 
@@ -285,6 +385,10 @@ def _matches(p: dict[str, Any], q: str, state: str, capability: str, segregated:
     if cert == "sugam" and "cdsco_sugam" not in p.get("sources", []):
         return False
     if cert == "schedule_c" and not c.get("schedule_c"):
+        return False
+    if cert == "eu_gmp" and not (p.get("eu") or {}).get("certified"):
+        return False
+    if cert == "eu_ncr" and (p.get("eu") or {}).get("status") != "non_compliant":
         return False
     if cert == "loan" and not p.get("loan_licensees"):
         return False
@@ -345,7 +449,9 @@ def summary() -> dict[str, Any]:
     caps = group(lambda p: p["capabilities"]["dosage_forms"] + (["sterile"] if p["capabilities"].get("sterile") else []))
     seg = group(lambda p: list(p["capabilities"]["segregated"]))
     states = group(lambda p: [p.get("state") or "Unknown"])
-    tiers = group(lambda p: (["WHO-GMP certified"] if p.get("who_gmp_certified") else ["SUGAM only (not WHO-GMP)"]))
+    tiers = group(lambda p: (["WHO-GMP certified"] if p.get("who_gmp_certified") else ["SUGAM only (not WHO-GMP)"] if "cdsco_sugam" in p.get("sources", []) else [])
+                  + (["EU GMP certified (last 3 years)"] if (p.get("eu") or {}).get("certified") else [])
+                  + (["EU non-compliance statement"] if (p.get("eu") or {}).get("status") == "non_compliant" else []))
     breadth = group(lambda p: [("1 form" if n == 1 else "2–3 forms" if n <= 3 else "4–6 forms" if n <= 6 else "7+ forms")
                                for n in [len([f for f in p["capabilities"]["dosage_forms"] if f not in ("api", "finished_unspecified")])] if n])
     alerts_all = sum(s["alerts"] for s in directory)
@@ -356,6 +462,9 @@ def summary() -> dict[str, Any]:
         "plants": len(plants),
         "who_gmp": sum(1 for p in plants if p.get("who_gmp_certified")),
         "sugam": sum(1 for p in plants if "cdsco_sugam" in p.get("sources", [])),
+        "eu_gmp": sum(1 for p in plants if (p.get("eu") or {}).get("certified")),
+        "eu_ncr": sum(1 for p in plants if (p.get("eu") or {}).get("status") == "non_compliant"),
+        "eu_only": sum(1 for p in plants if p.get("sources") == ["eudragmdp"]),
         "with_pin": sum(1 for p in plants if p.get("pin")),
         "with_nsq": sum(1 for p in plants if (p.get("nsq") or {}).get("alerts")),
         "sterile": sum(1 for p in plants if p["capabilities"].get("sterile")),
@@ -373,8 +482,8 @@ def summary() -> dict[str, Any]:
         "breadth": [{"key": k, "label": k, **v} for k, v in sorted(breadth.items(), key=lambda kv: ["1 form", "2–3 forms", "4–6 forms", "7+ forms"].index(kv[0]))],
         "outside_capabilities": [{"form": k, "plants": v} for k, v in outside.most_common()],
         "labels": {"capabilities": CAPABILITY_LABELS, "segregated": SEGREGATED_LABELS},
-        "caveat": "Rates are per plant in CDSCO's WHO-GMP and SUGAM lists (about 2,100 plants), not every licensed plant in India. "
-                  "NSQ alerts are linked by company name and PIN; unlinked alerts are from makers not on these lists.",
+        "caveat": f"Rates are per plant in CDSCO's WHO-GMP and SUGAM lists and EudraGMDP ({len(plants):,} plants), not every licensed plant in India. "
+                  "NSQ alerts are linked by company name and PIN; unlinked alerts are from makers on none of these lists.",
     }
 
 

@@ -43,6 +43,9 @@ export function RegistryBadges({ p }: { p: any }) {
   return (
     <div className="flex flex-wrap gap-1">
       {p.who_gmp && <Badge tone="brand"><BadgeCheck size={11} /> WHO-GMP</Badge>}
+      {p.eu_status === "non_compliant" ? <span title={`EU statement of non-compliance ${p.eu_ncr ?? ""}`}><Badge tone="rose"><ShieldAlert size={11} /> EU non-compliant</Badge></span>
+        : p.eu_gmp ? <span title={`EU GMP certificate, last inspected ${p.eu_last}`}><Badge tone="indigo"><BadgeCheck size={11} /> EU GMP</Badge></span>
+          : p.eu_status === "compliant" ? <span title={`EU GMP inspection ${p.eu_last} — older than 3 years`}><Badge>EU GMP (old)</Badge></span> : null}
       {p.schedule_c && <Badge tone="indigo"><Syringe size={11} /> Schedule C</Badge>}
       {p.sterile && !p.schedule_c && <Badge tone="sky">Sterile</Badge>}
       {p.api && <Badge><FlaskConical size={11} /> API</Badge>}
@@ -96,6 +99,38 @@ function RatesCard({ s, onPick }: { s: any; onPick: (dim: string, key: string) =
 }
 
 // ---------------------------------------------------------------------------------- detail
+
+function EuPanel({ eu }: { eu: any }) {
+  const [all, setAll] = useState(false);
+  const leaf = (eu.scope ?? []).filter((c: any) => c.code.split(".").length >= 3 || c.code.startsWith("1.6") || c.code.startsWith("3."));
+  const ncr = (eu.documents ?? []).filter((d: any) => d.type === "NCR");
+  return (
+    <div>
+      <div className="label mb-1.5 flex items-center gap-2">EU GMP — EudraGMDP
+        {eu.status === "non_compliant" ? <Badge tone="rose">non-compliant since {eu.last_ncr}</Badge> : eu.certified ? <Badge tone="indigo">certified · inspected {eu.last_gmp_inspection}</Badge>
+          : eu.last_gmp_inspection ? <Badge>last certificate {eu.last_gmp_inspection} (&gt; 3 years)</Badge> : null}
+      </div>
+      {ncr.map((d: any) => (
+        <div key={d.number} className="mb-2 rounded-lg bg-rose-50 p-3 text-xs text-rose-900">
+          <div className="font-semibold">Statement of non-compliance {d.number} · {d.authority} · inspected {d.inspection_date}</div>
+          {d.ncr?.nature && <p className="mt-1 leading-relaxed">{d.ncr.nature}</p>}
+          {d.ncr?.action && <p className="mt-1"><b>Action:</b> {d.ncr.action}</p>}
+        </div>
+      ))}
+      {leaf.length > 0 && (
+        <div className="rounded-lg border border-line p-2.5 text-xs">
+          <div className="mb-1 text-ink-muted">Approved operations (certificate Part 2)</div>
+          <ul className="space-y-0.5">{(all ? leaf : leaf.slice(0, 12)).map((c: any) => (
+            <li key={c.code + c.label}><span className="mr-1.5 font-mono text-ink-faint">{c.code}</span>{c.label}{c.details?.length ? <span className="text-ink-muted"> — {c.details.join("; ")}</span> : null}</li>
+          ))}</ul>
+          {leaf.length > 12 && <button className="mt-1 text-brand-700 hover:underline" onClick={() => setAll(!all)}>{all ? "fewer" : `all ${leaf.length}`}</button>}
+        </div>
+      )}
+      {eu.substances?.length > 0 && <div className="mt-2 text-xs"><span className="text-ink-muted">Active substances inspected: </span>{eu.substances.slice(0, 30).join(", ")}{eu.substances.length > 30 ? ` +${eu.substances.length - 30}` : ""}</div>}
+      <div className="mt-2 text-[11px] text-ink-muted">{(eu.documents ?? []).map((d: any) => `${d.type} ${d.number} (${d.authority ?? "?"}, ${d.inspection_date ?? "?"})`).join(" · ")}</div>
+    </div>
+  );
+}
 
 function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; onClose: () => void }) {
   const { data: p, error } = useQuery({ queryKey: ["plant", id], queryFn: () => api<any>(`/api/plants/${encodeURIComponent(id!)}`), enabled: !!id });
@@ -155,6 +190,8 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
             </div>
           </div>
 
+          {p.eu && <EuPanel eu={p.eu} />}
+
           {p.licences?.length > 0 && (
             <div>
               <div className="label mb-1.5">Manufacturing licences (SUGAM)</div>
@@ -191,7 +228,7 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
           </div>
 
           <div className="flex flex-wrap gap-3 text-xs">
-            {p.source_links?.map((s: any) => s.url && <a key={s.key} href={s.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-brand-700 hover:underline"><ExternalLink size={12} />{s.key === "cdsco_sugam" ? "CDSCO approved manufacturing sites" : "CDSCO WHO-GMP certified units"}</a>)}
+            {p.source_links?.map((s: any) => s.url && <a key={s.key} href={s.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-brand-700 hover:underline"><ExternalLink size={12} />{s.key === "cdsco_sugam" ? "CDSCO approved manufacturing sites" : s.key === "eudragmdp" ? "EudraGMDP (search this site)" : "CDSCO WHO-GMP certified units"}</a>)}
           </div>
         </div>
       )}
@@ -210,7 +247,7 @@ export function Plants() {
   const [state, setState] = useState("");
   const [capability, setCapability] = useState("");
   const [segregated, setSegregated] = useState("");
-  const [cert, setCert] = useState<"" | "who_gmp" | "schedule_c" | "loan">("");
+  const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "eu_ncr" | "schedule_c" | "loan">("");
   const [nsq, setNsq] = useState<"" | "yes" | "no">("");
   const [sort, setSort] = useState<"nsq" | "forms" | "name">("nsq");
   const [page, setPage] = useState(1);
@@ -242,7 +279,7 @@ export function Plants() {
   return (
     <>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
-        <Stat label="Plants in the registry" value={s.plants} icon={<Factory size={18} />} hint={`${nf(s.who_gmp)} WHO-GMP · ${nf(s.sugam)} in SUGAM · ${nf(s.with_pin)} with PIN`} />
+        <Stat label="Plants in the registry" value={s.plants} icon={<Factory size={18} />} hint={`${nf(s.who_gmp)} WHO-GMP · ${nf(s.eu_gmp)} EU GMP · ${nf(s.sugam)} in SUGAM${s.eu_ncr ? ` · ${nf(s.eu_ncr)} under EU non-compliance` : ""}`} />
         <Stat label="Sterile-capable" value={s.sterile} tone="indigo" delay={0.04} hint="Injectables, ophthalmics or a Schedule C licence" />
         <Stat label="API makers" value={s.api} tone="amber" delay={0.08} hint="Bulk drugs / raw materials" />
         <Stat label="Plants with NSQ alerts" value={s.with_nsq} tone="rose" delay={0.12} hint={`${nf(s.nsq_sites_linked)} of ${nf(s.nsq_sites)} NSQ sites linked`} />
@@ -256,6 +293,7 @@ export function Plants() {
           <CardHeader title="About this registry" subtitle={`CDSCO · retrieved ${s.meta?.retrieved_at?.slice(0, 10) ?? "—"}`} />
           <div className="space-y-3 px-5 pb-5 pt-3 text-[13px] leading-relaxed text-ink-soft">
             <p><b>WHO-GMP certified units</b> ({nf(s.who_gmp)}): CDSCO's list of plants certified for export certificates (COPP), with the "category of drugs permitted" for each — dosage forms, separate blocks for beta-lactams, cephalosporins, hormones or cytotoxics, and certificate dates.</p>
+            <p><b>EU GMP (EudraGMDP)</b>{s.meta?.eudragmdp ? ` — ${nf(s.meta.eudragmdp.eu_sites)} Indian sites, ${nf(s.meta.eudragmdp.eu_added)} not on CDSCO's lists` : " — not fetched yet"}: certificates from EU / EEA inspections, each listing the approved operations in the EU's coded format (e.g. 1.1.1.2 lyophilisates, 1.6.1 sterility testing, 3.1 API synthesis) — marked "stated" on the plant — and statements of non-compliance with what failed.</p>
             <p><b>Approved manufacturing sites</b> (SUGAM, {nf(s.sugam)}): licence number, form (Form 28 = Schedule C: sterile and biological products), own or loan licence, and the brand owner making there on loan.</p>
             <p><b>NSQ link</b>: an NSQ "Manufactured By" site is joined to a plant on company name and PIN code ({nf(s.match_kinds?.site ?? 0)} exact, {nf(s.match_kinds?.site_fuzzy ?? 0)} near-identical names), or on company and state when either side has no PIN ({nf(s.match_kinds?.company ?? 0)}).</p>
             {s.outside_capabilities?.length > 0 && <p className="flex items-start gap-2 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-900"><ShieldAlert size={14} className="mt-0.5 shrink-0" />
@@ -278,7 +316,7 @@ export function Plants() {
             <select className="input h-9 w-40 text-xs" value={segregated} onChange={(e) => { setSegregated(e.target.value); setPage(1); }}>
               <option value="">Any block</option>{facets.data?.segregated.map((x: any) => <option key={x.key} value={x.key}>{x.label}</option>)}
             </select>
-            <Segmented value={cert} onChange={(v) => { setCert(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "who_gmp", label: "WHO-GMP" }, { value: "schedule_c", label: "Sched. C" }, { value: "loan", label: "Loan" }]} />
+            <Segmented value={cert} onChange={(v) => { setCert(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "who_gmp", label: "WHO-GMP" }, { value: "eu_gmp", label: "EU GMP" }, { value: "eu_ncr", label: "EU NCR" }, { value: "schedule_c", label: "Sched. C" }, { value: "loan", label: "Loan" }]} />
             <Segmented value={nsq} onChange={(v) => { setNsq(v); setPage(1); }} options={[{ value: "", label: "Any" }, { value: "yes", label: "With NSQ" }, { value: "no", label: "Clean" }]} />
             <select className="input h-9 w-32 text-xs" value={sort} onChange={(e) => setSort(e.target.value as any)}>
               <option value="nsq">Most alerts</option><option value="forms">Most forms</option><option value="name">Name</option>

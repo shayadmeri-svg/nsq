@@ -343,6 +343,11 @@ def plant_apply_registry(slug: str, asset_id: str, body: RegistryBody, request: 
             if "WHO_GMP" not in [c.upper() for c in lst]:
                 lst.append("WHO_GMP")
         cert_basis.setdefault("WHO_GMP", "CDSCO WHO-GMP certified units list")
+    if b.get("eu_gmp"):
+        for lst in (certs, certs_active):
+            if "EU_GMP" not in [c.upper() for c in lst]:
+                lst.append("EU_GMP")
+        cert_basis.setdefault("EU_GMP", f"EudraGMDP certificate, inspected {b.get('eu_last')}")
     order = ["standard", "biologic_GMP", "potent", "cytotoxic"]
     containment = fields.get("containment_class") or "standard"
     if order.index(applied["containment"]) > order.index(containment if containment in order else "standard"):

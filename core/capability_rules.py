@@ -173,3 +173,78 @@ def approved_forms(caps: dict[str, Any]) -> list[str]:
             if x not in out:
                 out.append(x)
     return out
+
+
+# --------------------------------------------------------------------------- EU GMP certificate scope
+
+# Union format for GMP certificates (Part 2) -> (registry dosage forms, catalog tokens stated by the certificate).
+# Longest matching code prefix wins for forms; tokens accumulate over every prefix that matches.
+EU_SCOPE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "1.1": ((), ("sterile_liquid",)),
+    "1.1.1": ((), ("aseptic_fill", "grade_a_cleanroom")),
+    "1.1.1.1": (("lvp",), ()),
+    "1.1.1.2": (("lyophilised",), ("lyophilization", "vial_filling")),
+    "1.1.1.3": (("ophthalmic",), ()),
+    "1.1.1.4": (("svp_liquid",), ()),
+    "1.1.1.5": (("svp_dry_powder",), ()),
+    "1.1.2.1": (("lvp",), ()),
+    "1.1.2.2": (("topical",), ()),
+    "1.1.2.3": (("svp_liquid",), ()),
+    "1.1.2.4": (("svp_dry_powder",), ()),
+    "1.2.1.1": (("capsule_hard",), ()),
+    "1.2.1.2": (("capsule_soft",), ()),
+    "1.2.1.3": (("oral_film_gum",), ()),
+    "1.2.1.5": (("topical",), ()),
+    "1.2.1.6": (("oral_liquid",), ("liquid_oral_filling",)),
+    "1.2.1.8": (("oral_powder",), ()),
+    "1.2.1.9": (("inhalation",), ()),
+    "1.2.1.11": (("topical",), ()),
+    "1.2.1.12": (("suppository",), ()),
+    "1.2.1.13": (("tablet",), ("compression",)),
+    "1.2.1.14": (("transdermal",), ()),
+    "1.3": (("biological",), ()),
+    "1.6.1": ((), ("sterility_testing",)),
+    "1.6.2": ((), ("analytical_qc",)),
+    "1.6.3": ((), ("analytical_qc",)),
+    "1.6.4": ((), ("bioassay",)),
+    "3.1": (("api",), ()),
+    "3.2": (("api",), ()),
+    "3.3": (("api",), ()),
+    "3.3.2": ((), ("cell_culture",)),
+    "3.4.1": ((), ("aseptic_fill",)),
+    "3.6.1": ((), ("analytical_qc",)),
+    "3.6.3": ((), ("sterility_testing",)),
+    "3.6.4": ((), ("bioassay",)),
+}
+# "Other: …" entries (1.1.1.6, 1.2.1.17, 1.5.1.17) are free text
+EU_OTHER = [(r"dry powder|powder for (injection|solution)", "svp_dry_powder"), (r"pre-?filled|cartridge", "prefilled_syringe"),
+            (r"sachet|granule|powder", "oral_powder"), (r"implant", "svp_dry_powder"), (r"eye|ophthalm", "ophthalmic"),
+            (r"inhal|nebul|respul", "inhalation"), (r"liquid|solution|syrup|suspension", "oral_liquid")]
+
+
+def from_eu_scope(scope: list[dict[str, Any]]) -> tuple[set[str], dict[str, list[str]]]:
+    """(dosage forms, token -> [scope lines stating it]) from an EudraGMDP site's certificate scope."""
+    import re
+
+    forms: set[str] = set()
+    toks: dict[str, list[str]] = {}
+    for s in scope:
+        code = s["code"]
+        text = f"{code} {s['label']}" + (f": {', '.join(s['details'])}" if s.get("details") else "")
+        parts = code.split(".")
+        prefixes = [".".join(parts[:i]) for i in range(1, len(parts) + 1)]
+        best = max((p for p in prefixes if p in EU_SCOPE and EU_SCOPE[p][0]), key=len, default=None)
+        if best and code.count(".") >= best.count("."):
+            forms.update(EU_SCOPE[best][0])
+        for p in prefixes:
+            for t in (EU_SCOPE.get(p) or ((), ()))[1]:
+                if t in _VALID:
+                    toks.setdefault(t, [])
+                    if text not in toks[t]:
+                        toks[t].append(text)
+        if s["label"].lower().startswith("other") and code.startswith(("1.1.1.6", "1.1.2.5", "1.2.1.17", "1.2.1.8")):
+            for pat, f in EU_OTHER:
+                if re.search(pat, " ".join(s.get("details") or []).lower()):
+                    forms.add(f)
+                    break
+    return forms, toks
