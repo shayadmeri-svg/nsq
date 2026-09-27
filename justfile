@@ -290,6 +290,34 @@ fetch-orange-book FILE="": (fetch-source "orange_book" FILE)
 fetch-purple-book FILE="": (fetch-source "purple_book" FILE)
 fetch-ema FILE="": (fetch-source "ema" FILE)
 fetch-fda-sites: (fetch-source "fda_establishments") (fetch-source "fda_import_alerts") (fetch-source "fda_recalls")
+
+# --- plant registry: CDSCO WHO-GMP + SUGAM lists, EU GMP (EudraGMDP) -------------
+# CDSCO and EudraGMDP refuse many cloud networks: run these on your laptop, then
+# copy the JSON to the server with `just push-plant-registry`.
+#   just fetch-plants ~/Downloads/who_gmp.pdf  # parse a WHO-GMP PDF you saved yourself
+#   just push-plant-registry ec2-user@ec2-….compute-1.amazonaws.com ~/.ssh/key.pem
+
+# CDSCO SUGAM sites + WHO-GMP PDF -> data/sources/cdsco_plants.json (+ .csv)
+fetch-plants FILE="": _plant-deps (fetch-source "cdsco_plants" FILE)
+# EU GMP certificates + non-compliance statements for India (~1,050 documents, ~15 min first run; later runs fetch only new ones)
+fetch-eudragmdp: (fetch-source "eudragmdp")
+# Both, in order (the app merges them into one registry)
+fetch-plant-registry: fetch-plants fetch-eudragmdp
+
+# Copy the registry files to the server (HOST = user@host, KEY = .pem) and restart the API
+push-plant-registry HOST KEY="" DIR="/opt/nsq-platform":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
+    files=$(ls data/sources/cdsco_plants.json data/sources/cdsco_plants.csv data/sources/eudragmdp.json 2>/dev/null || true)
+    [ -n "$files" ] || { echo "No registry files — run just fetch-plant-registry first"; exit 1; }
+    scp $k $files {{HOST}}:~/
+    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in cdsco_plants.json cdsco_plants.csv eudragmdp.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done && cd {{DIR}} && (docker compose restart api 2>/dev/null || sudo docker compose restart api)'
+    echo "Registry files copied; API restarted."
+
+_plant-deps:
+    @cd {{LOADER}} && .venv/bin/python -c "import pdfplumber" 2>/dev/null || .venv/bin/pip install --quiet pdfplumber
+
 # ClinicalTrials.gov needs the candidate list, so build the universe first.
 fetch-trials: build-universe (fetch-source "clinical_trials")
 

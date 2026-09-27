@@ -90,7 +90,8 @@ NODES: list[dict[str, Any]] = [
        jobs=["fetch-nsq", "refresh-nsq"]),
     _n("in_sources", "ingest", "script", "fetch_source.py", "one per public source",
        "Downloads with conditional GET (ETag / Last-Modified), parses and writes one normalised JSON per source plus a status line in the manifest. Accepts an uploaded file instead of downloading.",
-       jobs=["sync-sources", "src-orange-book", "src-purple-book", "src-ema", "src-clinical-trials", "src-fda-establishments", "src-fda-import-alerts", "src-fda-recalls"]),
+       jobs=["sync-sources", "src-orange-book", "src-purple-book", "src-ema", "src-clinical-trials", "src-fda-establishments", "src-fda-import-alerts", "src-fda-recalls",
+             "src-cdsco-plants", "src-eudragmdp", "plant-registry"]),
 
     # --- files --------------------------------------------------------------------------------------
     _n("f_csv", "files", "file", "NSQ CSV", "cumulative, all months",
@@ -245,7 +246,8 @@ EDGES: list[dict[str, Any]] = [
     _e("in_cdsco", "f_raw", "write", "raw JSON per month", "fetch-nsq"),
     _e("in_cdsco", "f_manifest", "write", "cdsco status", "fetch-nsq"),
     *[_e(s, "in_sources", label=l) for s, l in (("ext_orange", "zip, weekly at most"), ("ext_purple", "monthly CSV"), ("ext_ema", "JSON report"),
-                                                 ("ext_ct", "count queries"), ("ext_fdasites", "DECRS · import alert · recalls"))],
+                                                 ("ext_ct", "count queries"), ("ext_fdasites", "DECRS · import alert · recalls"),
+                                                 ("ext_cdsco_plants", "SUGAM pages + WHO-GMP PDF · laptop"), ("ext_eudragmdp", "certificate pages · laptop"))],
     _e("in_sources", "f_raw", "write", "downloads + ETags", "sync-sources · daily 02:30 IST, or src-*"),
     _e("in_sources", "f_sources", "write", "normalised JSON", "sync-sources, src-*"),
     _e("in_sources", "f_manifest", "write", "status per source", "sync-sources, src-*"),
@@ -333,7 +335,7 @@ EDGES: list[dict[str, Any]] = [
     _e("s_universe", "p_admin_molecules"), _e("s_cdmo", "p_admin_molecules"), _e("pg_mol", "p_admin_molecules"),
     _e("f_seeds", "p_admin_molecules", label="lookup"), _e("f_sources", "p_admin_molecules", label="lookup"),
     _e("s_sites", "p_admin_sites"), _e("pg_orgs", "p_admin_sites"),
-    _e("ext_cdsco_plants", "f_sources", label="cdsco_plants.json"), _e("ext_eudragmdp", "f_sources", label="eudragmdp.json"), _e("f_sources", "s_plants", label="registry"),
+    _e("f_sources", "s_plants", label="cdsco_plants.json + eudragmdp.json"),
     _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_admin_sites", label="registry match"),
     _e("s_plants", "p_org_infra", label="stated capabilities on 'add as plant'"),
     _e("pg_audit", "p_admin_audit"),

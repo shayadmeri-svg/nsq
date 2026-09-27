@@ -19,6 +19,8 @@ flowchart LR
     EMA[EMA medicines data]
     CT[ClinicalTrials.gov]
     FDAS[FDA site records<br/>DECRS · import alert · recalls]
+    CPL[CDSCO plant lists<br/>SUGAM · WHO-GMP PDF]
+    EUG[EudraGMDP<br/>EU GMP certificates · NCRs]
     SEED[Curated seeds]
     UP[(Upstash backup)]
     SCH([Scheduler]) --> RUN([Job runner])
@@ -62,6 +64,7 @@ flowchart LR
     SF{{NSQ frame · 5 min cache}}
     SC{{Molecule intelligence · 2 min}}
     SS{{Site directory}}
+    SPL{{Plant registry}}
     SK{{Built-in knowledge}}
   end
   subgraph V[Screens]
@@ -72,6 +75,7 @@ flowchart LR
 
   CDSCO --> SYNC --> CSV
   FDA & EMA & CT & FDAS --> FETCH --> SRC
+  CPL & EUG -->|laptop, then push| FETCH
   UPL --> FETCH
   SEED --> UNI
   CSV --> LOAD --> RN & RO
@@ -84,6 +88,7 @@ flowchart LR
   RF & RN & RO --> SF
   RC & RP --> SC
   SF & SRC --> SS
+  SRC & SS --> SPL --> PG & ORG & ADM
   SF --> PG & ORG & ADM
   SC --> PG & ORG & ADM
   SS --> PG & ORG & ADM
@@ -168,6 +173,9 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | `CDSCO … NSQ ….csv` | `sync_cdsco` (append) | `load_csv_redis`, `build_product_ontology` |
 | `raw/<source>/*` | every fetcher (plus HTTP cache) | the fetcher's next run |
 | `sources/<source>.json`, `sources/manifest.json` | `fetch_source`, `sync_cdsco` (manifest) | build_universe, site directory, pipelines page, molecule lookup |
+| `sources/cdsco_plants.json` (+ `.csv`) | `fetch_source cdsco_plants` (`just fetch-plants`, job src-cdsco-plants / plant-registry) | plant registry (Plants tab, site directory match, Infrastructure "Match with CDSCO registry", "Add as plant") |
+| `sources/eudragmdp.json` | `fetch_source eudragmdp` (`just fetch-eudragmdp`, job src-eudragmdp / plant-registry) | plant registry (EU GMP status, stated capabilities, non-compliance findings) |
+| `raw/cdsco_plants/*` | SUGAM pages + WHO-GMP PDF from the last crawl | the next `cdsco_plants` run when CDSCO is unreachable |
 | `uploads/*` | Data jobs → Upload | `--from-file` fetches, refresh-nsq |
 | `*_seed.json` | hand-edited | build_universe, load-seeds, molecule lookup |
 | `generated/watchlist.json`, `molecules.json` | `export_watchlist` (from Postgres) | build_universe |
@@ -181,6 +189,8 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | **Scheduler** (every 30 s) | `pipeline_schedules` (fire times). It starts jobs, and each job writes `job_runs` plus the stores below. |
 | **fetch-nsq** | CSV, `raw/cdsco`, manifest. When there are new alerts it also writes all `nsq:*` keys (flush and reload), the frame, `generated/*` and `cdmo:patent/regulatory/demand` (flush and reload). |
 | **sync-sources / src-\*** | `raw/*`, `sources/*.json`, manifest, `generated/*`, `cdmo:patent/regulatory/demand` |
+| **plant-registry / src-cdsco-plants / src-eudragmdp** (or `just fetch-plant-registry` + `just push-plant-registry`) | `raw/cdsco_plants/*`, `sources/cdsco_plants.json`, `sources/eudragmdp.json`, manifest. Nothing in Redis: the API re-reads the files when they change. |
+| **Match with CDSCO registry** (Infrastructure) | `plants`, `cdmo:plant:*` (capabilities, basis, certificates, `reference.registry`), `audit_log` |
 | **build-universe** (also run after saving a molecule) | `generated/*`, `cdmo:patent/regulatory/demand` |
 | **load-seeds / sync-plants** | `cdmo:plant:*` (upsert) and the molecule stores |
 | **snapshot / restore-snapshot** | the snapshot file, or `nsq:*` and `geo:*` |
@@ -203,16 +213,16 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | Playground · Regulation map | molecule intelligence, built-in knowledge (`core/regulatory_regions.py`) | `cdmo:*` |
 | Playground · Molecule workbench | molecule intelligence, NSQ frame, built-in knowledge | `cdmo:*`, frame, `orgs` (your plants) |
 | Playground · Process lab | built-in knowledge (`core/process_models.py`) | none |
-| Playground · Plants | plant registry (CDSCO WHO-GMP + SUGAM), site directory | `sources/cdsco_plants.json`, frame |
+| Playground · Plants | plant registry (CDSCO WHO-GMP + SUGAM + EudraGMDP), site directory | `sources/cdsco_plants.json`, `sources/eudragmdp.json`, frame |
 | Org · Overview / Opportunities / EU export | NSQ frame, molecule intelligence | frame, `cdmo:*`, `orgs` |
 | Org · Quality | NSQ frame (your manufacturer keys and national) | frame, `orgs` |
-| Org · Infrastructure | molecule intelligence (plants), site directory | `cdmo:plant:*`, `plants`, `sources/fda_*.json` |
+| Org · Infrastructure | molecule intelligence (plants), site directory, plant registry | `cdmo:plant:*`, `plants`, `sources/fda_*.json`, `sources/cdsco_plants.json`, `sources/eudragmdp.json` |
 | Admin overview | NSQ frame, data status | frame, `nsq:meta`, snapshot, `job_runs`, `audit_log`, `users` |
 | All-India NSQ | NSQ frame | frame |
 | Organisations | NSQ frame (manufacturer search), plants | `orgs`, frame, `cdmo:plant:*` |
 | Data pipelines | universe & source status | manifest, `generated/molecule_universe.json`, `pipeline_schedules`, `job_runs` |
 | Molecule universe | universe, molecule intelligence, lookup | `generated/*`, `cdmo:*`, seeds, `sources/*`, `molecule_entries`, `watch_molecules` |
-| Site directory | site directory, plant registry | frame, `sources/fda_*.json`, `sources/cdsco_plants.json`, `orgs` |
+| Site directory | site directory, plant registry | frame, `sources/fda_*.json`, `sources/cdsco_plants.json`, `sources/eudragmdp.json`, `orgs` |
 | Audit log | none | `audit_log` |
 
 ## 6. Things worth knowing
@@ -250,3 +260,14 @@ page). Part 2 scope lines (Union coded format) become stated capabilities throug
 statements of non-compliance keep the inspectors' "nature of non-compliance". `plants.py` attaches each EU site to a
 registry plant (company + PIN, or company + town) or adds it as an EU-only plant; the site's status is
 non-compliant when its latest document is a statement of non-compliance.
+
+### Running the plant registry
+
+```bash
+just setup                    # once: loader venv (includes pdfplumber)
+just fetch-plant-registry     # CDSCO SUGAM + WHO-GMP PDF, then EudraGMDP — on a laptop
+just push-plant-registry ec2-user@<server> ~/.ssh/<key>.pem   # copy to the server, restart the API
+```
+
+Admin → Data jobs has the same as **Rebuild plant registry** (both sources), **CDSCO plant registry** and
+**EU GMP certificates** (each accepts an uploaded file when the server cannot reach the site).

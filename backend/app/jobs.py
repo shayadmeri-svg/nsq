@@ -301,6 +301,9 @@ REGISTRY: dict[str, Job] = {j.key: j for j in [
           params=[Param("force", "Re-download even if unchanged", default=False),
                   Param("file", "Or parse an uploaded file (for when the server cannot reach the source)", kind="file", default="")])
       for k in SOURCE_TITLES],
+    Job("plant-registry", "Rebuild plant registry", "Fetch CDSCO's approved sites + WHO-GMP list, then EU GMP certificates (EudraGMDP). The Plants tab, site matches and 'Match with CDSCO registry' pick the new files up on their own. CDSCO / EudraGMDP often refuse cloud servers — then run `just fetch-plant-registry` on a laptop and `just push-plant-registry`.",
+        "Sources", lambda p: _source_steps(["cdsco_plants", "eudragmdp"], p), invalidates=False,
+        params=[Param("force", "Re-download even if unchanged", default=False)]),
     Job("load-seeds", "Reload CDMO seeds", "Rebuild the molecule universe from data/*.json seeds (+ fetched sources) and reload seeded plants. User plants are kept.",
         "Data", _seed_steps, role="super_admin", destructive=lambda p: True, before=export_watchlist, after=sync_plants_to_redis),
     Job("sync-plants", "Re-publish user plants", "Write every user-created plant from Postgres back into Redis.",
