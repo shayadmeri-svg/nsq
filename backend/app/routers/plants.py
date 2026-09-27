@@ -21,8 +21,8 @@ def plant_list(q: str = "", state: str = "", capability: str = "", segregated: s
 
 
 @router.get("/summary")
-def plant_summary(user: User = Depends(current_user)):
-    return plants.summary()
+def plant_summary(exclude_api_only: bool = False, user: User = Depends(current_user)):
+    return plants.summary(exclude_api_only=exclude_api_only)
 
 
 @router.get("/facets")

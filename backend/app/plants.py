@@ -430,9 +430,15 @@ def _rate(alerted: int, plants: int, alerts: int) -> dict[str, Any]:
             "alerts_per_100_plants": round(100 * alerts / plants, 1) if plants else None}
 
 
-def summary() -> dict[str, Any]:
+def api_only(p: dict[str, Any]) -> bool:
+    """Makes only APIs (bulk drugs): NSQ tests finished medicines, so such a plant cannot appear in the alerts."""
+    forms = set(p["capabilities"].get("dosage_forms") or [])
+    return bool(forms) and forms <= {"api", "medical_device"}
+
+
+def summary(exclude_api_only: bool = False) -> dict[str, Any]:
     reg = registry()
-    plants = list(reg["plants"].values())
+    plants = [p for p in reg["plants"].values() if not (exclude_api_only and api_only(p))]
     directory = sites.directory()
     linked_sites = set(reg["links"])
 
@@ -459,6 +465,8 @@ def summary() -> dict[str, Any]:
     outside = Counter(f for p in plants for f in (p.get("nsq") or {}).get("outside_capabilities", []))
     return {
         "meta": reg["meta"],
+        "exclude_api_only": exclude_api_only,
+        "api_only_plants": sum(1 for p in reg["plants"].values() if api_only(p)),
         "plants": len(plants),
         "who_gmp": sum(1 for p in plants if p.get("who_gmp_certified")),
         "sugam": sum(1 for p in plants if "cdsco_sugam" in p.get("sources", [])),

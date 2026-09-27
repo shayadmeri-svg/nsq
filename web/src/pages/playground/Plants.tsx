@@ -56,7 +56,10 @@ export function RegistryBadges({ p }: { p: any }) {
 
 // ---------------------------------------------------------------------------------- rates
 
-function RatesCard({ s, onPick }: { s: any; onPick: (dim: string, key: string) => void }) {
+function RatesCard({ s: all, onPick }: { s: any; onPick: (dim: string, key: string) => void }) {
+  const [finished, setFinished] = useState(false);
+  const fin = useQuery({ queryKey: ["plants-summary", "finished"], queryFn: () => api<any>("/api/plants/summary?exclude_api_only=true"), enabled: finished });
+  const s = finished && fin.data ? fin.data : all;
   const [dim, setDim] = useState<"capabilities" | "segregated" | "states" | "tiers" | "breadth">("capabilities");
   const [metric, setMetric] = useState<"share" | "per100">("share");
   const rows: Rate[] = useMemo(() => (s[dim] as Rate[]).filter((r) => r.plants >= (dim === "states" ? 5 : 3)), [s, dim]);
@@ -71,16 +74,20 @@ function RatesCard({ s, onPick }: { s: any; onPick: (dim: string, key: string) =
         <div className="mb-4 flex flex-wrap gap-2">
           <Segmented value={dim} onChange={setDim} options={[{ value: "capabilities", label: "Dosage form" }, { value: "segregated", label: "Segregated block" }, { value: "states", label: "State" }, { value: "tiers", label: "Certification" }, { value: "breadth", label: "Breadth" }]} />
           <Segmented value={metric} onChange={setMetric} options={[{ value: "share", label: "% plants with NSQ" }, { value: "per100", label: "Alerts / 100 plants" }]} />
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-slate-50 px-3 text-xs text-ink-soft ring-1 ring-inset ring-line" title={`NSQ tests finished medicines, so plants that make only APIs can never appear in it (${all.api_only_plants ?? "?"} such plants). Leave them out for a fair comparison.`}>
+            <input type="checkbox" checked={finished} onChange={(e) => setFinished(e.target.checked)} className="accent-brand-600" />
+            Finished-dose plants only{finished && fin.isFetching ? " …" : ""}
+          </label>
         </div>
-        <div className="mb-2 grid grid-cols-[minmax(0,1.3fr)_70px_minmax(0,2fr)_80px] gap-3 text-[10.5px] font-semibold uppercase tracking-wider text-ink-muted">
+        <div className="mb-2 grid grid-cols-[minmax(0,1.7fr)_60px_minmax(0,1.6fr)_72px] gap-3 text-[10.5px] font-semibold uppercase tracking-wider text-ink-muted">
           <span>{dim === "capabilities" ? "Permitted to make" : dim === "segregated" ? "Separate block" : dim === "states" ? "State" : dim === "tiers" ? "Listed as" : "Dosage forms per plant"}</span>
           <span className="text-right">Plants</span><span /><span className="text-right">{metric === "share" ? "With NSQ" : "Alerts/100"}</span>
         </div>
         <div className="space-y-1.5">
           {rows.map((r) => (
             <button key={r.key} onClick={() => onPick(dim, r.key)} disabled={dim === "tiers" || dim === "breadth"}
-              className="grid w-full grid-cols-[minmax(0,1.3fr)_70px_minmax(0,2fr)_80px] items-center gap-3 rounded-lg px-1 py-1 text-left text-[13px] hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent">
-              <span className="truncate font-medium text-ink-soft" title={r.label}>{r.label}</span>
+              className="grid w-full grid-cols-[minmax(0,1.7fr)_60px_minmax(0,1.6fr)_72px] items-center gap-3 rounded-lg px-1 py-1 text-left text-[13px] hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent">
+              <span className="font-medium leading-snug text-ink-soft" title={r.label}>{r.label}</span>
               <span className="text-right tabular-nums text-ink-muted">{nf(r.plants)}</span>
               <span className="relative h-2.5 overflow-hidden rounded-full bg-slate-100">
                 <span className="absolute inset-y-0 left-0 rounded-full bg-rose-400/80" style={{ width: `${(100 * val(r)) / max}%` }} />
@@ -92,7 +99,7 @@ function RatesCard({ s, onPick }: { s: any; onPick: (dim: string, key: string) =
             </button>
           ))}
         </div>
-        <p className="mt-4 text-[11.5px] leading-relaxed text-ink-muted">{s.caveat} Small groups swing a lot: read rates on fewer than ~30 plants as hints.</p>
+        <p className="mt-4 text-[11.5px] leading-relaxed text-ink-muted">{finished ? `Leaving out ${s.api_only_plants} API-only plants. ` : ""}{s.caveat} Small groups swing a lot: read rates on fewer than ~30 plants as hints.</p>
       </div>
     </Card>
   );

@@ -144,3 +144,11 @@ def test_eu_gmp_merged_into_registry(monkeypatch):
     b = plants.brief(emcure)
     assert b["eu_stated"]["compression"]
     monkeypatch.setattr(plants, "_cache", None)
+
+
+def test_summary_can_leave_out_api_only_plants(admin):
+    if not _have_registry():
+        pytest.skip("data/sources/cdsco_plants.json not present")
+    a = admin.get("/api/plants/summary", headers=H).json()
+    f = admin.get("/api/plants/summary", params={"exclude_api_only": "true"}, headers=H).json()
+    assert f["exclude_api_only"] and a["api_only_plants"] > 0 and f["plants"] == a["plants"] - a["api_only_plants"]
