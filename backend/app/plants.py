@@ -19,6 +19,7 @@ India, so rates are "per registry plant", and every page says so.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
@@ -223,7 +224,7 @@ def _eu_summary(site: dict[str, Any]) -> dict[str, Any]:
 
 
 def _eu_plant(site: dict[str, Any], eu: dict[str, Any]) -> dict[str, Any]:
-    pin = (site.get("postcode") or "").replace(" ", "")[:6] or None
+    pin = _eu_pin(site)
     forms = eu["forms"]
     pid = f"eu-{re.sub(r'[^a-z0-9]+', '-', (site.get('name') or '').lower()).strip('-')[:50]}--{pin or site.get('key')}"
     return {"id": pid, "name": site.get("name") or site.get("manufacturer") or "?", "aliases": [], "address": site.get("address"),
@@ -234,8 +235,46 @@ def _eu_plant(site: dict[str, Any], eu: dict[str, Any]) -> dict[str, Any]:
                              "finished_dose": bool(set(forms) - {"api"}), "licence_classes": [], "schedule_c": False}}
 
 
+def _eu_pin(site: dict[str, Any]) -> str | None:
+    m = re.search(r"\d{6}", re.sub(r"[\s-]", "", site.get("postcode") or ""))
+    return m.group(0) if m else None
+
+
+def _site_numbers(address: str | None, pin: str | None) -> set[str]:
+    """Plot / unit numbers in an address, without the PIN (split or not)."""
+    a = (address or "").lower()
+    if pin:
+        a = re.sub(rf"{pin[:3]}\s*-?\s*{pin[3:]}", " ", a)
+    return {n.lstrip("0") or "0" for n in re.findall(r"\d+", a) if len(n) < 5}
+
+
+def _same_site(a: str | None, b: str | None, pin: str | None) -> bool:
+    """Two records of one company at one PIN are one site unless both give plot numbers and none are shared
+    (Indoco Goa: Plant I is L-14, Plant II is L-32/33/34 — same PIN, different plants)."""
+    na, nb = _site_numbers(a, pin), _site_numbers(b, pin)
+    return not (na and nb and not (na & nb))
+
+
+def _attach_eu(p: dict[str, Any], eu: dict[str, Any]) -> None:
+    """Add an EU record to a plant. Several records for one site (re-registrations) keep the latest as `eu`."""
+    prev = p.get("eu")
+    keys = [*(p.get("eu_records") or ([prev["key"]] if prev else [])), eu["key"]]
+    if prev is None or (eu.get("last_gmp_inspection") or "") >= (prev.get("last_gmp_inspection") or ""):
+        p["eu"] = eu
+    p["eu_records"] = list(dict.fromkeys(keys))
+    caps = dict(p["capabilities"])
+    caps["dosage_forms"] = sorted(set(caps.get("dosage_forms") or []) | set(eu["forms"]))
+    caps["sterile"] = caps.get("sterile") or bool(set(eu["forms"]) & capability_rules.STERILE)
+    caps["api"] = caps.get("api") or "api" in eu["forms"]
+    caps["finished_dose"] = caps.get("finished_dose") or bool(set(eu["forms"]) - {"api"})
+    p["capabilities"] = caps
+    if "eudragmdp" not in p.get("sources", []):
+        p["sources"] = [*p.get("sources", []), "eudragmdp"]
+
+
 def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, Any]]) -> dict[str, int]:
-    """Attach EudraGMDP sites to registry plants (company + PIN, or company + town); unmatched sites become plants."""
+    """Attach EudraGMDP sites to registry plants (company + PIN, or company + town, and no conflicting plot numbers);
+    unmatched sites become plants, with re-registrations of one site folded together."""
     from rapidfuzz import fuzz
 
     by_pin: dict[str, list[str]] = defaultdict(list)
@@ -245,11 +284,12 @@ def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, A
             by_pin[p["pin"]].append(pid)
         for t in _tokens(p["name"])[:2]:
             by_token[t].add(pid)
-    matched = added = 0
+    eu_by_pin: dict[str, list[str]] = defaultdict(list)
+    matched = added = folded = 0
     for site in eu_sites.values():
         eu = _eu_summary(site)
         name = " ".join(_tokens(site.get("name") or "", keep_generic=True))
-        pin = (site.get("postcode") or "").replace(" ", "")[:6]
+        pin = _eu_pin(site) or ""
         best, best_score = [], 0.0
         for pid in set(by_pin.get(pin, [])) | set().union(*(by_token.get(t, set()) for t in _tokens(site.get("name") or "")[:2])):
             p = plants[pid]
@@ -258,12 +298,14 @@ def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, A
                 continue
             score = fuzz.token_sort_ratio(name, pn)
             if p.get("pin") and pin:
-                if p["pin"] != pin or score < 80:
+                if p["pin"] != pin or score < 80 or not _same_site(site.get("address"), p.get("address"), pin):
                     continue
                 score += 20
             else:
                 town = _town_words(site.get("city"), site.get("address")) - _ADDRESS_STOP
                 if score < 92 or p.get("state") != pin_state(pin) or not (town & _town_words(p.get("district"), p.get("address"))):
+                    continue
+                if not _same_site(site.get("address"), p.get("address"), pin or None):
                     continue
             if score > best_score:
                 best, best_score = [pid], score
@@ -271,22 +313,26 @@ def _merge_eu(plants: dict[str, dict[str, Any]], eu_sites: dict[str, dict[str, A
                 best.append(pid)  # e.g. two CDSCO units of one company at the same PIN: the certificate covers the site
         if best:
             for pid in best:
-                p = plants[pid]
-                p["eu"] = eu
-                caps = dict(p["capabilities"])
-                caps["dosage_forms"] = sorted(set(caps.get("dosage_forms") or []) | set(eu["forms"]))
-                caps["sterile"] = caps.get("sterile") or bool(set(eu["forms"]) & capability_rules.STERILE)
-                caps["api"] = caps.get("api") or "api" in eu["forms"]
-                p["capabilities"] = caps
-                if "eudragmdp" not in p.get("sources", []):
-                    p["sources"] = [*p.get("sources", []), "eudragmdp"]
+                _attach_eu(plants[pid], eu)
             matched += 1
-        else:
-            np = _eu_plant(site, eu)
-            np["eu"] = eu
-            plants[np["id"]] = np
-            added += 1
-    return {"eu_sites": len(eu_sites), "eu_matched": matched, "eu_added": added}
+            continue
+        # Unmatched: fold into an EU-only plant already made for this site (same company, PIN, plot numbers).
+        first = (_tokens(site.get("name") or "") or [""])[0]
+        same = [pid for pid in eu_by_pin.get(pin, []) if pin and first and (_tokens(plants[pid]["name"]) or [""])[0] == first
+                and _same_site(site.get("address"), plants[pid].get("address"), pin)]
+        if same:
+            _attach_eu(plants[same[0]], eu)
+            folded += 1
+            continue
+        np = _eu_plant(site, eu)
+        if np["id"] in plants:
+            np["id"] = f"{np['id']}-{hashlib.md5((site.get('address') or site.get('key') or '').encode()).hexdigest()[:6]}"
+        np["eu"], np["eu_records"] = eu, [eu["key"]]
+        plants[np["id"]] = np
+        if pin:
+            eu_by_pin[pin].append(np["id"])
+        added += 1
+    return {"eu_sites": len(eu_sites), "eu_matched": matched, "eu_added": added, "eu_folded": folded}
 
 
 def registry() -> dict[str, Any]:

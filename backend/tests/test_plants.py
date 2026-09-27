@@ -195,3 +195,31 @@ def test_retired_plant_ids_are_renamed(admin):
         assert db.get(_Org, oid).plant_ids == [new, "baddi-osd-a"]
         assert db.get(_Plant, old) is None and db.get(_Plant, new).payload["asset_id"] == new
         db.delete(db.get(_Plant, new)); db.commit()
+
+
+def test_eu_sites_split_by_plot_numbers():
+    """One company, one PIN, different plots = different plants; a re-registration of one site folds in."""
+    from app import plants as pl
+
+    assert pl._same_site("Plant I L-14 Verna Industrial Estate, Goa, 403722", "(Plant I), L14, Verna Indl. Area, Goa 403 722", "403722")
+    assert not pl._same_site("Plant II L 32 33 And 34 Verna Industrial Estate, 403722", "(Plant I), L14, Verna Goa 403 722", "403722")
+    assert pl._same_site("Unit IV Plot S 20 To S 26 Pharma Sez, 509301", "Plot No's S-20 to S-26, Green Industrial Park, 509301", "509301")
+    assert pl._same_site("Village Katha, Baddi", "HB 211, Village Katha", "173205")  # no plot number on one side
+    assert pl._eu_pin({"postcode": "IN 173205"}) == "173205"
+
+    def site(key, name, address, forms_code, last):
+        return {"key": key, "name": name, "address": address, "city": "South Goa", "postcode": "403722", "status": "compliant",
+                "last_gmp_inspection": last, "scope": [{"code": forms_code, "label": "", "details": []}]}
+
+    reg = {"indoco--403722--l14": {"id": "indoco--403722--l14", "name": "Indoco Remedies Ltd", "pin": "403722", "state": "Goa",
+                                   "district": "South Goa", "address": "(Plant I), L14, Verna Indl. Area, Verna Salcete Goa 403 722",
+                                   "capabilities": {"dosage_forms": ["tablet"]}, "sources": ["cdsco_who_gmp"]}}
+    eu = {"a": site("a", "Indoco Remedies Limited", "Plant I L-14 Verna Industrial Estate, 403722", "1.2.1.13", "2025-11-24"),
+          "b": site("b", "Indoco Remedies Limited", "Plant II L 32 33 And 34 Verna Industrial Estate, 403722", "1.1.1.4", "2025-05-09"),
+          "c": site("c", "Indoco Remedies Limited", "L - 32 33 And 34 IDC Verna Industrial Road, 403722", "1.1.1.4", "2023-04-25")}
+    stats = pl._merge_eu(reg, eu)
+    assert reg["indoco--403722--l14"]["eu_records"] == ["a"]
+    assert "svp_liquid" not in reg["indoco--403722--l14"]["capabilities"]["dosage_forms"]  # Plant II's sterile line stays on Plant II
+    plant2 = [p for pid, p in reg.items() if pid.startswith("eu-")]
+    assert len(plant2) == 1 and plant2[0]["eu_records"] == ["b", "c"] and plant2[0]["eu"]["key"] == "b"
+    assert stats["eu_matched"] == 1 and stats["eu_added"] == 1 and stats["eu_folded"] == 1
