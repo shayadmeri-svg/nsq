@@ -6,3 +6,5 @@ shapely>=2.0
 rapidfuzz>=3.6
 # optional: DECRS / source files delivered as .xlsx
 openpyxl>=3.1
+# cdsco_plants: CDSCO's WHO-GMP list is a PDF
+pdfplumber>=0.11
