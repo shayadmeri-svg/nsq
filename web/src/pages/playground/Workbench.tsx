@@ -16,10 +16,13 @@ function Field({ k, v }: { k: string; v: any }) {
   return <div className="grid grid-cols-[140px_1fr] gap-2 py-1 text-xs"><span className="text-ink-muted">{k}</span><span className="font-medium text-ink-soft">{v === "" || v == null ? "—" : v}</span></div>;
 }
 
-function Slider({ label, value, onChange, color }: { label: string; value: number; onChange: (v: number) => void; color: string }) {
+function Slider({ label, score, share, value, onChange, color }: { label: string; score?: number; share: number; value: number; onChange: (v: number) => void; color: string }) {
   return (
     <label className="block text-xs">
-      <div className="flex justify-between"><span>{label}</span><span className="font-semibold tabular-nums">{value}</span></div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span>{label} <b className="tabular-nums" style={{ color }}>{score ?? "—"}</b><span className="text-ink-faint">/100</span></span>
+        <span className="tabular-nums text-ink-muted" title="This pillar's share of the total">weight {share}%</span>
+      </div>
       <input type="range" min={0} max={100} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full" style={{ accentColor: color }} />
     </label>
   );
@@ -53,7 +56,7 @@ export function Workbench({ initial }: { initial?: string }) {
         <div className={cn("space-y-5 transition-opacity", q.isFetching && "opacity-70")}>
           <div className="grid gap-5 xl:grid-cols-[1fr_1.3fr]">
             <Card>
-              <CardHeader title="Four-pillar score" subtitle="Drag the weights — the score recomputes on the server" />
+              <CardHeader title="Four-pillar score" subtitle="Total = weighted average of the four pillar scores. The weights change the total only, not the pillars." />
               <div className="grid grid-cols-[1fr_1fr] gap-4 p-5">
                 <div className="relative">
                   <ResponsiveContainer width="100%" height={220}>
@@ -65,7 +68,12 @@ export function Workbench({ initial }: { initial?: string }) {
                   <div className="pointer-events-none absolute inset-0 grid place-items-center text-center"><div><div className="font-display text-3xl font-extrabold">{Math.round(d.score.total_score)}</div><div className="text-[10px] uppercase tracking-wider text-ink-muted">total</div></div></div>
                 </div>
                 <div className="space-y-3">
-                  {PILLARS.map(([k, label, c]) => <Slider key={k} label={`${label} · ${radial.find((r) => r.name === k)?.value}`} value={(w as any)[k]} color={c} onChange={(v) => setW({ ...w, [k]: v })} />)}
+                  {PILLARS.map(([k, label, c]) => {
+                    const sum = Object.values(w).reduce((a, b) => a + b, 0);
+                    return <Slider key={k} label={label} score={radial.find((r) => r.name === k)?.value} share={sum ? Math.round((100 * (w as any)[k]) / sum) : 0}
+                      value={(w as any)[k]} color={c} onChange={(v) => setW({ ...w, [k]: v })} />;
+                  })}
+                  {Object.values(w).every((x) => x === 0) && <div className="text-[11px] text-amber-700">All weights are 0 — the default weights are used.</div>}
                 </div>
               </div>
               <div className="space-y-1.5 border-t border-line p-5 text-xs">

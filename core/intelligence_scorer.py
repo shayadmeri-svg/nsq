@@ -83,11 +83,13 @@ def score_patent(patent: Optional[PatentIntelligence]) -> tuple[float, dict[str,
     earliest = patent.earliest_loe()
     if earliest:
         days = _days_until(earliest)
-        explanation["loe_window"] = f"{days} days until earliest LOE ({earliest.isoformat()})"
-        # Ideal prep window: 3–5 years out (1095–1825 days)
+        if days < 0:
+            explanation["loe_window"] = f"off-patent since {earliest.isoformat()} ({-days / 365.25:.1f} years) in at least one market"
+        else:
+            explanation["loe_window"] = f"{days} days until earliest LOE ({earliest.isoformat()})"
+        # Ideal prep window: 2–5 years out (730–1825 days)
         if days < 0:
             score += 25  # already off-patent = high readiness
-            explanation["loe_window"] += " — already off-patent in at least one market"
         elif 730 <= days <= 1825:
             score += 30  # sweet spot
         elif 365 <= days < 730:
@@ -233,15 +235,19 @@ def score_demand(
         details.append("no prevalence data")
 
     trend = (demand.growth_trend or "").lower()
+    # Auto-built profiles derive the trend from ClinicalTrials.gov (share of trials started in the last
+    # 3 years) — research activity, not sales. Say so rather than calling it a demand trend.
+    trial_based = "ClinicalTrials" in str((demand.provenance or {}).get("growth_trend", ""))
+    trend_label = f"{trend} trial activity" if trial_based else f"{trend} demand trend"
     if trend == "growing":
         score += 15
-        details.append("growing demand trend +15")
+        details.append(f"{trend_label} +15")
     elif trend == "stable":
         score += 5
-        details.append("stable demand trend +5")
+        details.append(f"{trend_label} +5")
     elif trend == "declining":
         score -= 10
-        details.append("declining demand trend -10")
+        details.append(f"{trend_label} -10")
     else:
         details.append("unknown trend")
 
@@ -272,7 +278,7 @@ def score_demand(
     score = max(0.0, min(100.0, score))
     summary = f"Demand attractiveness {score:.0f}/100 — {demand.cluster or 'unknown cluster'}"
     if trend:
-        summary += f", {trend} trend"
+        summary += f", {trend_label if trend in ('growing', 'stable', 'declining') else trend + ' trend'}"
     return score, {
         "summary": summary,
         "detail": "; ".join(details),
@@ -996,7 +1002,7 @@ def score_plant_fit(
         }
 
     required_caps = set(MOLECULE_CAPABILITY_HINTS.get(molecule_class, MOLECULE_CAPABILITY_HINTS["small_molecule_oral"]))
-    plant_caps = set((c or "").lower() for c in plant.capabilities)
+    plant_caps = plant_available_capabilities(plant)  # specific tokens (wet_granulation) satisfy generic ones (granulation)
 
     matched = required_caps & plant_caps
     missing = required_caps - plant_caps
@@ -1090,7 +1096,7 @@ def score_candidate(
         warnings.append("No plant asset selected; plant-fit score is zero.")
     if patent and patent.fto_risk == "high":
         warnings.append("High FTO risk — defensive patent thicket may delay launch.")
-    if patent and patent.earliest_loe() and _days_until(patent.earliest_loe()) < 365:
+    if patent and patent.earliest_loe() and 0 <= _days_until(patent.earliest_loe()) < 365:
         warnings.append("LOE window is less than 1 year; launch preparation is urgent.")
     if regulatory and _exclusivity_active(regulatory.exclusivity):
         warnings.append("Active regulatory exclusivity blocks immediate generic launch.")
