@@ -327,6 +327,24 @@ fetch-comtrade:
 fetch-ord FILE="":
     @cd {{LOADER}} && .venv/bin/python -c "import ord_schema, rdkit, pyarrow" 2>/dev/null || .venv/bin/pip install --quiet ord-schema rdkit pyarrow
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py ord {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
+# Copy the server's PubChem structures to this laptop (fetch-ord matches reactions to them). The file is root-owned there.
+pull-structures HOST KEY="" DIR="/opt/nsq-platform":
+    ssh {{ if KEY != "" { "-i " + KEY } else { "" } }} {{HOST}} 'sudo cat {{DIR}}/data/sources/pubchem.json' > data/sources/pubchem.json.tmp && mv data/sources/pubchem.json.tmp data/sources/pubchem.json
+    @python3 -c "import json;d=json.load(open('data/sources/pubchem.json'))['data'];print(len(d),'molecules,',sum(1 for v in d.values() if v.get('found')),'with structures')"
+
+# Everything the server can't fetch itself, in one go: run on the laptop, then copy to the server.
+# A source that fails is reported and skipped; the rest still run and are pushed.
+laptop-refresh HOST KEY="":
+    #!/usr/bin/env bash
+    failed=()
+    for r in fetch-plants fetch-eudragmdp fetch-fda-inspections fetch-cep fetch-nfhs fetch-comtrade fetch-idsp; do
+      echo "━━ $r"; just $r || failed+=("$r")
+    done
+    just pull-structures {{HOST}} {{KEY}} && { echo "━━ fetch-ord"; just fetch-ord || failed+=("fetch-ord"); } || failed+=("pull-structures")
+    just push-plant-registry {{HOST}} {{KEY}}
+    just push-signals {{HOST}} {{KEY}}
+    [ ${#failed[@]} -eq 0 ] && echo "All sources refreshed and pushed." || echo "Pushed. Failed (older files kept): ${failed[*]}"
+
 # Copy the signal files to the server (HOST = user@host, KEY = .pem); the API re-reads them on the next request
 push-signals HOST KEY="" DIR="/opt/nsq-platform":
     #!/usr/bin/env bash
