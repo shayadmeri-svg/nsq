@@ -507,6 +507,7 @@ class CandidateScore(BaseModel):
     fto_risk: str = ""
     earliest_loe: Optional[date] = None
     warnings: list[str] = Field(default_factory=list)
+    plant_fit_detail: dict[str, Any] = Field(default_factory=dict)
 
 
 class PortfolioScenario(BaseModel):

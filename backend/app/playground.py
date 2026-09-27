@@ -494,10 +494,20 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
     if p is None:
         return None
     reg, dem = m["regulatory"].get(key), m["demand"].get(key)
+    from . import plants as registry_plants
+
     plants = [m["plants"][i] for i in plant_ids if i in m["plants"]]
-    plant = next((x for x in plants if x.asset_id == plant_id), plants[0] if plants else None)
+    reg_plant = None
+    if plant_id.startswith("reg:"):
+        rp = registry_plants.registry()["plants"].get(plant_id[4:])
+        if rp is not None:
+            reg_plant = registry_plants.as_plant_asset(rp)
+    plant = reg_plant or next((x for x in plants if x.asset_id == plant_id), plants[0] if plants else None)
     cx = derive_manufacturing_complexity(key, p, reg)
-    cand = score_candidate(key, p, plant, weights=weights or None, regulatory=reg, demand=dem)
+    needs = registry_plants.fit_needs(key)
+    if reg_plant is not None and needs.get("forms"):
+        needs = {**needs, "record": registry_plants.fit_records(key).get(plant_id[4:], {})}
+    cand = score_candidate(key, p, plant, weights=weights or None, regulatory=reg, demand=dem, fit_needs=needs)
 
     # curated knowledge for the 17 catalogue drugs
     ob_curated, pharma = None, None
@@ -544,8 +554,10 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
         "demand": dem.model_dump(mode="json") if dem else None,
         "complexity": cx.model_dump(mode="json"),
         "score": cand.model_dump(mode="json"),
-        "plants": [{"asset_id": x.asset_id, "name": x.site_name} for x in plants],
+        "plants": [{"asset_id": x.asset_id, "name": x.site_name, "kind": "profile"} for x in plants]
+                  + ([{"asset_id": reg_plant.asset_id, "name": reg_plant.site_name, "kind": "registry"}] if reg_plant else []),
         "plant_id": plant.asset_id if plant else None,
+        "fit_needs": needs,
         "orange_book_curated": ob_curated,
         "pharmacopeia": pharma,
         "nsq": nsq,

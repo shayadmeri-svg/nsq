@@ -3,10 +3,10 @@ import { ExternalLink, FlaskConical } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
 import { RankBars, TrendBars } from "../../components/charts";
-import { Badge, Card, CardHeader, ErrorNote, Skeleton } from "../../components/ui";
+import { Badge, Bar, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
 import { Estimate } from "../../components/ui/Estimate";
 import { api } from "../../lib/api";
-import { MakersCard } from "./Plants";
+import { MakersCard, RegistryBadges } from "./Plants";
 import { cn } from "../../lib/cn";
 import { fmtDate, titleCase } from "../../lib/format";
 
@@ -28,6 +28,95 @@ function Slider({ label, score, share, value, onChange, color }: { label: string
   );
 }
 
+const PART_LABEL: Record<string, string> = { form: "Makes the form", capabilities: "Capabilities the form needs", segregation: "Separate block", standing: "Regulatory standing", record: "Track record with this molecule" };
+
+function FitParts({ detail }: { detail?: any }) {
+  if (!detail?.parts || detail.method !== "dosage form") return null;
+  return (
+    <div className="mt-3 rounded-lg bg-slate-50 p-3">
+      <div className="mb-1.5 font-semibold text-ink-soft">Plant fit, part by part <span className="font-normal text-ink-muted">· molecule form: {detail.molecule_forms?.join(", ")}{detail.segregated_needed?.length ? ` · needs ${detail.segregated_needed.join(", ")} block` : ""}</span></div>
+      <div className="grid gap-x-5 gap-y-1.5 sm:grid-cols-2">{Object.entries(detail.parts).map(([k, v]: any) => (
+        <div key={k}><div className="flex justify-between text-[11px]"><span>{PART_LABEL[k] ?? k}</span><span className="tabular-nums">{v}/{detail.max?.[k]}</span></div>
+          <Bar value={detail.max?.[k] ? (100 * v) / detail.max[k] : 0} color="#e11d48" /></div>
+      ))}</div>
+      <div className="mt-2 space-y-0.5 text-[11px] text-ink-muted">
+        <div>{detail.capability_match}{detail.inferred_capabilities?.length ? ` · half credit (inferred, not evidenced): ${detail.inferred_capabilities.join(", ")}` : ""}</div>
+        <div>{detail.standing} · {detail.record}</div>
+      </div>
+    </div>
+  );
+}
+
+function PlantSearch({ onPick }: { onPick: (id: string) => void }) {
+  const [q, setQ] = useState("");
+  const [dq, setDq] = useState("");
+  const [open, setOpen] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setDq(q.trim()), 250); return () => clearTimeout(t); }, [q]);
+  const r = useQuery({ queryKey: ["plant-search", dq], enabled: dq.length >= 2, queryFn: () => api<any>(`/api/plants?${new URLSearchParams({ q: dq, size: "8", sort: "name" })}`) });
+  return (
+    <div className="relative">
+      <input className="input h-10 w-72" placeholder="Score any registry plant — type a name or PIN" value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} />
+      {open && dq.length >= 2 && (
+        <div className="absolute z-20 mt-1 max-h-80 w-[28rem] overflow-auto rounded-lg border border-line bg-white p-1 shadow-lg">
+          {r.isLoading && <div className="p-2 text-xs text-ink-muted">Searching…</div>}
+          {r.data?.items?.length === 0 && <div className="p-2 text-xs text-ink-muted">No plant matches.</div>}
+          {r.data?.items?.map((p: any) => (
+            <button key={p.id} className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-50" onMouseDown={() => { onPick(p.id); setQ(""); setOpen(false); }}>
+              <div className="font-medium">{p.name}</div>
+              <div className="text-ink-muted">{[p.district, p.state, p.pin].filter(Boolean).join(" · ")} · {p.dosage_forms.slice(0, 5).join(", ") || "forms not listed"}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FitRanking({ moleculeKey, onScore }: { moleculeKey: string; onScore: (id: string) => void }) {
+  const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "us_fda">("");
+  const [state, setState] = useState("");
+  const [limit, setLimit] = useState(15);
+  const r = useQuery({ queryKey: ["fit-rank", moleculeKey, cert, state, limit], enabled: !!moleculeKey, placeholderData: keepPreviousData,
+    queryFn: () => api<any>(`/api/playground/molecule/${moleculeKey}/plant-fit?${new URLSearchParams({ cert, state, limit: String(limit) })}`) });
+  const f = useQuery({ queryKey: ["plant-facets"], queryFn: () => api<any>("/api/plants/facets") });
+  const m = r.data;
+  return (
+    <Card>
+      <CardHeader title="Plant fit across the registry" subtitle={m ? `Every plant scored for ${m.molecule.dosage_form || m.molecule.forms?.join(", ") || "this molecule"}${m.molecule.segregated?.length ? ` · needs a separate ${m.molecule.segregated.join(" / ")} block` : ""} — ${m.scored?.toLocaleString()} plants` : "Loading…"} />
+      {r.error && <div className="p-5"><ErrorNote error={r.error} /></div>}
+      {m && !m.molecule.forms?.length ? <div className="p-5 text-xs text-ink-muted">The molecule's dosage form is not known, so plants cannot be scored against it — add it in the molecule's Regulatory tab.</div> : m && (
+        <div className="p-5">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Segmented value={cert} onChange={setCert} options={[{ value: "", label: "All" }, { value: "us_fda", label: "US FDA" }, { value: "eu_gmp", label: "EU GMP" }, { value: "who_gmp", label: "WHO-GMP" }]} />
+            <select className="input h-9 w-48" value={state} onChange={(e) => setState(e.target.value)}><option value="">All states</option>{f.data?.states?.map((s: string) => <option key={s} value={s}>{s}</option>)}</select>
+            <span className="ml-auto flex gap-1 text-[11px]">{Object.entries(m.bands).map(([b, n]: any) => <Badge key={b} tone={b === "80+" ? "brand" : b === "60–79" ? "sky" : b === "40–59" ? "amber" : "slate"}>{b}: {n.toLocaleString()}</Badge>)}</span>
+          </div>
+          {m.tied_at_top > 3 && <p className="mb-2 text-[11px] text-ink-muted">{m.tied_at_top} plants tie at the top score — public records don't separate them further, so they are ordered by most recent EU / FDA inspection.</p>}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="text-left text-ink-muted"><th className="py-1.5 pr-3 font-medium">Fit</th><th className="pr-3 font-medium">Plant</th><th className="pr-3 font-medium">Form · caps · block · standing · record</th><th className="pr-3 font-medium">Why</th><th /></tr></thead>
+              <tbody>{m.items.map((p: any) => (
+                <tr key={p.id} className="border-t border-line align-top">
+                  <td className="py-2 pr-3 font-display text-base font-bold tabular-nums">{Math.round(p.fit)}</td>
+                  <td className="py-2 pr-3"><div className="font-medium">{p.name}</div><div className="text-ink-muted">{[p.district, p.state].filter(Boolean).join(", ")}</div><div className="mt-1"><RegistryBadges p={p} /></div></td>
+                  <td className="py-2 pr-3 tabular-nums text-ink-soft">{["form", "capabilities", "segregation", "standing", "record"].map((k) => `${Math.round(p.parts[k])}/${m.max[k]}`).join(" · ")}</td>
+                  <td className="max-w-md py-2 pr-3 text-ink-muted">{p.fit_record}{p.fit_warnings?.length ? <span className="text-rose-700"> · {p.fit_warnings.join("; ")}</span> : null}</td>
+                  <td className="py-2"><button className="rounded-md border border-line px-2 py-1 hover:bg-slate-50" onClick={() => onScore(p.id)}>Score</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-ink-faint">
+            <span>{m.method}</span>
+            {m.total > m.items.length && <button className="shrink-0 text-brand-700 hover:underline" onClick={() => setLimit(limit + 25)}>Show 25 more of {m.total.toLocaleString()}</button>}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function Workbench({ initial }: { initial?: string }) {
   const list = useQuery({ queryKey: ["pg-world", ""], queryFn: () => api<any>("/api/playground/world") });
   const [key, setKey] = useState(initial ?? "");
@@ -38,7 +127,9 @@ export function Workbench({ initial }: { initial?: string }) {
   useEffect(() => { if (!key && list.data?.molecules?.length) setKey(list.data.molecules.find((m: any) => m.key === "telmisartan")?.key ?? list.data.molecules[0].key); }, [list.data, key]);
   const q = useQuery({
     queryKey: ["pg-mol", key, plant, dw], enabled: !!key, placeholderData: keepPreviousData,
-    queryFn: () => api<any>(`/api/playground/molecule/${key}?${new URLSearchParams({ plant_id: plant, w_patent: String(dw.patent), w_regulatory: String(dw.regulatory), w_demand: String(dw.demand), w_plant: String(dw.plant) })}`),
+    queryFn: () => api<any>(`/api/playground/molecule/${key}?${new URLSearchParams(Object.values(dw).some((x) => x > 0)
+      ? { plant_id: plant, w_patent: String(dw.patent), w_regulatory: String(dw.regulatory), w_demand: String(dw.demand), w_plant: String(dw.plant) }
+      : { plant_id: plant })}`),
   });
   const d = q.data;
   const radial = useMemo(() => d ? PILLARS.map(([k, , c]) => ({ name: k, value: Math.round(d.score[`${k === "plant" ? "plant_fit" : k === "patent" ? "patent_readiness" : k === "regulatory" ? "regulatory_clarity" : "demand_attractiveness"}_score`]), fill: c })) : [], [d]);
@@ -48,7 +139,8 @@ export function Workbench({ initial }: { initial?: string }) {
       <Card className="flex flex-wrap items-center gap-3 p-4">
         <FlaskConical size={18} className="text-brand-700" />
         <select className="input h-10 w-72" value={key} onChange={(e) => setKey(e.target.value)}>{list.data?.molecules.map((m: any) => <option key={m.key} value={m.key}>{m.name}</option>)}</select>
-        {d?.plants?.length > 0 && <select className="input h-10 w-72" value={d.plant_id ?? ""} onChange={(e) => setPlant(e.target.value)}>{d.plants.map((p: any) => <option key={p.asset_id} value={p.asset_id}>Scored for: {p.name}</option>)}</select>}
+        {d?.plants?.length > 0 && <select className="input h-10 w-72" value={d.plant_id ?? ""} onChange={(e) => setPlant(e.target.value)}>{d.plants.map((p: any) => <option key={p.asset_id} value={p.asset_id}>{p.kind === "registry" ? "Registry plant: " : "Scored for: "}{p.name}</option>)}</select>}
+        <PlantSearch onPick={(id) => setPlant(`reg:${id}`)} />
         {d && <span className="text-xs text-ink-muted">{d.patent.origin === "curated" ? "Curated profile" : d.patent.origin === "manual" ? "Added in the app" : "Built from public sources"} · {(d.patent.signals?.sources ?? []).length} sources</span>}
       </Card>
       {q.error && <ErrorNote error={q.error} />}
@@ -79,6 +171,7 @@ export function Workbench({ initial }: { initial?: string }) {
               <div className="space-y-1.5 border-t border-line p-5 text-xs">
                 {Object.entries(d.score.explanation ?? {}).map(([k, v]: any) => <div key={k}><b className="capitalize">{k}:</b> <span className="text-ink-soft">{v}</span></div>)}
                 {d.score.warnings?.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{d.score.warnings.map((x: string) => <Badge key={x} tone="amber">{x}</Badge>)}</div>}
+                <FitParts detail={d.score.plant_fit_detail} />
               </div>
             </Card>
 
@@ -155,6 +248,8 @@ export function Workbench({ initial }: { initial?: string }) {
               </div>
             </Card>
           )}
+
+          <FitRanking moleculeKey={key} onScore={(id) => { setPlant(`reg:${id}`); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
 
           <MakersCard moleculeKey={key} />
 

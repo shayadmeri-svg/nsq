@@ -279,3 +279,20 @@ def test_who_can_make_it_lists_dmf_and_cep_holders(admin, monkeypatch):
     assert r["cep"][0]["plants"] and r["dmf_in_registry"] == 1 and r["cep_in_registry"] == 1
     plants._filings_cache = None
     plants._makers_cache.clear()
+
+
+def test_plant_fit_across_registry_and_registry_plant_in_workbench(admin):
+    if not _have_registry():
+        pytest.skip("data/sources/cdsco_plants.json not present")
+    r = admin.get("/api/playground/molecule/telmisartan/plant-fit", params={"limit": 10}, headers=H).json()
+    assert r["molecule"]["forms"] == ["tablet"] and r["scored"] > 1000 and len(r["items"]) == 10
+    fits = [x["fit"] for x in r["items"]]
+    assert fits == sorted(fits, reverse=True) and all(set(x["parts"]) == {"form", "capabilities", "segregation", "standing", "record"} for x in r["items"])
+    assert all("tablet" in x["dosage_forms"] for x in r["items"])
+    eu = admin.get("/api/playground/molecule/telmisartan/plant-fit", params={"cert": "eu_gmp", "limit": 5}, headers=H).json()
+    assert all(x["eu_gmp"] for x in eu["items"])
+    top = r["items"][0]["id"]
+    w = admin.get("/api/playground/molecule/telmisartan", params={"plant_id": f"reg:{top}"}, headers=H).json()
+    assert w["plant_id"] == f"reg:{top}" and any(p["kind"] == "registry" for p in w["plants"])
+    assert w["score"]["plant_fit_detail"]["method"] == "dosage form" and abs(w["score"]["plant_fit_score"] - r["items"][0]["fit"]) < 0.11
+    assert admin.get("/api/playground/molecule/nope/plant-fit", headers=H).status_code == 404

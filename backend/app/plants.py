@@ -703,7 +703,7 @@ _FORM_WORDS = [  # regulatory / Orange Book dosage-form words -> registry dosage
     (r"inject|infusion|vial|ampoule|parenteral|intravenous|subcutaneous|intramuscular", ["svp_liquid", "svp_dry_powder", "lyophilised", "lvp"]),
     (r"ophthalm|eye", ["ophthalmic"]),
     (r"inhal|aerosol|nebul", ["inhalation"]),
-    (r"cream|ointment|gel|lotion|topical|external", ["topical"]),
+    (r"cream|ointment|gel|lotion|topical|external|shampoo|foam|cutaneous|dermal|vaginal", ["topical"]),
     (r"patch|transdermal", ["transdermal"]),
     (r"suppositor", ["suppository"]),
     (r"for (oral )?suspension|dry syrup", ["dry_syrup"]),
@@ -745,6 +745,108 @@ def _molecule_requirements(key: str) -> dict[str, Any]:
     biologic = bool(p and getattr(p, "modality", "") and "small" not in (getattr(p, "modality", "") or "small"))
     return {"key": key, "name": name, "forms": forms, "forms_basis": basis, "segregated": seg, "biologic": biologic,
             "dosage_form": reg.dosage_form if reg else None, "names": [name, *(getattr(p, "aliases", None) or [])]}
+
+
+# --- plant fit against any registry plant -------------------------------------------------------
+
+def as_plant_asset(p: dict[str, Any]):
+    """A registry plant as a PlantAsset the scorer understands (asset id 'reg:<id>')."""
+    from intelligence_models import PlantAsset
+
+    c = p["capabilities"]
+    prof = catalog_profile(p)
+    basis: dict[str, str] = {}
+    for sec in prof["sections"]:
+        for h in sec["have"]:
+            basis[h["token"]] = h["basis"]
+    for h in prof["other"]:
+        basis[h["token"]] = h["basis"]
+    forms = list(c.get("dosage_forms") or [])
+    caps = [*basis, *forms, *(f"segregated_{b}" for b in (c.get("segregated") or {}))]
+    eu, fda = p.get("eu") or {}, p.get("fda") or {}
+    certs = (["WHO_GMP"] if p.get("who_gmp_certified") else []) + (["EU_GMP"] if eu.get("certified") else []) \
+        + (["USFDA"] if fda.get("acceptable") else []) + (["EU_NCR"] if eu.get("status") == "non_compliant" else []) \
+        + (["FDA_OAI"] if fda.get("oai_recent") else []) + (["FDA_IMPORT_ALERT"] if fda.get("import_alert") else [])
+    return PlantAsset(
+        asset_id=f"reg:{p['id']}", site_name=p["name"] + (f", {p.get('district')}" if p.get("district") else ""),
+        city=p.get("district") or "", state=p.get("state") or "", capabilities=list(dict.fromkeys(caps)),
+        approved_forms=list(dict.fromkeys([*forms, *prof["approved_forms"]])), containment_class=prof["containment"],
+        certifications=certs, certifications_active=certs, capability_basis=basis,
+        small_molecule_experience=bool(set(forms) - {"biological"}), biologics_experience="biological" in forms,
+        reference={"registry_plant": p["id"], "sources": p.get("sources", [])})
+
+
+def fit_needs(key: str) -> dict[str, Any]:
+    req = _molecule_requirements(key)
+    return {"forms": req.get("forms") or [], "segregated": req.get("segregated") or [], "dosage_form": req.get("dosage_form"),
+            "forms_basis": req.get("forms_basis")} if req else {}
+
+
+_fit_cache: dict[tuple, dict[str, Any]] = {}
+
+
+def fit_records(key: str) -> dict[str, dict[str, Any]]:
+    """Per registry plant: evidence it makes this molecule, and its NSQ alert count (for plant_fit.score)."""
+    m = makers(key, limit=10 ** 6) or {}
+    rec: dict[str, dict[str, Any]] = defaultdict(dict)
+    for p in m.get("made", []):
+        rec[p["id"]]["made"] = p["alerts_for_molecule"]
+    for p in m.get("api_makers", []):
+        rec[p["id"]]["api"] = True
+    for p in m.get("listed", []):
+        rec[p["id"]]["listed"] = True
+    for row in [*m.get("dmf", []), *m.get("cep", [])]:
+        for pid in row.get("plant_ids", []):
+            rec[pid]["filing"] = True
+    for pid, p in registry()["plants"].items():
+        n = (p.get("nsq") or {}).get("alerts", 0)
+        if n:
+            rec[pid]["nsq_alerts"] = n
+    return rec
+
+
+def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: str = "") -> Optional[dict[str, Any]]:
+    """Plant fit of every registry plant for a molecule, best first (form, capabilities, segregation, standing)."""
+    import plant_fit
+    from intelligence_scorer import plant_available_capabilities
+
+    need = fit_needs(key)
+    if not need:
+        return None
+    reg = registry()
+    ck = (key, id(reg))
+    rows = _fit_cache.get(ck)
+    if rows is None:
+        rows = []
+        if need["forms"]:
+            recs = fit_records(key)
+            for p in reg["plants"].values():
+                a = as_plant_asset(p)
+                sc, exp = plant_fit.score(need["forms"], need["segregated"], a, plant_available_capabilities(a), recs.get(p["id"]))
+                rows.append({"score": sc, "parts": exp["parts"], "summary": exp["summary"], "warnings": exp["warnings"], "record": exp["record"], "id": p["id"]})
+            def _last(pid: str) -> str:
+                p = reg["plants"][pid]
+                return max((p.get("eu") or {}).get("last_gmp_inspection") or "", (p.get("fda") or {}).get("last_inspection") or "")
+
+            # ties (common: public data rarely separates two EU-certified tablet plants) go to the most recently inspected
+            rows.sort(key=lambda r: (-r["score"], -int(_last(r["id"]).replace("-", "") or 0),
+                                     (reg["plants"][r["id"]].get("nsq") or {}).get("alerts", 0), reg["plants"][r["id"]]["name"].lower()))
+        if len(_fit_cache) > 100:
+            _fit_cache.clear()
+        _fit_cache[ck] = rows
+    plants = reg["plants"]
+    sel = [r for r in rows if _matches(plants[r["id"]], q, state, "", "", cert, "")]
+    dist = Counter(("80+" if r["score"] >= 80 else "60–79" if r["score"] >= 60 else "40–59" if r["score"] >= 40 else "<40") for r in rows)
+    top = sel[0]["score"] if sel else None
+    return {"molecule": need, "total": len(sel), "scored": len(rows), "tied_at_top": sum(1 for r in sel if r["score"] == top) if sel else 0,
+            "bands": {k: dist.get(k, 0) for k in ("80+", "60–79", "40–59", "<40")},
+            "items": [{**brief(plants[r["id"]]), "fit": r["score"], "parts": r["parts"], "fit_summary": r["summary"], "fit_warnings": r["warnings"], "fit_record": r["record"],
+              "last_inspected": max((plants[r["id"]].get("eu") or {}).get("last_gmp_inspection") or "", (plants[r["id"]].get("fda") or {}).get("last_inspection") or "") or None}
+                      for r in sel[:limit]],
+            "max": {"form": 25, "capabilities": 25, "segregation": 15, "standing": 20, "record": 15},
+            "method": "Form 25 · capabilities the form needs 25 (inferred = half credit) · separate block 15 · regulatory standing 20 "
+                      "(−2 per NSQ alert, −4 if it was this molecule, at most −10) · track record with this molecule 15 (made it but failed NSQ = 8). "
+                      "No capacity: no public source has it."}
 
 
 _filings_cache: Optional[tuple[tuple, dict[str, Any]]] = None
@@ -795,7 +897,7 @@ def _filing_rows(rows: list[dict[str, Any]], f: dict[str, Any], plants: dict[str
         pids = _holder_plants(r["holder"], f, plants)
         out.append({"holder": r["holder"], "number": r["number"], "date": r.get("date"), "kind": label,
                     "plants": [{"id": pid, "name": plants[pid]["name"], "state": plants[pid].get("state")} for pid in pids[:4]],
-                    "plants_total": len(pids)})
+                    "plants_total": len(pids), "plant_ids": pids})
     out.sort(key=lambda x: (-(1 if x["plants"] else 0), -(int((x["date"] or "0")[:4]))))
     return out
 

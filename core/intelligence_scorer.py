@@ -1050,6 +1050,7 @@ def score_candidate(
     weights: Optional[dict[str, float]] = None,
     regulatory: Optional[RegulatoryPassport] = None,
     demand: Optional[DemandProfile] = None,
+    fit_needs: Optional[dict[str, Any]] = None,
 ) -> CandidateScore:
     """Compute the full four-pillar score for a molecule × plant line.
 
@@ -1082,7 +1083,16 @@ def score_candidate(
     demand_score, demand_exp = score_demand(demand, molecule_key)
 
     molecule_class = _molecule_class(patent)
-    plant_score, plant_exp = score_plant_fit(molecule_class, patent, plant)
+    fit_warnings: list[str] = []
+    if plant is not None and fit_needs and fit_needs.get("forms"):
+        # the molecule's dosage form is known: score what that form needs (core/plant_fit.py)
+        import plant_fit
+
+        plant_score, plant_exp = plant_fit.score(list(fit_needs["forms"]), list(fit_needs.get("segregated") or []), plant,
+                                                 plant_available_capabilities(plant), fit_needs.get("record"))
+        fit_warnings = plant_exp.get("warnings", [])
+    else:
+        plant_score, plant_exp = score_plant_fit(molecule_class, patent, plant)
 
     total = (
         w["patent"] * patent_score
@@ -1091,7 +1101,7 @@ def score_candidate(
         + w["plant"] * plant_score
     )
 
-    warnings: list[str] = []
+    warnings: list[str] = [f"Plant: {w}" for w in fit_warnings]
     if plant is None:
         warnings.append("No plant asset selected; plant-fit score is zero.")
     if patent and patent.fto_risk == "high":
@@ -1116,6 +1126,7 @@ def score_candidate(
             "demand": demand_exp.get("summary", ""),
             "plant": plant_exp.get("summary", ""),
         },
+        plant_fit_detail=plant_exp,
         fto_risk=patent.fto_risk if patent else "unknown",
         earliest_loe=patent.earliest_loe() if patent else None,
         warnings=warnings,
