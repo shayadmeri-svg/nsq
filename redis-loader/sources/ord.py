@@ -56,10 +56,15 @@ SOLVENTS = {
     "CCCCO": "n-Butanol", "Cc1ccccc1C": "Xylene", "C1CCCCC1": "Cyclohexane", "CC(C)(C)OC": "MTBE", "c1ccncc1": "Pyridine",
     "CCN(CC)CC": "Triethylamine", "CC1CCCO1": "2-MeTHF",
 }
-_HAZ = [(r"N=\[N\+\]=\[N-\]|\[N-\]=\[N\+\]=N|azide", "azide"), (r"\[C-\]#N|C#N\.\[(Na|K)\+\]|cyanide", "cyanide"),
-        (r"ClC\(=O\)Cl|phosgene", "phosgene"), (r"^NN$|hydrazine", "hydrazine"), (r"\[AlH4-\]|aluminum hydride|aluminium hydride", "LiAlH4"),
-        (r"\[NaH\]|\[H-\]\.\[Na\+\]|sodium hydride", "NaH"), (r"OO|peroxide", "peroxide"), (r"C=\[N\+\]=\[N-\]|diazomethane", "diazomethane"),
-        (r"\[BH4-\]|borohydride", "borohydride"), (r"B1|borane|\[BH3\]", "borane")]
+# (label, SMILES pattern — case-sensitive, on reagent SMILES only, name / text pattern — case-insensitive, whole words)
+_HAZ = [("azide", r"N=\[N\+\]=\[N-\]|\[N-\]=\[N\+\]=N", r"\bazide\b"),
+        ("cyanide", r"\[C-\]#N|C#N\.\[(Na|K)\+\]|\[(Na|K)\+\]\.\[C-\]#N", r"\b(sodium|potassium|zinc|copper\(?i?\)?|trimethylsilyl) cyanide\b|\bhcn\b"),
+        ("phosgene", r"^ClC\(=O\)Cl$|ClC\(Cl\)\(Cl\)OC\(=O\)OC\(Cl\)\(Cl\)Cl", r"\b(tri|di)?phosgene\b"),
+        ("hydrazine", r"^NN$|^NN\.O$", r"\bhydrazine( hydrate)?\b"),
+        ("LiAlH4", r"\[AlH4-\]|\[AlH4\]", r"\blithium alumin(i)?um hydride\b|\blialh4\b"),
+        ("NaH", r"^\[NaH\]$|^\[H-\]\.\[Na\+\]$", r"\bsodium hydride\b"),
+        ("peroxide", r"^OO$|C\(=O\)OO|OOC\(C\)\(C\)C", r"\bhydrogen peroxide\b|\bperoxide\b|\bm-?cpba\b|\bperacetic\b"),
+        ("diazomethane", r"^C=\[N\+\]=\[N-\]$", r"\bdiazomethane\b")]
 _ORGANOMET = re.compile(r"\[Li\]C|C\[Li\]|\[Li\+\]\.\[CH2-\]|butyllithium|lithium diisopropylamide|\bLDA\b|\[Mg\]|magnesium bromide|magnesium chloride|grignard", re.I)
 _ATOM = re.compile(r"Cl|Br|\[[^\]]+\]|[BCNOSPFI]|[cnosp]")
 
@@ -162,6 +167,10 @@ def product_smiles(rxn: Any) -> list[str]:
     out = []
     for o in rxn.outcomes:
         for p in o.products:
+            # high-throughput screens list their internal standard (often caffeine) among the products
+            role = p.DESCRIPTOR.fields_by_name["reaction_role"].enum_type.values_by_number[p.reaction_role].name
+            if role not in ("PRODUCT", "UNSPECIFIED"):
+                continue
             s, _n = _ident(p)
             if s:
                 out.append(s)
@@ -199,7 +208,10 @@ def describe(rxn: Any, dataset: str) -> dict[str, Any]:
     blob = " ".join(f"{x['smiles'] or ''} {x['name'] or ''}" for x in agents).lower() + " " + text
     smis = [x["smiles"] or "" for x in agents]
     needs = set()
-    if atmos == "HYDROGEN" or "[H][H]" in smis or re.search(r"\bhydrogen(ation)?\b|raney|pd/c|palladium on (carbon|charcoal)|pto2|platinum oxide", blob):
+    names = " ".join((x["name"] or "") for x in agents).lower() + " " + text
+    if atmos == "HYDROGEN" or "[H][H]" in smis or re.search(
+            r"\bhydrogenat|\bhydrogen (gas|atmosphere|pressure|balloon)\b|under (an? )?(atmosphere of )?hydrogen\b|^hydrogen$|(?<![a-z] )\bhydrogen\b(?! (chloride|bromide|iodide|fluoride|sulfate|sulphate|carbonate|phosphate|peroxide|cyanide|sulfide))"
+            r"|raney|pd/c|palladium on (carbon|charcoal)|\bpto2\b|platinum oxide", names):
         needs.add("hydrogenation")
     if (temp is not None and temp <= -20) or tcontrol in ("DRY_ICE_BATH", "LIQUID_NITROGEN"):
         needs.add("cryogenic")
@@ -207,12 +219,12 @@ def describe(rxn: Any, dataset: str) -> dict[str, Any]:
         needs.add("high_temperature")
     if press is not None and press > 2:
         needs.add("pressure")
-    if _ORGANOMET.search(" ".join(smis)) or _ORGANOMET.search(blob):
+    if _ORGANOMET.search(" ".join(smis)) or _ORGANOMET.search(names):
         needs.add("organometallic")
-    hz = sorted({lab for rx, lab in _HAZ if any(re.search(rx, s, re.I) for s in smis) or re.search(rx, blob, re.I)} - {"borohydride"})
+    hz = sorted({lab for lab, srx, nrx in _HAZ if any(re.search(srx, s) for s in smis if s) or re.search(nrx, names)})
     if hz:
         needs.add("hazardous")
-    if "hydrogenation" not in needs and ("[Pd]" in " ".join(smis) or re.search(r"pd\(|palladium|pd2\(dba\)|pd\(pph3\)", blob)):
+    if "hydrogenation" not in needs and ("[Pd]" in " ".join(smis) or "Pd" in " ".join(smis) or re.search(r"\bpd\(|palladium|pd2\(dba\)|pd\(pph3\)", names)):
         needs.add("pd_coupling")
     solvents = [SOLVENTS.get(_canon(x["smiles"]) or "", x["name"] or x["smiles"]) for x in comps.get("solvent", []) if x["smiles"] or x["name"]]
     if any(s in ("Dichloromethane", "Chloroform", "1,2-Dichloroethane") for s in solvents):
