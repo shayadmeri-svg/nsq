@@ -3,10 +3,10 @@
 * nfhs      National Family Health Survey district / state fact-sheet indicators
             (NFHS-4, -5, -6): high blood sugar, raised blood pressure, obesity, anaemia,
             child diarrhoea / ARI, tobacco — the burden behind chronic and anti-infective demand.
-            Input is a file (or a folder of files): the NFHS-5 district fact-sheet CSV from
-            data.gov.in (wide: one column per indicator) and/or a long table
-            (Indicator | Geography | Geo Level | Round | Value | Parent State), e.g. NFHS-6
-            district values extracted from the IIPS compendiums.
+            Without a file it downloads open CSV extracts of the official NFHS-5 fact sheets
+            (districts, states, India, each with NFHS-4 alongside). A file or folder adds rounds:
+            the data.gov.in NFHS-5 district CSV (wide) or a long table
+            (Indicator | Geography | Geo Level | Round | Value | Parent State), e.g. NFHS-6.
 * idsp      IDSP weekly outbreak reports (PDF tables): state, district, disease, cases, deaths,
             dates, status. Latest N weeks from the IDSP site, or a folder of PDFs.
 * comtrade  UN Comtrade: India's exports and imports of pharmaceutical HS codes by partner and
@@ -34,7 +34,7 @@ from .common import Ctx, NotFound, Unreachable, download, http_get, page_links, 
 NFHS = {
     "title": "NFHS district fact sheets",
     "publisher": "Ministry of Health & Family Welfare / IIPS (National Family Health Survey)",
-    "url": "https://www.data.gov.in/catalog/national-family-health-survey-5-nfhs-5-india-districts-factsheet-data",
+    "url": "https://github.com/jvargh7/nfhs5_factsheets",
     "page": "https://www.nfhsiips.in/nfhsuser/release-details.php",
     "cadence": "per survey round (NFHS-5 2019–21, NFHS-6 2023–24)",
     "feeds": ["Health & trade · disease burden by district", "Chronic-disease prevalence"],
@@ -52,17 +52,17 @@ INDICATORS: dict[str, tuple[str, str, str]] = {
                r"(?<!wo)men.*(elevated|raised|high).*blood pressure.*(taking medicine|or taking|on medicine)"),
     "obese_women": ("Women 15–49: overweight or obese", "Obesity", r"women.*overweight or obese"),
     "obese_men": ("Men 15–49: overweight or obese", "Obesity", r"(?<!wo)men.*overweight or obese"),
-    "anaemia_women": ("Women 15–49: anaemic", "Anaemia", r"^all women age 15.?49.*anaemic|women age 15.?49 years who are anaemic"),
+    "anaemia_women": ("Women 15–49: anaemic", "Anaemia", r"^all women age 15.?49 years who are anaemic"),
     "anaemia_children": ("Children 6–59 months: anaemic", "Anaemia", r"children age 6.?59 months.*anaemic"),
     "diarrhoea_children": ("Children <5: diarrhoea in the last 2 weeks", "Infections", r"prevalence of diarrh"),
-    "ari_children": ("Children <5: acute respiratory infection symptoms", "Infections", r"acute respiratory infection|\bari\b"),
+    "ari_children": ("Children <5: acute respiratory infection symptoms", "Infections", r"prevalence of symptoms of acute respiratory|^prevalence of ari"),
     "tobacco_men": ("Men 15+: use any tobacco", "Risk factors", r"(?<!wo)men age 15 years and above who use any kind of tobacco"),
 }
 _ROUND = re.compile(r"nfhs[\s_-]*([456])", re.I)
 
 
 def _indicator_key(text: str) -> Optional[str]:
-    t = re.sub(r"\s+", " ", (text or "").lower())
+    t = re.sub(r"^\d+\.\s*", "", re.sub(r"\s+", " ", (text or "").lower()).strip())  # fact-sheet row numbers
     for k, (_l, _g, rx) in INDICATORS.items():
         if re.search(rx, t):
             return k
@@ -92,63 +92,147 @@ def _k(h: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(h or "").lower())
 
 
+_STATES = ["Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh",
+           "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir",
+           "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya",
+           "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
+           "Uttar Pradesh", "Uttarakhand", "West Bengal"]
+_STATE_KEY = {re.sub(r"and|[^a-z]", "", s.lower()): s for s in _STATES} | {"nctdelhi": "Delhi", "nctofdelhi": "Delhi", "orissa": "Odisha",
+                                                                            "pondicherry": "Puducherry", "uttaranchal": "Uttarakhand"}
+
+
+def canon_state(name: Any) -> Optional[str]:
+    s = re.sub(r"\s+", " ", str(name or "")).strip()
+    if not s:
+        return None
+    if s.lower() in ("india", "all india"):
+        return "India"
+    return _STATE_KEY.get(re.sub(r"and|[^a-z]", "", s.lower()), s)
+
+
+# The fact sheets list women's rows before men's under section headings, so the row text often lacks
+# "women" / "men": the n-th occurrence of these indicators within one geography is women (1st) or men (2nd).
+_PAIRED = {"sugar": r"blood sugar.*(taking medicine|or taking)", "bp": r"elevated blood pressure.*(taking medicine|or taking)"}
+
+
+def _key_in_context(text: str, seen: dict[str, int]) -> Optional[str]:
+    t = re.sub(r"\s+", " ", (text or "").lower())
+    key = _indicator_key(t)
+    if key and not key.startswith(("sugar", "bp")):
+        return key
+    for base, rx in _PAIRED.items():
+        if re.search(rx, t):
+            if re.search(r"\bwomen\b", t):
+                return f"{base}_women"
+            if re.search(r"(?<!wo)\bmen\b", t):
+                return f"{base}_men"
+            seen[base] = seen.get(base, 0) + 1
+            return f"{base}_women" if seen[base] == 1 else f"{base}_men" if seen[base] == 2 else None
+    return key
+
+
 def parse_nfhs(path: Path, default_round: Optional[str] = None) -> list[dict[str, Any]]:
-    """Normalised rows {level, state, district, round, ind, value} from one NFHS table (long or wide)."""
+    """Normalised rows {level, state, district, round, ind, value} from one NFHS table.
+
+    Layouts handled: long with one value column per round (State, District, Indicator, NFHS-5, NFHS-4 — the
+    pratapvardhan / jvargh7 fact-sheet extracts), long with Round + Value columns (Indicator | Geography | Geo Level
+    | Round | Value | Parent State), and wide (one row per district, one column per indicator — data.gov.in).
+    """
     rows = [r for r in _rows_of(path) if any(str(c or "").strip() for c in r)]
     if not rows:
         return []
     head = [_k(c) for c in rows[0]]
     rnd_file = _ROUND.search(path.name)
     rnd_default = default_round or (f"NFHS-{rnd_file.group(1)}" if rnd_file else "NFHS-5")
+    ix = {h: i for i, h in enumerate(head)}
     out: list[dict[str, Any]] = []
-    if "indicator" in head and "value" in head and ("geography" in head or "district" in head):
-        # long table
-        ix = {h: i for i, h in enumerate(head)}
-        gi = ix.get("geography", ix.get("district"))
-        for r in rows[1:]:
-            get = lambda h: r[ix[h]] if h in ix and ix[h] < len(r) else None  # noqa: E731
-            key = _indicator_key(str(get("indicator") or ""))
-            val = _num(get("value"))
-            if not key or val is None:
+
+    def val(r: list[Any], i: Optional[int]) -> Any:
+        return r[i] if i is not None and i < len(r) else None
+
+    if "indicator" in ix:
+        ii = ix["indicator"]
+        di = next((ix[h] for h in ("district", "districtname", "districtnames") if h in ix), None)
+        si = next((ix[h] for h in ("state", "statename", "stateut", "parentstate") if h in ix), None)
+        gi = ix.get("geography")
+        li = ix.get("geolevel")
+        ri, vi = ix.get("round"), ix.get("value")
+        # value columns: one per round ("NFHS-5", "NFHS5", "nfhs5_total", "Total" = the file's round)
+        vcols = []
+        for i, h in enumerate(head):
+            if h.startswith("flag") or h.endswith("note") or "urban" in h or "rural" in h:
                 continue
-            level = str(get("geolevel") or "district").strip().lower()
-            level = "india" if level in ("national", "india", "country") else "state" if level.startswith("state") else "district"
-            geo = str(r[gi] or "").strip()
-            m = _ROUND.search(str(get("round") or ""))
-            out.append({"level": level, "state": (str(get("parentstate") or "").strip() or (geo if level == "state" else None)),
-                        "district": geo if level == "district" else None, "round": f"NFHS-{m.group(1)}" if m else rnd_default,
-                        "ind": key, "value": val})
+            m = re.fullmatch(r"nfhs([456])(total)?", h)
+            if m:
+                vcols.append((i, f"NFHS-{m.group(1)}"))
+            elif h == "total":
+                vcols.append((i, rnd_default))
+        seen: dict[tuple, dict[str, int]] = {}
+        for r in rows[1:]:
+            text = str(val(r, ii) or "")
+            if gi is not None:  # Indicator | Geography | Geo Level | Round | Value | Parent State
+                level = str(val(r, li) or "district").strip().lower()
+                level = "india" if level in ("national", "india", "country") else "state" if level.startswith("state") else "district"
+                geo = str(val(r, gi) or "").strip()
+                state = canon_state(val(r, ix.get("parentstate")) or (geo if level != "district" else None))
+                district = geo if level == "district" else None
+            else:
+                district = str(val(r, di) or "").strip() or None if di is not None else None
+                state = canon_state(val(r, si))
+                level = "district" if district else ("india" if state == "India" else "state")
+            ctx = seen.setdefault((level, state, district, str(val(r, ri) or "")), {})
+            key = _key_in_context(text, ctx)
+            if not key:
+                continue
+            pairs = [(val(r, vi), (lambda m: f"NFHS-{m.group(1)}" if m else rnd_default)(_ROUND.search(str(val(r, ri) or ""))))] \
+                if vi is not None else [(val(r, i), rnd) for i, rnd in vcols]
+            for raw, rnd in pairs:
+                v = _num(raw)
+                if v is not None:
+                    out.append({"level": level, "state": state if level != "india" else "India", "district": district,
+                                "round": rnd, "ind": key, "value": v})
         return out
     # wide table: one row per district / state, one column per indicator
     di = next((i for i, h in enumerate(head) if h in ("districtnames", "districtname", "district", "districts")), None)
     si = next((i for i, h in enumerate(head) if h in ("stateut", "statesuts", "state", "statename", "stateunionterritory", "statesut")), None)
     if si is None and di is None:
-        raise ValueError(f"{path.name}: neither an Indicator/Value table nor district/state columns; header starts {rows[0][:6]}")
-    cols = []
+        raise ValueError(f"{path.name}: neither an indicator table nor district/state columns; header starts {rows[0][:6]}")
+    cols, seen_w = [], {}
     for i, h in enumerate(rows[0]):
-        key = _indicator_key(str(h or ""))
-        if key and i not in (di, si):
+        if i in (di, si):
+            continue
+        key = _key_in_context(str(h or ""), seen_w)
+        if key:
             m = _ROUND.search(str(h))
             cols.append((i, key, f"NFHS-{m.group(1)}" if m else rnd_default))
     for r in rows[1:]:
         dist = str(r[di]).strip() if di is not None and di < len(r) and r[di] else None
-        st = str(r[si]).strip() if si is not None and si < len(r) and r[si] else None
+        st = canon_state(r[si]) if si is not None and si < len(r) and r[si] else None
         if not (dist or st):
             continue
-        level = "district" if dist else ("india" if (st or "").lower() in ("india", "all india") else "state")
+        level = "district" if dist else ("india" if st == "India" else "state")
         for i, key, rnd in cols:
-            val = _num(r[i]) if i < len(r) else None
-            if val is not None:
-                out.append({"level": level, "state": st, "district": dist, "round": rnd, "ind": key, "value": val})
+            v = _num(r[i]) if i < len(r) else None
+            if v is not None:
+                out.append({"level": level, "state": st, "district": dist, "round": rnd, "ind": key, "value": v})
     return out
 
 
+# Open extracts of the official NFHS-5 fact sheets (rchiips.org), used when no file is given:
+# jvargh7/nfhs5_factsheets (MIT) — all ~705 districts, states and India, each with the NFHS-4 value alongside.
+NFHS_DEFAULT = [
+    "https://raw.githubusercontent.com/jvargh7/nfhs5_factsheets/main/data%20for%20analysis/districts.csv",
+    "https://raw.githubusercontent.com/jvargh7/nfhs5_factsheets/main/data%20for%20analysis/states.csv",
+    "https://raw.githubusercontent.com/jvargh7/nfhs5_factsheets/main/data%20for%20analysis/india.csv",
+]
+
+
 def run_nfhs(ctx: Ctx) -> int:
-    if not ctx.from_file:
-        raise NotFound("NFHS needs a file: the NFHS-5 district fact-sheet CSV from data.gov.in and/or an NFHS-6 table "
-                       "(Indicator | Geography | Geo Level | Round | Value | Parent State). Run with --from-file <file or folder>.")
-    files = sorted(p for p in ([ctx.from_file] if ctx.from_file.is_file() else ctx.from_file.iterdir())
-                   if p.suffix.lower() in (".csv", ".xlsx", ".tsv", ".txt"))
+    if ctx.from_file:
+        files = sorted(p for p in ([ctx.from_file] if ctx.from_file.is_file() else ctx.from_file.iterdir())
+                       if p.suffix.lower() in (".csv", ".xlsx", ".tsv", ".txt"))
+    else:
+        files = [download(ctx, u, "nfhs5_" + u.rsplit("/", 1)[-1]) for u in NFHS_DEFAULT]
     prev = read_normalized(ctx.name) or {}
     rows: list[dict[str, Any]] = []
     for f in files:

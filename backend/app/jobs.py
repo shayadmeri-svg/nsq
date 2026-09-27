@@ -246,7 +246,7 @@ _SOURCE_JOB_DESC = {
     "fda_inspections": "Every FDA drug / biologic inspection of an Indian site with its outcome (NAI / VAI / OAI) — US FDA status in the plant registry. Needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API access), or upload the Inspections table exported to Excel.",
     "fda_dmf": "FDA's quarterly list of Drug Master Files: active Type II (drug substance) holders per API — 'Who can make it' → API filings. Upload the .xls if FDA blocks the server.",
     "edqm_cep": "EDQM's CEP data file: valid Certificates of Suitability per substance and holder — 'Who can make it' → API filings. If the link is not found, download 'CEP data file' from the EDQM CEP database page and upload it.",
-    "nfhs": "NFHS indicators by district / state and survey round (blood sugar, blood pressure, obesity, anaemia, child infections) — Playground · Health & trade. Upload the NFHS-5 district CSV from data.gov.in and/or an NFHS-6 table.",
+    "nfhs": "NFHS indicators by district / state and survey round (blood sugar, blood pressure, obesity, anaemia, child infections) — Playground · Health & trade. Downloads open extracts of the NFHS-5 fact sheets (NFHS-4 alongside); upload a table to add NFHS-6.",
     "idsp": "Outbreaks reported to IDSP each week (state, district, disease, cases, deaths), parsed from the weekly PDFs — latest 26 weeks. Upload PDFs if the site refuses the server.",
     "comtrade": "India's exports and imports of pharmaceutical HS codes by partner, last 6 years (UN Comtrade; COMTRADE_KEY for the full API).",
     "fda_import_alerts": "Indian firms on the drug-GMP red list — feeds the site directory.",

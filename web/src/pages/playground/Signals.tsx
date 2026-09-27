@@ -45,7 +45,7 @@ function Burden({ geo }: { geo: any }) {
         subtitle={d?.available ? `${label} · ${d.round}${d.previous_round ? ` vs ${d.previous_round}` : ""}${d.india != null ? ` · India ${d.india}%` : ""}` : "National Family Health Survey fact sheets"} />
       {q.error && <div className="p-5"><ErrorNote error={q.error} /></div>}
       {!d ? <div className="p-5"><Skeleton className="h-72" /></div> : !d.available ? (
-        <Missing what="NFHS" how="Download the NFHS-5 district fact-sheet CSV from data.gov.in (and NFHS-6 district values when you have them), then run `just fetch-nfhs <file or folder>` and `just push-signals`." />
+        <Missing what="NFHS" how="Run `just fetch-nfhs` (NFHS-5 fact sheets with NFHS-4 alongside; add NFHS-6 with `just fetch-nfhs <file>`), then `just push-signals`." />
       ) : (
         <div className="p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2">

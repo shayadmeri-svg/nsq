@@ -47,9 +47,9 @@ def nfhs(ind: str = "sugar_women", rnd: str = "", state: str = "") -> dict[str, 
     if not rows:
         return {"available": False}
     inds = d.get("indicators") or {}
-    rounds = sorted({r["round"] for r in rows})
     have = Counter(r["ind"] for r in rows)
     ind = ind if ind in have else (max(have, key=have.get) if have else ind)
+    rounds = sorted({r["round"] for r in rows if r["ind"] == ind})  # e.g. blood sugar was not measured this way in NFHS-4
     rnd = rnd if rnd in rounds else rounds[-1]
     prev = next((r for r in reversed(rounds) if r < rnd), None)
     sel = [r for r in rows if r["ind"] == ind]

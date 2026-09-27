@@ -71,3 +71,20 @@ def test_comtrade_normalise():
             "customsCode": "C00", "motCode": 1000, "partner2Code": 0}]
     rows = hs.normalise_comtrade(raw)
     assert len(rows) == 2 and rows[0]["flow"] == "export" and rows[1]["partner"] == "China" and rows[1]["net_kg"] is None
+
+
+def test_nfhs_factsheet_extract_layout(tmp_path):
+    """jvargh7 / pratapvardhan extracts: one value column per round; women's rows come before men's without saying so."""
+    f = tmp_path / "districts.csv"
+    f.write_text('"state","district","Indicator","NFHS5","NFHS4","Flag_NFHS5","Flag_NFHS4"\n'
+                 '"Maharashtra","Pune","84. All women age 15-49 years who are anaemic22 (%)",51.9,50,NA,NA\n'
+                 '"Maharashtra","Pune","85. All women age 15-19 years who are anaemic22 (%)",55.1,54,NA,NA\n'
+                 '"Maharashtra","Pune","88. Blood sugar level - high or very high (>140 mg/dl) or taking medicine to control blood sugar level23 (%)",12.3,NA,NA,NA\n'
+                 '"Maharashtra","Pune","91. Blood sugar level - high or very high (>140 mg/dl) or taking medicine to control blood sugar level23 (%)",15.1,NA,NA,NA\n'
+                 '"NCT Delhi","New Delhi","88. Blood sugar level - high or very high (>140 mg/dl) or taking medicine to control blood sugar level23 (%)",20.0,NA,NA,NA\n')
+    rows = hs.parse_nfhs(f)
+    got = {(r["district"], r["ind"], r["round"]): r["value"] for r in rows}
+    assert got == {("Pune", "anaemia_women", "NFHS-5"): 51.9, ("Pune", "anaemia_women", "NFHS-4"): 50.0,
+                   ("Pune", "sugar_women", "NFHS-5"): 12.3, ("Pune", "sugar_men", "NFHS-5"): 15.1,
+                   ("New Delhi", "sugar_women", "NFHS-5"): 20.0}
+    assert {r["state"] for r in rows} == {"Maharashtra", "Delhi"}

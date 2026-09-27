@@ -314,11 +314,11 @@ fetch-fda-dmf FILE="":
 fetch-cep FILE="":
     @cd {{LOADER}} && .venv/bin/python -c "import openpyxl" 2>/dev/null || .venv/bin/pip install --quiet openpyxl
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py edqm_cep {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
-# Health & trade signals (Playground): NFHS needs a file or folder (NFHS-5 district CSV from data.gov.in, NFHS-6 table);
+# Health & trade signals (Playground): NFHS downloads open NFHS-5 fact-sheet extracts (FILE adds e.g. an NFHS-6 table);
 # IDSP downloads the latest weekly PDFs (or FILE = folder of PDFs); Comtrade uses COMTRADE_KEY if set, else the public preview.
-fetch-nfhs FILE:
+fetch-nfhs FILE="":
     @cd {{LOADER}} && .venv/bin/python -c "import openpyxl" 2>/dev/null || .venv/bin/pip install --quiet openpyxl
-    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py nfhs --from-file '{{ join(invocation_directory(), FILE) }}'
+    cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py nfhs {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
 fetch-idsp FILE="": _plant-deps
     cd {{LOADER}} && NSQ_IGNORE_INTERVAL=1 DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py idsp {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
 fetch-comtrade:
