@@ -176,6 +176,48 @@ function EuPanel({ eu }: { eu: any }) {
   );
 }
 
+// Every NSQ alert linked to a registry plant; each opens its diagnosis in Playground · Investigate.
+function PlantAlerts({ id }: { id: string }) {
+  const [category, setCategory] = useState("");
+  const [size, setSize] = useState(10);
+  const r = useQuery({ queryKey: ["plant-alerts", id, category, size], placeholderData: keepPreviousData,
+    queryFn: () => api<any>(`/api/plants/${encodeURIComponent(id)}/alerts?${new URLSearchParams({ category, size: String(size) })}`) });
+  const d = r.data;
+  if (!d) return <Skeleton className="h-24" />;
+  if (!d.total && !category) return null;
+  const keys = [...new Set<string>(d.items.map((it: any) => it.mfr_key).filter(Boolean))];
+  return (
+    <div className={cn("mt-3", r.isFetching && "opacity-70")}>
+      <div className="mb-2 flex flex-wrap items-center gap-1">
+        <button onClick={() => setCategory("")} className={cn("rounded-full px-2 py-0.5 text-[11px] ring-1 ring-inset", !category ? "bg-night-900 text-white ring-night-900" : "text-ink-soft ring-line hover:bg-slate-50")}>All {category ? "" : d.total}</button>
+        {d.categories.map((c: any) => (
+          <button key={c.name} onClick={() => setCategory(category === c.name ? "" : c.name)}
+            className={cn("rounded-full px-2 py-0.5 text-[11px] ring-1 ring-inset", category === c.name ? "bg-rose-600 text-white ring-rose-600" : "text-ink-soft ring-line hover:bg-slate-50")}>{c.name} · {c.count}</button>
+        ))}
+      </div>
+      <div className="overflow-hidden rounded-xl ring-1 ring-inset ring-line">
+        {d.items.map((it: any) => (
+          <Link key={it.id} to={`/playground/investigate?${new URLSearchParams({ mfr: it.mfr_key ?? "", alert: it.id })}`}
+            className="flex items-start gap-3 border-b border-line/70 bg-white px-3 py-2 text-xs last:border-0 hover:bg-brand-50/40" title="Open the diagnosis: standards, probable causes, mitigation">
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium text-ink">{it.product}</div>
+              <div className="line-clamp-1 text-ink-muted">{it.reason}</div>
+            </div>
+            <div className="shrink-0 text-right"><Badge tone="rose">{it.category}</Badge><div className="mt-0.5 text-[11px] text-ink-faint">{fmtMonth(it.month)} · {it.batch}</div></div>
+          </Link>
+        ))}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between text-[11px]">
+        <span className="text-ink-muted">{d.items.length} of {d.total} · click one for its diagnosis</span>
+        <span className="flex gap-3">
+          {d.total > d.items.length && <button onClick={() => setSize(Math.min(100, size + 20))} className="text-brand-700 hover:underline">more</button>}
+          {keys.length === 1 && <Link to={`/playground/investigate?mfr=${encodeURIComponent(keys[0])}`} className="text-brand-700 hover:underline">company's full history →</Link>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; onClose: () => void }) {
   const { data: p, error } = useQuery({ queryKey: ["plant", id], queryFn: () => api<any>(`/api/plants/${encodeURIComponent(id!)}`), enabled: !!id });
   const c = p?.capabilities;
@@ -268,6 +310,7 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
                     <span className="tabular-nums">{s.alerts} alerts · last {fmtMonth(s.last)}</span>
                   </div>
                 ))}
+                <PlantAlerts id={p.id} />
               </>
             )}
           </div>

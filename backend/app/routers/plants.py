@@ -44,3 +44,13 @@ def plant_detail(plant_id: str, user: User = Depends(current_user)):
     if p is None:
         raise HTTPException(404, "Plant not found in the registry.")
     return p
+
+
+@router.get("/{plant_id}/alerts")
+def plant_alerts(plant_id: str, q: str = "", category: str = "", page: int = Query(1, ge=1), size: int = Query(20, ge=5, le=100),
+                 user: User = Depends(current_user)):
+    """Every NSQ alert linked to this plant, newest first; each opens its diagnosis in Playground · Investigate."""
+    out = plants.alerts(plant_id, q, category, page, size)
+    if out is None:
+        raise HTTPException(404, "Plant not found in the registry.")
+    return out

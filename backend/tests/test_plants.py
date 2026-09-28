@@ -310,3 +310,17 @@ def test_plant_fit_across_registry_and_registry_plant_in_workbench(admin):
     assert w["plant_id"] == f"reg:{top}" and any(p["kind"] == "registry" for p in w["plants"])
     assert w["score"]["plant_fit_detail"]["method"] == "dosage form" and abs(w["score"]["plant_fit_score"] - r["items"][0]["fit"]) < 0.11
     assert admin.get("/api/playground/molecule/nope/plant-fit", headers=H).status_code == 404
+
+
+def test_plant_alerts_list(admin):
+    """Every NSQ alert linked to a registry plant, with its manufacturer key for the diagnosis."""
+    if not _have_registry():
+        pytest.skip("registry not present")
+    from app import plants as P
+    p = max(P.registry()["plants"].values(), key=lambda x: (x.get("nsq") or {}).get("alerts", 0))
+    n = (p.get("nsq") or {}).get("alerts", 0)
+    r = admin.get(f"/api/plants/{p['id']}/alerts", params={"size": 5}, headers=H).json()
+    assert r["total"] == n and len(r["items"]) == min(5, n) and all(it["mfr_key"] for it in r["items"])
+    cat = r["categories"][0]["name"]
+    assert admin.get(f"/api/plants/{p['id']}/alerts", params={"category": cat}, headers=H).json()["total"] == r["categories"][0]["count"]
+    assert admin.get("/api/plants/nope/alerts", headers=H).status_code == 404

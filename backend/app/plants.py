@@ -652,6 +652,32 @@ def get(plant_id: str) -> Optional[dict[str, Any]]:
     return out
 
 
+def alerts(plant_id: str, q: str = "", category: str = "", page: int = 1, size: int = 20) -> Optional[dict[str, Any]]:
+    """Every NSQ alert linked to a registry plant (the alerts of the NSQ directory sites matched to it), newest first."""
+    from . import data, insights
+
+    p = registry()["plants"].get(plant_id)
+    if p is None:
+        return None
+    site_ids = {s["id"] for s in (p.get("nsq") or {}).get("sites", [])}
+    empty = {"total": 0, "page": 1, "size": size, "pages": 0, "items": [], "categories": [], "products": []}
+    if not site_ids:
+        return empty
+    df = data.attributable(data.frame())
+    okeys = {i[:k] for i in site_ids for k in range(len(i)) if i[k] == "-"}  # "<company slug>-<pin or town>": any split point
+    cand = df[df["Mfg_Ontology_Key"].fillna("").map(sites._slug).isin(okeys)]
+    hit = cand[cand.apply(sites.site_id_for, axis=1).isin(site_ids)] if not cand.empty else cand
+    if hit.empty:
+        return empty
+    out = insights.paginate(insights.filter_issues(hit, q, category), page, size)
+    keys = dict(zip(hit["record_id"].astype(str), hit["Mfg_Ontology_Key"].fillna("").astype(str)))
+    for it in out["items"]:
+        it["mfr_key"] = keys.get(it["id"])  # for the diagnosis (Playground · Investigate)
+    out["categories"] = insights._counts(hit, "Failure_Category_Primary", 8)
+    out["products"] = insights._counts(hit.assign(_p=hit["Product_Name_Canonical"].fillna(hit["Name of Product"])), "_p", 8)
+    return out
+
+
 def _rate(alerted: int, plants: int, alerts: int) -> dict[str, Any]:
     return {"plants": plants, "plants_with_nsq": alerted, "alerts": alerts,
             "share_with_nsq": round(100 * alerted / plants, 1) if plants else None,
