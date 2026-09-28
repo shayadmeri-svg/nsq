@@ -259,7 +259,9 @@ def run_nfhs(ctx: Ctx) -> int:
 
 # ============================================================================ IDSP
 
-IDSP_PAGE = "https://idsp.mohfw.gov.in/index4.php?lang=1&level=0&linkid=406&lid=3689"
+# idsp.mohfw.gov.in stopped answering (Sep 2026); NCDC now publishes every weekly outbreak report (2009 →) on one page.
+IDSP_PAGE = "https://ncdc.mohfw.gov.in/includes/WeeklyOutbreaks.php"
+IDSP_OLD_PAGE = "https://idsp.mohfw.gov.in/index4.php?lang=1&level=0&linkid=406&lid=3689"
 IDSP = {
     "title": "IDSP weekly outbreaks",
     "publisher": "Integrated Disease Surveillance Programme, MoHFW",
@@ -347,10 +349,13 @@ def parse_idsp_tables(tables: Iterable[list[list[Any]]], week: Optional[str] = N
 
 
 def _week_label(name: str, text: str = "") -> Optional[str]:
-    m = re.search(r"(\d{1,2})(?:st|nd|rd|th)?[\s_-]*week[\s_-]*(?:of[\s_-]*)?(\d{4})", f"{name} {text[:400]}", re.I)
+    # the PDFs' text layer splits numbers ("3 1 st   week 2026")
+    joined = re.sub(r"\b(\d)\s+(\d)\s*(st|nd|rd|th)\b", r"\1\2\3", f"{name} {text[:400]}", flags=re.I)
+    m = re.search(r"(\d{1,2})(?:\s*(?:st|nd|rd|th))?[\s_-]*week[\s_-]*(?:of[\s_-]*)?(\d{4})", joined, re.I)
     if m:
         return f"{m.group(2)}-W{int(m.group(1)):02d}"
-    m = re.search(r"(\d{4})[\s_-]*w(?:eek)?[\s_-]*(\d{1,2})", name, re.I)
+    # NCDC links: /uploads/weekly_outbreaks/2026/week31_1790077762.pdf
+    m = re.search(r"(\d{4})[\s_/-]*w(?:eek)?[\s_-]*(\d{1,2})", name, re.I)
     return f"{m.group(1)}-W{int(m.group(2)):02d}" if m else None
 
 
@@ -390,8 +395,13 @@ def idsp_pdf_links(ctx: Ctx) -> list[tuple[str, str]]:
     """Weekly-report PDFs on the IDSP outbreaks page, newest first. The PDFs are often served under numeric
     names (WriteReadData/...), so the link text ("31st week 2026") matters more than the URL. When the page
     only lists years, the newest year pages are followed."""
-    html = _get_page(ctx, IDSP_PAGE, "page.html")
-    anchors = _anchors(html, IDSP_PAGE)
+    try:
+        page = IDSP_PAGE
+        html = _get_page(ctx, page, "page.html")
+    except Unreachable:
+        page = IDSP_OLD_PAGE
+        html = _get_page(ctx, page, "page.html")
+    anchors = _anchors(html, page)
     pdfs = [(u, t) for u, t in anchors if re.search(r"\.pdf(\?|$)", u, re.I)]
     if not pdfs:
         years = sorted({(int(m.group(0)), u) for u, t in anchors if (m := re.fullmatch(r"20\d\d", t.strip()))}, reverse=True)

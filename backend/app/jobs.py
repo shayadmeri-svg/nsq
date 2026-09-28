@@ -266,7 +266,7 @@ LAPTOP: dict[str, dict[str, str]] = {
     "fda_dmf": {"fetch": "just fetch-fda-dmf FILE", "push": "just push-plant-registry HOST KEY", "why": "FDA blocks automated downloads of the DMF list"},
     "edqm_cep": {"fetch": "just fetch-cep", "push": "just push-plant-registry HOST KEY", "why": "EDQM's file is easier from a browser session"},
     "cdsco_wc": {"fetch": "just fetch-cdsco-wc", "push": "just push-wc HOST KEY", "why": "CDSCO refuses cloud servers; the letters are ~2.7 GB of PDFs"},
-    "idsp": {"fetch": "just fetch-idsp", "push": "just push-signals HOST KEY", "why": "IDSP refuses cloud servers"},
+    "idsp": {"fetch": "just fetch-idsp", "push": "just push-signals HOST KEY", "why": "Indian government sites (NCDC, which now hosts the IDSP reports) often refuse cloud servers"},
 }
 # never in the daily sync-sources: the WC letters are ~2.7 GB (laptop only), ORD is a 1.3 GB download and a ~1 h scan
 # (it has its own monthly schedule, off by default, and runs at low CPU priority)

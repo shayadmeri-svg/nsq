@@ -112,3 +112,18 @@ def test_comtrade_throttled_call_keeps_previous_rows(tmp_path, monkeypatch):
     out = json.loads((tmp_path / "sources" / "comtrade.json").read_text())["data"]
     assert any(r["partner"] == "China" and r["hs"] == "2942" and r["year"] == last for r in out)  # kept from before
     assert not any(r["hs"] == "2942" and r["flow"] == "import" and r["year"] == last and r["partner"] == "USA" for r in out)
+
+
+def test_idsp_links_from_ncdc_page(tmp_path, monkeypatch):
+    """NCDC's Weekly Outbreaks page (replaces idsp.mohfw.gov.in): 'Week N' links under /weekly_outbreaks/<year>/."""
+    from sources.common import Ctx
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    html = """<div class="year-card"><div class="year-header">2026</div>
+      <a href="/uploads/weekly_outbreaks/2026/week1_1788853592.pdf">Week 1 <img></a>
+      <a href="/uploads/weekly_outbreaks/2026/week31_1790077762.pdf">Week 31 <img></a></div>
+      <div class="year-card"><div class="year-header">2025</div>
+      <a href="/uploads/weekly_outbreaks/2025/week52_1789.pdf">Week 52</a></div>"""
+    monkeypatch.setattr(hs, "_get_page", lambda ctx, url, name: html)
+    links = hs.idsp_pdf_links(Ctx(name="idsp"))
+    assert [lab for _u, lab in links] == ["2026-W31", "2026-W01", "2025-W52"]
+    assert links[0][0] == "https://ncdc.mohfw.gov.in/uploads/weekly_outbreaks/2026/week31_1790077762.pdf"
