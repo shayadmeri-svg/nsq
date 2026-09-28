@@ -196,7 +196,7 @@ def _source_steps(keys: list[str], p: dict[str, Any]):
 
 
 def _sync_all_steps(p: dict[str, Any]):
-    first = [k for k in SOURCE_TITLES if k not in ("clinical_trials", "pubchem")]
+    first = [k for k in SOURCE_TITLES if k not in ("clinical_trials", "pubchem") and k not in _NOT_ON_SERVER]
     steps = _source_steps(first, p)
     # candidates.json must exist before ClinicalTrials.gov is queried
     steps.append(Step("Build molecule universe (candidates for trial lookups)", [PY, "build_universe.py", "--redis-url", _local()]))
@@ -244,7 +244,7 @@ _SOURCE_JOB_DESC = {
     "pubchem": "SMILES, XLogP3 and experimental melting points per molecule for the lab (80 per run; each re-checked monthly).",
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
-    "cdsco_wc": "CDSCO International Cell: every Written Confirmation for API exports to the EU (~700 letters since 2013) with its PDF — Playground · Written confirmations. CDSCO refuses cloud servers: run just fetch-cdsco-wc on a laptop, then just push-wc (PDFs ~1.5 GB).",
+    "cdsco_wc": "CDSCO International Cell: every Written Confirmation for API exports to the EU (~700 letters since 2013) with its PDF — Playground · Written confirmations. CDSCO refuses cloud servers: run just fetch-cdsco-wc on a laptop, then just push-wc (PDFs ~2.7 GB).",
     "eudragmdp": "Every EU GMP certificate and statement of non-compliance for Indian sites, with the approved operations (Union coded scope) — stated capabilities and EU status in the plant registry. Needs a network EudraGMDP answers (a laptop works).",
     "fda_inspections": "Every FDA drug / biologic inspection of an Indian site with its outcome (NAI / VAI / OAI) — US FDA status in the plant registry. Needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API access), or upload the Inspections table exported to Excel.",
     "fda_dmf": "FDA's quarterly list of Drug Master Files: active Type II (drug substance) holders per API — 'Who can make it' → API filings. Upload the .xls if FDA blocks the server.",
@@ -257,6 +257,52 @@ _SOURCE_JOB_DESC = {
     "fda_recalls": "US recalls of drugs made by Indian firms — feeds the site directory.",
 }
 _MOLECULE_SOURCES = {"orange_book", "purple_book", "ema", "clinical_trials"}
+
+# Sources the server cannot fetch (the publisher refuses cloud networks, needs a key, or the download is too big for
+# the server): run the recipe on a laptop, then push the file. The server's daily sync skips the heavy ones.
+LAPTOP: dict[str, dict[str, str]] = {
+    "cdsco_plants": {"fetch": "just fetch-plants", "push": "just push-plant-registry HOST KEY", "why": "CDSCO refuses cloud servers"},
+    "eudragmdp": {"fetch": "just fetch-eudragmdp", "push": "just push-plant-registry HOST KEY", "why": "EudraGMDP refuses cloud servers"},
+    "fda_inspections": {"fetch": "just fetch-fda-inspections", "push": "just push-plant-registry HOST KEY",
+                        "why": "needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API) in your shell"},
+    "fda_dmf": {"fetch": "just fetch-fda-dmf FILE", "push": "just push-plant-registry HOST KEY", "why": "FDA blocks automated downloads of the DMF list"},
+    "edqm_cep": {"fetch": "just fetch-cep", "push": "just push-plant-registry HOST KEY", "why": "EDQM's file is easier from a browser session"},
+    "cdsco_wc": {"fetch": "just fetch-cdsco-wc", "push": "just push-wc HOST KEY", "why": "CDSCO refuses cloud servers; the letters are ~2.7 GB of PDFs"},
+    "ord": {"fetch": "just fetch-ord", "push": "just push-signals HOST KEY", "why": "a 1.3 GB download and an RDKit scan — too heavy for the server"},
+    "nfhs": {"fetch": "just fetch-nfhs", "push": "just push-signals HOST KEY", "why": "data.gov.in is unreliable from servers"},
+    "idsp": {"fetch": "just fetch-idsp", "push": "just push-signals HOST KEY", "why": "IDSP refuses cloud servers"},
+}
+_NOT_ON_SERVER = {"ord", "cdsco_wc"}  # never in the server's sync-sources: they would fill its disk
+
+
+def source_status(key: str) -> dict[str, Any]:
+    """What we hold for a source: the manifest entry (written where it was fetched) plus the file itself — a file pushed
+    from a laptop has no manifest entry on the server, so its own header (retrieved_at, records) is read."""
+    import json as _json
+    import re as _re
+
+    d = settings.data_dir / "sources"
+    try:
+        m = (_json.loads((d / "manifest.json").read_text(encoding="utf-8")) or {}).get(key) or {}
+    except (OSError, ValueError):
+        m = {}
+    f = d / f"{key}.json"
+    out: dict[str, Any] = {"status": m.get("status"), "error": m.get("error") or None, "last_attempt": m.get("last_attempt"),
+                           "last_success": m.get("last_success"), "records": m.get("records"), "file": None}
+    if f.exists():
+        st = f.stat()
+        with open(f, "rb") as fh:
+            head = fh.read(2048).decode("utf-8", errors="ignore")
+        got = dict(_re.findall(r'"(retrieved_at|records)":\s*"?([^",}]+)"?', head))
+        out["file"] = {"bytes": st.st_size, "retrieved_at": got.get("retrieved_at")}
+        out["records"] = int(got["records"]) if str(got.get("records", "")).isdigit() else out["records"]
+        out["last_success"] = max(filter(None, [out["last_success"], got.get("retrieved_at")]), default=None)
+    if key == "cdsco_wc":
+        docs = settings.data_dir / "docs" / "cdsco_wc"
+        out["pdfs"] = sum(1 for _ in docs.glob("*.pdf")) if docs.exists() else 0
+    out["state"] = ("failing" if out["status"] in ("error", "unreachable") and not out["file"] else
+                    "stale" if out["status"] in ("error", "unreachable") else "ok" if out["file"] else "missing")
+    return out
 
 
 def _one_source(k: str):
@@ -305,7 +351,7 @@ REGISTRY: dict[str, Job] = {j.key: j for j in [
         before=export_watchlist,
         params=[Param("month", "Only this reporting month (YYYY-MM, blank = current)", kind="text", default=""),
                 Param("backfill_from", "Or backfill every empty month since (YYYY-MM)", kind="text", default="")]),
-    Job("sync-sources", "Sync all public sources", "Fetch every public source (Orange Book, Purple Book, EMA, FDA site records, ClinicalTrials.gov), then rebuild and load the molecule universe. A source that is down is skipped; the rest still load.",
+    Job("sync-sources", "Sync all public sources", "Fetch every public source the server can reach (FDA Orange / Purple Book, EMA, FDA site records, recalls and import alerts, ClinicalTrials.gov, PubChem, UN Comtrade, and a try at the ones that often refuse servers), then rebuild and load the molecule universe. A source that is down is skipped and its last file stays in use. The Open Reaction Database and the Written Confirmation PDFs are never fetched here: they are laptop jobs.",
         "Pipelines", _sync_all_steps, before=export_watchlist,
         params=[Param("force", "Re-download even if unchanged", default=False),
                 Param("backup", "Back up to Upstash afterwards", default=False)]),
@@ -317,8 +363,8 @@ REGISTRY: dict[str, Job] = {j.key: j for j in [
           params=[Param("force", "Re-download even if unchanged", default=False),
                   Param("file", "Or parse an uploaded file (for when the server cannot reach the source)", kind="file", default="")])
       for k in SOURCE_TITLES],
-    Job("plant-registry", "Rebuild plant registry", "Fetch CDSCO's approved sites + WHO-GMP list, then EU GMP certificates (EudraGMDP), then FDA inspection outcomes (needs the Data Dashboard API key; skipped otherwise). The Plants tab, site matches and 'Match with CDSCO registry' pick the new files up on their own. CDSCO / EudraGMDP often refuse cloud servers — then run `just fetch-plant-registry` on a laptop and `just push-plant-registry`.",
-        "Sources", lambda p: _source_steps(["cdsco_plants", "eudragmdp", "fda_inspections"], p), invalidates=False,
+    Job("plant-registry", "Rebuild plant registry", "Fetch everything the plant registry is built from: CDSCO's approved sites + WHO-GMP list, EU GMP certificates (EudraGMDP), FDA inspection outcomes (needs the Data Dashboard API key), FDA registrations and the Import Alert 66-40 red list. The Plants tab, the workbench and site matches pick the new files up on their own. CDSCO / EudraGMDP often refuse cloud servers — then run `just fetch-plant-registry` and `just fetch-fda-sites` on a laptop and `just push-plant-registry`.",
+        "Sources", lambda p: _source_steps(["cdsco_plants", "eudragmdp", "fda_inspections", "fda_establishments", "fda_import_alerts"], p), invalidates=False,
         params=[Param("force", "Re-download even if unchanged", default=False)]),
     Job("load-seeds", "Reload CDMO seeds", "Rebuild the molecule universe from data/*.json seeds (+ fetched sources) and reload seeded plants. User plants are kept.",
         "Data", _seed_steps, role="super_admin", destructive=lambda p: True, before=export_watchlist, after=sync_plants_to_redis),
@@ -345,8 +391,14 @@ SCHEDULABLE: dict[str, dict[str, Any]] = {
 }
 
 
+_SOURCE_OF_JOB = {f"src-{k.replace('_', '-')}": k for k in SOURCE_TITLES}
+
+
 def describe(job: Job) -> dict[str, Any]:
+    src = _SOURCE_OF_JOB.get(job.key)
     return {
+        "source": src, "laptop": LAPTOP.get(src) if src else None,
+        "schedule": SCHEDULABLE.get(job.key),
         "key": job.key, "title": job.title, "description": job.description, "group": job.group,
         "role": job.role, "needs_upstash": job.needs_upstash,
         "available": (not job.needs_upstash) or bool(_upstash()),

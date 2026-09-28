@@ -47,8 +47,11 @@ def list_jobs(user: User = Depends(require_platform), db: Session = Depends(get_
     for j in jobs.REGISTRY.values():
         d = jobs.describe(j)
         d["allowed"] = user.role == "super_admin" or j.role == "admin"
-        last = db.scalars(select(JobRun).where(JobRun.job_key == j.key).order_by(JobRun.created_at.desc()).limit(1)).first()
-        d["last_run"] = _run_row(last) if last else None
+        recent = db.scalars(select(JobRun).where(JobRun.job_key == j.key).order_by(JobRun.created_at.desc()).limit(5)).all()
+        d["last_run"] = _run_row(recent[0]) if recent else None
+        d["recent_runs"] = [_run_row(r) for r in recent]
+        if d.get("source"):
+            d["data"] = jobs.source_status(d["source"])
         d["running"] = jobs.is_running(j.key)
         out.append(d)
     return {"jobs": out, "is_super": user.role == "super_admin"}

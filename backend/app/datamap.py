@@ -127,6 +127,9 @@ NODES: list[dict[str, Any]] = [
     _n("f_uploads", "files", "file", "Uploads", "files added on Data jobs",
        "CSV / zip / JSON / HTML files uploaded by the super admin, used when a site blocks downloads or for a manual NSQ reload.",
        keys=["data/uploads/*"]),
+    _n("f_docs", "files", "file", "Written Confirmation PDFs", "data/docs/cdsco_wc/<id>.pdf",
+       "Copies of CDSCO's Written Confirmation letters (~700 PDFs, ~2.7 GB), downloaded on a laptop and rsynced to the server; served inline to the Playground.",
+       keys=["data/docs/cdsco_wc/*.pdf"]),
     _n("f_seeds", "files", "file", "Seed JSON", "curated molecules & plants",
        "Curated starting values. Edited by hand in the repo.",
        keys=["data/patent_seed.json", "data/regulatory_seed.json", "data/demand_seed.json", "data/plant_assets_seed.json"]),
@@ -359,8 +362,12 @@ EDGES: list[dict[str, Any]] = [
     _e("s_universe", "p_admin_molecules"), _e("s_cdmo", "p_admin_molecules"), _e("pg_mol", "p_admin_molecules"),
     _e("f_seeds", "p_admin_molecules", label="lookup"), _e("f_sources", "p_admin_molecules", label="lookup"),
     _e("s_sites", "p_admin_sites"), _e("pg_orgs", "p_admin_sites"),
-    _e("f_sources", "s_plants", label="cdsco_plants + eudragmdp + fda_inspections + fda_dmf + edqm_cep"),
-    _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_workbench", label="who can make it · plant fit for every plant"), _e("s_plants", "p_admin_sites", label="registry match"),
+    _e("f_sources", "s_plants", label="cdsco_plants + eudragmdp + fda_inspections + fda_establishments + fda_import_alerts + fda_dmf + edqm_cep"),
+    _e("f_seeds", "s_plants", label="demo profiles' registry links (official records replace stated certifications)"),
+    _e("s_plants", "s_cdmo", label="linked profiles: confirmed vs claimed certifications, official forms"),
+    _e("in_sources", "f_docs", "write", "Written Confirmation PDFs", "laptop: just fetch-cdsco-wc · just push-wc"),
+    _e("f_docs", "p_wc", label="PDF viewer"),
+    _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_workbench", label="this plant for this molecule · who can make it · plant fit for every plant"), _e("s_plants", "p_admin_sites", label="registry match"),
     _e("s_plants", "p_org_infra", label="stated capabilities on 'add as plant'"),
     _e("pg_audit", "p_admin_audit"),
     _e("pg_jobs", "p_admin_datamap", label="live counts"),
@@ -461,15 +468,18 @@ def _source_stats() -> dict[str, dict[str, Any]]:
         m = read_manifest()
     except Exception:
         m = {}
+    from .jobs import source_status
+
     def s(keys: list[str]) -> dict[str, Any]:
-        rows = [m.get(k) or {} for k in keys]
-        if not any(rows):
+        # the file itself counts: sources fetched on a laptop and pushed have no manifest entry on the server
+        rows = [{**(m.get(k) or {}), **{kk: vv for kk, vv in source_status(k).items() if vv is not None}} if k != "cdsco" else (m.get(k) or {}) for k in keys]
+        if not any(r.get("file") or r.get("status") for r in rows):
             return {"ok": False, "text": "never fetched"}
-        bad = [k for k, r in zip(keys, rows) if r.get("status") not in ("ok", "unchanged", None)]
+        bad = [k for k, r in zip(keys, rows) if r.get("state") in ("failing", "missing") or (r.get("status") not in ("ok", "unchanged", None) and not r.get("file"))]
         last = max((r.get("last_success") or "" for r in rows), default="")
         recs = sum(int(r.get("records") or 0) for r in rows)
         parts = [f"{recs:,} records"] if recs else []
-        parts += [f"{k.replace('_', ' ')}: {rows[keys.index(k)].get('status')}" for k in bad]
+        parts += [f"{k.replace('_', ' ')}: {rows[keys.index(k)].get('status') or 'missing'}" for k in bad]
         return {"ok": not bad, "text": " · ".join(parts) or "fetched", "updated_at": last or None}
     return {"ext_cdsco": s(["cdsco"]), "ext_orange": s(["orange_book"]), "ext_purple": s(["purple_book"]), "ext_ema": s(["ema"]),
             "ext_ct": s(["clinical_trials"]), "ext_fdasites": s(["fda_establishments", "fda_import_alerts", "fda_recalls"]),
@@ -487,6 +497,7 @@ def _file_stats() -> dict[str, dict[str, Any]]:
         "f_manifest": _file_stat([d / "sources" / "manifest.json"]),
         "f_uploads": _file_stat(_glob(d / "uploads", "*")),
         "f_seeds": _file_stat([d / f for f in ("patent_seed.json", "regulatory_seed.json", "demand_seed.json", "plant_assets_seed.json")]),
+        "f_docs": _file_stat(_glob(d / "docs" / "cdsco_wc", "*.pdf")),
         "f_entries": _file_stat([d / "generated" / f for f in ("watchlist.json", "molecules.json")]),
         "f_generated": _file_stat([d / "generated" / f for f in ("patents.json", "regulatory.json", "demand.json", "molecule_universe.json", "candidates.json")]),
         "f_snapshot": _file_stat([settings.snapshot_path]),

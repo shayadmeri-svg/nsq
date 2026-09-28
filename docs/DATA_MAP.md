@@ -132,7 +132,7 @@ flowchart TB
     a2 -->|new alerts| a3[load_csv_redis --flush --augment] --> a4[build_product_ontology] --> a5[build_enriched_frame] --> a6[build_universe] --> a7[load patents / regulatory / demand]
   end
   subgraph SS [sync-sources · daily 02:30 IST]
-    b1[export_watchlist] --> b2[fetch Orange Book · Purple Book · EMA · FDA sites<br/>each may fail without stopping] --> b3[build_universe] --> b4[fetch ClinicalTrials for candidates] --> b5[build_universe] --> b6[load patents / regulatory / demand]
+    b1[export_watchlist] --> b2[fetch every server-reachable source<br/>Orange / Purple Book · EMA · FDA sites · Comtrade …<br/>each may fail without stopping; ORD and WC PDFs never] --> b3[build_universe] --> b4[fetch ClinicalTrials for candidates] --> b5[build_universe] --> b6[load patents / regulatory / demand]
   end
 ```
 
@@ -198,7 +198,8 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | **Scheduler** (every 30 s) | `pipeline_schedules` (fire times). It starts jobs, and each job writes `job_runs` plus the stores below. |
 | **fetch-nsq** | CSV, `raw/cdsco`, manifest. When there are new alerts it also writes all `nsq:*` keys (flush and reload), the frame, `generated/*` and `cdmo:patent/regulatory/demand` (flush and reload). |
 | **sync-sources / src-\*** | `raw/*`, `sources/*.json`, manifest, `generated/*`, `cdmo:patent/regulatory/demand` |
-| **plant-registry / src-cdsco-plants / src-eudragmdp** (or `just fetch-plant-registry` + `just push-plant-registry`) | `raw/cdsco_plants/*`, `sources/cdsco_plants.json`, `sources/eudragmdp.json`, manifest. Nothing in Redis: the API re-reads the files when they change. |
+| **plant-registry / src-cdsco-plants / src-eudragmdp / src-fda-inspections / src-fda-import-alerts** (or `just fetch-plant-registry` + `just fetch-fda-sites` + `just push-plant-registry`) | `raw/*`, `sources/cdsco_plants.json`, `eudragmdp.json`, `fda_inspections.json`, `fda_establishments.json`, `fda_import_alerts.json`, `fda_dmf.json`, `edqm_cep.json`, manifest. Nothing in Redis: the API re-reads the files when they change. Plant profiles linked to a registry plant (demo profiles via `plant_assets_seed.json` → `reference.registry_plant`, organisation plants via "Match with CDSCO registry") take US FDA / EU GMP / WHO-GMP from these records at read time; what the company only states becomes "claimed". |
+| **src-cdsco-wc** (laptop: `just fetch-cdsco-wc` + `just push-wc`) | `sources/cdsco_wc.json`, `docs/cdsco_wc/*.pdf` (rsync, only new letters) |
 | **Match with CDSCO registry** (Infrastructure) | `plants`, `cdmo:plant:*` (capabilities, basis, certificates, `reference.registry`), `audit_log` |
 | **build-universe** (also run after saving a molecule) | `generated/*`, `cdmo:patent/regulatory/demand` |
 | **load-seeds / sync-plants** | `cdmo:plant:*` (upsert) and the molecule stores |
@@ -220,7 +221,8 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | Playground · Explorer & Ledger | NSQ frame | `nsq:frame:enriched`, `geo:india_states` |
 | Playground · Insights | NSQ frame, molecule intelligence, site directory | frame, `cdmo:*`, `sources/fda_*.json` |
 | Playground · Regulation map | molecule intelligence, built-in knowledge (`core/regulatory_regions.py`) | `cdmo:*` |
-| Playground · Molecule workbench | molecule intelligence, NSQ frame, built-in knowledge, plant registry ("Who can make it") | `cdmo:*`, frame, `orgs` (your plants), `sources/cdsco_plants.json`, `sources/eudragmdp.json` |
+| Playground · Molecule workbench | molecule intelligence, NSQ frame, built-in knowledge, plant registry ("This plant for this molecule", "Who can make it", plant fit for every plant), ORD | `cdmo:*`, frame, `orgs` (your plants — demo profiles are not listed), `sources/cdsco_plants.json`, `eudragmdp.json`, `fda_*.json`, `fda_dmf.json`, `edqm_cep.json`, `ord.json` |
+| Playground · Written confirmations | CDSCO International Cell | `sources/cdsco_wc.json`, `docs/cdsco_wc/*.pdf` |
 | Playground · Process lab | built-in knowledge (`core/process_models.py`) | none |
 | Playground · Plants | plant registry (CDSCO WHO-GMP + SUGAM + EudraGMDP), site directory | `sources/cdsco_plants.json`, `sources/eudragmdp.json`, frame |
 | Org · Overview / Opportunities / EU export | NSQ frame, molecule intelligence | frame, `cdmo:*`, `orgs` |
@@ -229,7 +231,8 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | Admin overview | NSQ frame, data status | frame, `nsq:meta`, snapshot, `job_runs`, `audit_log`, `users` |
 | All-India NSQ | NSQ frame | frame |
 | Organisations | NSQ frame (manufacturer search), plants | `orgs`, frame, `cdmo:plant:*` |
-| Data pipelines | universe & source status | manifest, `generated/molecule_universe.json`, `pipeline_schedules`, `job_runs` |
+| Data pipelines | universe & source status | manifest + each source file's own header (files pushed from a laptop have no manifest entry on the server), `generated/molecule_universe.json`, `pipeline_schedules`, `job_runs` |
+| Data jobs | every source with the data held (records, retrieved, PDFs), laptop vs server, recent runs | same as Data pipelines, `job_runs` |
 | Molecule universe | universe, molecule intelligence, lookup | `generated/*`, `cdmo:*`, seeds, `sources/*`, `molecule_entries`, `watch_molecules` |
 | Site directory | site directory, plant registry | frame, `sources/fda_*.json`, `sources/cdsco_plants.json`, `sources/eudragmdp.json`, `orgs` |
 | Audit log | none | `audit_log` |

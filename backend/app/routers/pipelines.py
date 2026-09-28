@@ -30,6 +30,9 @@ SOURCE_JOBS = {
     "cdsco": "fetch-nsq", "orange_book": "src-orange-book", "purple_book": "src-purple-book", "ema": "src-ema",
     "clinical_trials": "src-clinical-trials", "fda_establishments": "src-fda-establishments",
     "fda_import_alerts": "src-fda-import-alerts", "fda_recalls": "src-fda-recalls",
+    # every other public source has a src-<key> job of its own
+    **{k: f"src-{k.replace('_', '-')}" for k in jobs.SOURCE_TITLES
+       if k not in ("orange_book", "purple_book", "ema", "clinical_trials", "fda_establishments", "fda_import_alerts", "fda_recalls")},
 }
 
 
@@ -79,6 +82,11 @@ def overview(user: User = Depends(require_platform), db: Session = Depends(get_d
     srcs = []
     for key, m in meta.items():
         man = manifest.get(key, {})
+        if key != "cdsco":  # a file pushed from a laptop has no manifest entry here: read the file's own header
+            held = jobs.source_status(key)
+            man = {**man, "records": held.get("records") if held.get("records") is not None else man.get("records"),
+                   "last_success": held.get("last_success") or man.get("last_success"),
+                   "status": man.get("status") or ("ok" if held.get("file") else None)}
         job = SOURCE_JOBS.get(key)
         srcs.append({
             "key": key, **{k: m.get(k) for k in ("title", "publisher", "url", "page", "cadence", "feeds", "group")},
