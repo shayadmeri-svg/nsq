@@ -108,13 +108,16 @@ def main() -> None:
         cache[key] = new_rec
         new_or_updated[key] = new_rec
 
-    # Single-pipeline flush
-    pipe = r.pipeline()
-    for k, rec in new_or_updated.items():
+    # Flush in batches, outside a transaction: one MULTI with thousands of HSETs is a single huge request, which a
+    # hosted Redis (Upstash) closes the connection on.
+    pipe = r.pipeline(transaction=False)
+    for i, (k, rec) in enumerate(new_or_updated.items(), 1):
         pipe.hset(
             company_ontology.PRODUCT_HASH_KEY,
             mapping={k: json.dumps(rec, ensure_ascii=False)},
         )
+        if i % 500 == 0:
+            pipe.execute()
     pipe.hset(
         company_ontology.PRODUCT_META_HASH_KEY,
         mapping={

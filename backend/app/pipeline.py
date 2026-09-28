@@ -135,9 +135,11 @@ def tasks(p: dict[str, Any]) -> list[Task]:
     J = _jobs()
     from .jobs import PY, Step
     local, upstash = J._local(), J._upstash()
-    target = upstash or local
+    # Everything loads into the server's own Redis (what the site reads). Upstash is only a backup at the end
+    # (persist-upstash): loading into it first cost two round trips per record and it closes very large requests.
+    target = local
     csv = str(J.DEFAULT_CSV)
-    nsq_store = "upstash:nsq" if upstash else "redis:nsq"
+    nsq_store = "redis:nsq"
     T: list[Task] = []
 
     T.append(Task("export-app", "Export app edits (molecules, watchlist)", "prepare", {"pg:app"}, {"gen:entries"},
@@ -150,20 +152,15 @@ def tasks(p: dict[str, Any]) -> list[Task]:
              ok_codes={3}, allow_fail=True)],
         note="nothing new is fine — the reload below still runs from the CSV"))
     T.append(Task("nsq-load", "Reload NSQ alerts + manufacturer ontology", "nsq", {"file:csv"}, {nsq_store, "redis:onto_companies"}, lambda pp: [
-        Step("Load CSV into " + ("Upstash" if upstash else "Redis") + " (flush + augment manufacturers)",
+        Step("Load CSV into Redis (flush + augment manufacturers)",
              [PY, "load_csv_redis.py", "--input", csv, "--redis-url", target, "--flush", "--augment", "1"])]))
     T.append(Task("nsq-products", "Build product ontology", "nsq", {"file:csv", nsq_store}, {"redis:onto_products"}, lambda pp: [
         Step("Build product ontology", [PY, "build_product_ontology.py", "--input", csv, "--redis-url", target])],
         note="after the reload: the reload flushes the NSQ namespace"))
     T.append(Task("nsq-frame", "Pre-compute enriched frame", "nsq", {nsq_store, "redis:onto_companies", "redis:onto_products"}, {"redis:frame"},
                   lambda pp: [Step("Pre-compute enriched frame", [PY, "build_enriched_frame.py", "--redis-url", target])]))
-    if upstash:
-        T.append(Task("nsq-pull", "Copy Upstash → server Redis", "nsq", {"redis:frame", nsq_store}, {"redis:nsq_ready"}, lambda pp: [
-            Step("Copy Upstash → local Redis", [PY, "pull_upstash.py", "--source", upstash, "--target", local])]))
-        ready = "redis:nsq_ready"
-    else:
-        T[-1].writes.add("redis:nsq_ready")
-        ready = "redis:nsq_ready"
+    T[-1].writes.add("redis:nsq_ready")
+    ready = "redis:nsq_ready"
     T.append(Task("nsq-verify", "Verify NSQ data", "nsq", {ready}, set(), lambda pp: [
         Step("Verify", [PY, "verify_nsq_redis.py"], {"REDIS_URL": local})]))
 

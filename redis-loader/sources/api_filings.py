@@ -80,7 +80,8 @@ def read_rows(path: Path) -> list[list[Any]]:
     if raw[:2] == b"PK":
         from openpyxl import load_workbook
 
-        wb = load_workbook(path, read_only=True, data_only=True)
+        # from bytes: openpyxl refuses a path ending in .xls even when the file is really .xlsx (FDA names it .xls)
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
         return [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
     if raw[:4] == b"\xd0\xcf\x11\xe0":
         import xlrd  # legacy .xls (FDA still publishes the DMF list this way)

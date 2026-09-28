@@ -115,7 +115,7 @@ def sync_plants_to_redis() -> str:
 
 def _refresh_steps(p: dict[str, Any], fetch: bool = False):
     csv = str(_csv_path(p))
-    target = _upstash() or _local()
+    target = _local()  # the site reads the server's Redis; Upstash gets a backup copy afterwards
     steps: list = []
     if fetch:
         month = (p.get("month") or "").strip()
@@ -135,13 +135,13 @@ def _refresh_steps(p: dict[str, Any], fetch: bool = False):
         steps.append(Step("Ensure the cumulative CSV exists (rebuild from Redis if missing)",
                           [PY, "sync_cdsco.py", "--csv", csv, "--redis-url", _local(), "--bootstrap-only"]))
     steps += [
-        Step("Load CSV into " + ("Upstash" if _upstash() else "local Redis") + " (flush + ontology augment)",
+        Step("Load CSV into Redis (flush + ontology augment)",
              [PY, "load_csv_redis.py", "--input", csv, "--redis-url", target, "--flush", "--augment", "1"]),
         Step("Build product ontology", [PY, "build_product_ontology.py", "--input", csv, "--redis-url", target]),
         Step("Pre-compute enriched frame", [PY, "build_enriched_frame.py", "--redis-url", target]),
     ]
     if _upstash():
-        steps.append(Step("Copy Upstash → local Redis", [PY, "pull_upstash.py", "--source", _upstash(), "--target", _local()]))
+        steps.append(Step("Back up to Upstash", [PY, "pull_upstash.py", "--source", _local(), "--target", _upstash()], allow_fail=True))
     steps.append(Step("Verify", [PY, "verify_nsq_redis.py"], {"REDIS_URL": _local()}))
     if fetch:
         steps += _universe_steps(p)
