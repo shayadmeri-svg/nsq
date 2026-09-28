@@ -2,8 +2,9 @@
 //  * Portfolio check — paste your product list, see how the market fails each one and what to check first.
 //  * Needed & badly made — products many makers keep failing, crossed with NFHS disease burden and IDSP outbreaks.
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { Activity, ClipboardCheck, Download, Factory, HeartPulse, MapPin, Search, Sparkles, TrendingUp } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Activity, Building2, ChevronDown, ClipboardCheck, Download, Factory, HeartPulse, Info, MapPin, Search, Sparkles, TrendingUp, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Badge, Button, Card, CardHeader, ErrorNote, Skeleton } from "../../components/ui";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -22,6 +23,16 @@ const RISK: Record<string, { label: string; bar: string; chip: string }> = {
 const EXAMPLE = ["Telmisartan 40 mg tablets", "Albendazole 400 mg tablets", "Metformin 500 SR", "Pantoprazole 40 mg tablets",
   "Amoxycillin + Clavulanate 625", "Omeprazole capsules", "Vitamin D3 60000 IU", "Cefixime 200 mg tablets", "Rosuvastatin 10 mg"].join("\n");
 const STORE = "nsq.portfolio.v1";
+const STORE_CMP = "nsq.portfolio.compare.v1";
+const STORE_HOW = "nsq.portfolio.how.v1";
+type Compare = { key: string; name: string } | null;
+
+function get(k: string): string | null {
+  try { return localStorage.getItem(k); } catch { return null; }
+}
+function put(k: string, v: string | null) {
+  try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* storage may be blocked */ }
+}
 
 function load(): string {
   try { return localStorage.getItem(STORE) ?? ""; } catch { return ""; }
@@ -43,25 +54,25 @@ function csv(rows: any[]) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function MakerLoader({ onLoad }: { onLoad: (lines: string[]) => void }) {
+function MakerLoader({ onLoad }: { onLoad: (lines: string[], maker: { key: string; name: string }) => void }) {
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   useEffect(() => { const t = setTimeout(() => setDq(q.trim()), 300); return () => clearTimeout(t); }, [q]);
   const r = useQuery({ queryKey: ["inv-search", dq], enabled: dq.length >= 2, placeholderData: keepPreviousData,
     queryFn: () => api<any>(`/api/playground/investigate/search?q=${encodeURIComponent(dq)}`) });
-  const pick = async (key: string) => {
+  const pick = async (key: string, name: string) => {
     const out = await api<any>(`/api/playground/forensics/portfolio/maker?key=${encodeURIComponent(key)}`);
-    onLoad(out.products);
+    onLoad(out.products, { key, name });
     setQ("");
   };
   return (
     <div className="relative">
       <Search size={13} className="absolute left-2.5 top-2.5 text-ink-faint" />
-      <input className="input h-8 w-full pl-7 text-xs" placeholder="…or load a maker's products from NSQ" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="input h-8 w-full pl-7 text-xs" placeholder="Compare with a company (loads its NSQ products)" value={q} onChange={(e) => setQ(e.target.value)} />
       {dq.length >= 2 && q && (r.data?.manufacturers?.length ?? 0) > 0 && (
         <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl bg-white shadow-lg ring-1 ring-line">
           {r.data.manufacturers.map((m: any) => (
-            <button key={m.key} onClick={() => pick(m.key)} className="block w-full px-3 py-2 text-left text-xs hover:bg-slate-50">
+            <button key={m.key} onClick={() => pick(m.key, m.name)} className="block w-full px-3 py-2 text-left text-xs hover:bg-slate-50">
               <div className="font-medium">{m.name}</div><div className="text-ink-muted">{[m.city, m.state].filter(Boolean).join(", ")} · {m.alerts} alerts</div>
             </button>
           ))}
@@ -71,11 +82,69 @@ function MakerLoader({ onLoad }: { onLoad: (lines: string[]) => void }) {
   );
 }
 
+function Col({ title, tone, children }: { title: string; tone: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className={cn("mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider", tone)}>{title}</div>
+      <ul className="space-y-1.5 text-[12px] leading-snug text-ink-soft">{children}</ul>
+    </div>
+  );
+}
+
+// What this check is, where the list comes from, and what it can / cannot say — shown until dismissed
+export function HowItWorks() {
+  const [open, setOpen] = useState(() => get(STORE_HOW) !== "closed");
+  const toggle = () => { put(STORE_HOW, open ? "closed" : null); setOpen(!open); };
+  return (
+    <Card className="overflow-hidden">
+      <button onClick={toggle} className="flex w-full items-center gap-2 px-4 py-3 text-left">
+        <Info size={15} className="text-brand-600" />
+        <span className="flex-1 text-[13px] font-semibold">How this check works — a market check, not a plant audit</span>
+        <ChevronDown size={15} className={cn("text-ink-faint transition", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="space-y-4 border-t border-line px-4 pb-4 pt-3">
+          <p className="text-[12.5px] leading-relaxed text-ink-soft">
+            You type the medicines (or load a company's list). For each one it pulls <b>every CDSCO NSQ alert for the same ingredients and dosage
+            form, from every maker in India</b>, and reads how that product fails: which test, how early in its shelf life, how many independent
+            makers. That is why it shows data with no plant or company selected — the question it answers is <i>"how does the market get this
+            product wrong, and what should I check before I make it?"</i>. Choose a company below the list to add its <b>own</b> NSQ record next to
+            the market's; users signed in as an organisation see their own record automatically.
+          </p>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Col title="What it does" tone="text-emerald-700">
+              <li>✓ Ranks your list by how often, how widely and how recently the market fails each product</li>
+              <li>✓ Names the likely root cause (formulation, stability, plant, sterile process) with the evidence</li>
+              <li>✓ Gives the checks that prevent that failure, and the ones common to several products</li>
+              <li>✓ Shows one company's own alerts beside the market's</li>
+            </Col>
+            <Col title="What it cannot do" tone="text-rose-700">
+              <li>✗ See your batches, formula, pack or test results — only batches that failed a government sample</li>
+              <li>✗ Give a failure <i>rate</i>: NSQ counts failures, not batches sold, and sampling favours big sellers — few alerts isn't proof of safety</li>
+              <li>✗ Judge a plant: "High risk" means the product is hard to get right, not that your plant is bad</li>
+              <li>✗ Read brands that never appear in NSQ — type the generic name</li>
+            </Col>
+            <Col title="What would unlock more" tone="text-indigo-700">
+              <li>→ <b>Your release & stability results</b> (dissolution, assay per batch): your margin against the failing pattern — a true plant-specific risk</li>
+              <li>→ <b>Your product master</b> (excipients, pack): test each hypothesis directly (lactose + amine, PVC blister, enteric coat)</li>
+              <li>→ <b>Sales volumes</b> (AIOCD-AWACS / IQVIA, licensed): alerts per million units instead of counts</li>
+              <li>→ <b>State drug-controller NSQ lists</b>: more samples than CDSCO's monthly list</li>
+            </Col>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function Portfolio({ onOpen }: { onOpen: Open }) {
   const [text, setText] = useState(() => load() || EXAMPLE);
   useEffect(() => save(text), [text]);
-  const m = useMutation({ mutationFn: (lines: string[]) => post<any>("/api/playground/forensics/portfolio", { lines }) });
-  const run = (t = text) => m.mutate(t.split(/\n|;/).map((x) => x.trim()).filter(Boolean));
+  const [cmp, setCmp] = useState<Compare>(() => { try { return JSON.parse(get(STORE_CMP) ?? "null"); } catch { return null; } });
+  useEffect(() => put(STORE_CMP, cmp ? JSON.stringify(cmp) : null), [cmp]);
+  const m = useMutation({ mutationFn: ({ lines, c }: { lines: string[]; c: Compare }) =>
+    post<any>("/api/playground/forensics/portfolio", { lines, compare_keys: c ? [c.key] : [], compare_name: c?.name ?? "" }) });
+  const run = (t = text, c: Compare = cmp) => m.mutate({ lines: t.split(/\n|;/).map((x) => x.trim()).filter(Boolean), c });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { run(); }, []);
   const d = m.data;
@@ -89,8 +158,15 @@ export function Portfolio({ onOpen }: { onOpen: Open }) {
           <Button className="flex-1" onClick={() => run()} loading={m.isPending}>Check my portfolio</Button>
           <Button variant="secondary" onClick={() => { setText(EXAMPLE); run(EXAMPLE); }}>Example</Button>
         </div>
-        <div className="mt-3"><MakerLoader onLoad={(ls) => { const t = ls.join("\n"); setText(t); run(t); }} /></div>
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">Stays in this browser. Generic names work best; brand names are matched through the NSQ product names that carry them. No form means the form the market fails most.</p>
+        <div className="mt-3">
+          {cmp ? (
+            <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs text-indigo-900 ring-1 ring-inset ring-indigo-200">
+              <Building2 size={13} className="shrink-0" /><span className="min-w-0 flex-1 truncate">Comparing with <b>{cmp.name}</b></span>
+              <button aria-label="Stop comparing" onClick={() => { setCmp(null); run(text, null); }} className="shrink-0 rounded p-0.5 hover:bg-indigo-100"><X size={13} /></button>
+            </div>
+          ) : <MakerLoader onLoad={(ls, mk) => { const t = ls.join("\n"); setText(t); setCmp(mk); run(t, mk); }} />}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">The list is whatever you type — kept only in this browser. Generic names work best; brand names are matched through the NSQ product names that carry them. No form means the form the market fails most.</p>
       </Card>
 
       <div className="min-w-0 space-y-4">
@@ -99,12 +175,16 @@ export function Portfolio({ onOpen }: { onOpen: Open }) {
         {d?.available && (
           <>
             <div className="rounded-2xl bg-night-900 p-5 text-white">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-400">Portfolio risk · NSQ {fmtMonth(d.period.first)} – {fmtMonth(d.period.last)}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-400">Market risk · all makers · NSQ {fmtMonth(d.period.first)} – {fmtMonth(d.period.last)}</div>
               <div className="mt-1 font-display text-xl font-bold leading-snug">
                 {d.summary.high > 0
-                  ? <>{d.summary.high} of your {d.rows.length} products fail NSQ across the market in a known way — the fix is usually a specification line or a pack change, not a new formula.</>
-                  : <>None of your {d.rows.length} products has a strong market-wide failure pattern.</>}
+                  ? <>{d.summary.high} of these {d.rows.length} products {d.summary.high === 1 ? "is" : "are"} failed by many makers in a known way — whoever makes {d.summary.high === 1 ? "it" : "them"} should run the checks below before the first batch.</>
+                  : <>None of these {d.rows.length} products has a strong market-wide failure pattern.</>}
               </div>
+              {d.compare && <div className="mt-2 text-sm text-indigo-200"><Building2 size={13} className="mr-1 inline" />
+                {d.compare.source === "organisation" ? "Your organisation" : d.compare.name}: {d.compare.products_failed
+                  ? <>its own batches failed NSQ on <b className="text-white">{d.compare.products_failed}</b> of these products ({d.compare.alerts} alerts).</>
+                  : <>no NSQ alert on any of these products.</>}</div>}
               <div className="mt-3 flex flex-wrap gap-2">{Object.entries(RISK).map(([k, v]) => d.summary[k] ? (
                 <span key={k} className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset", v.chip)}>{d.summary[k]} {v.label.toLowerCase()}</span>) : null)}
                 <button onClick={() => csv(d.rows)} className="ml-auto flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] text-slate-200 hover:bg-white/20"><Download size={11} /> CSV</button>
@@ -113,7 +193,7 @@ export function Portfolio({ onOpen }: { onOpen: Open }) {
 
             {d.common_checks.length > 0 && (
               <Card className="p-4">
-                <div className="label mb-2 text-emerald-800">Checks that cover several of your high-risk products</div>
+                <div className="label mb-2 text-emerald-800">Checks that cover several of these high-risk products</div>
                 <ul className="grid gap-1.5 text-xs text-emerald-900 md:grid-cols-2">{d.common_checks.map((c: any) => (
                   <li key={c.check} className="flex gap-2 rounded-lg bg-emerald-50 p-2"><span className="shrink-0 font-semibold tabular-nums">{c.products}×</span>{c.check}</li>))}</ul>
               </Card>
@@ -135,6 +215,16 @@ export function Portfolio({ onOpen }: { onOpen: Open }) {
                       <div className="mt-0.5 text-[11.5px] text-ink-muted">
                         {r.why}{r.alerts > 0 && <> · {r.alerts} alerts ({r.recent_24m} in 24 mo) · {r.makers} makers{r.tests?.length ? <> · mostly {r.tests[0].toLowerCase()}</> : null} · last {fmtMonth(r.last)}</>}
                       </div>
+                      {r.own && (
+                        <div className={cn("mt-1.5 flex w-fit max-w-full flex-wrap items-center gap-x-1.5 rounded-md px-2 py-0.5 text-[11.5px] ring-1 ring-inset",
+                          r.own.alerts ? "bg-indigo-50 text-indigo-900 ring-indigo-200" : "bg-slate-50 text-ink-muted ring-line")}>
+                          <Building2 size={11} /> {d.compare.source === "organisation" ? "Your organisation" : d.compare.name}:
+                          {r.own.alerts
+                            ? <>{" "}{r.own.alerts} own alert{r.own.alerts > 1 ? "s" : ""} ({r.own.recent_24m} in 24 mo) · {r.own.tests.join(", ").toLowerCase()} · last {fmtMonth(r.own.last)}
+                                {d.compare.keys.length === 1 && <Link className="font-semibold text-indigo-700 hover:underline" to={`/playground/investigate?${new URLSearchParams({ mfr: d.compare.keys[0], alert: r.own.ids[0] })}`}>open →</Link>}</>
+                            : <> no NSQ alert for this product{r.own.other_forms ? ` (${r.own.other_forms} in other forms)` : ""}</>}
+                        </div>
+                      )}
                       {dg && (
                         <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
                           <div className="text-xs"><div className="font-semibold text-ink">{dg.cause}</div>

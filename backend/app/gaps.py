@@ -116,8 +116,21 @@ def _vocab(d: pd.DataFrame) -> set[str]:
     return v
 
 
-def portfolio(lines: list[str]) -> dict[str, Any]:
+def _own(g: pd.DataFrame, same: pd.DataFrame, keys: set[str], cutoff: pd.Timestamp) -> dict[str, Any]:
+    """One company's own NSQ record for this product (same form) and for these ingredients in any form."""
+    mine = g[g["Mfg_Ontology_Key"].isin(keys)]
+    any_form = same[same["Mfg_Ontology_Key"].isin(keys)]
+    return {"alerts": int(len(mine)), "recent_24m": int((mine["Parsed_Date"] >= cutoff).sum()),
+            "last": mine["Parsed_Date"].max().strftime("%Y-%m") if len(mine) and mine["Parsed_Date"].notna().any() else None,
+            "tests": [t for t, _ in Counter(t for ts in mine["_tests"] for t in ts).most_common(2)],
+            "other_forms": int(len(any_form) - len(mine)),
+            "ids": [str(x) for x in mine.sort_values("Parsed_Date", ascending=False)["record_id"].head(3)]}
+
+
+def portfolio(lines: list[str], compare: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """compare = {"keys": [manufacturer ontology keys], "name": str} adds that company's own record per product."""
     d = fx._frame()
+    keys = {k for k in (compare or {}).get("keys") or [] if k}
     if d.empty:
         return {"available": False}
     if fx._cache.get("hyp_key") != fx._cache.get("key"):
@@ -162,16 +175,22 @@ def portfolio(lines: list[str]) -> dict[str, Any]:
             "other_forms": [{"form": str(f), "alerts": int(c), "key": "+".join(ings) + "|" + str(f) if c >= fx.MIN_ALERTS else None}
                             for f, c in forms.items() if f != form][:4],
             "in_combinations": int(len(combos)),
+            **({"own": _own(g, same, keys, cutoff)} if keys else {}),
         })
     order = {"high": 0, "watch": 1, "low": 2, "clear": 3, "unknown": 4}
     rows.sort(key=lambda r: (order[r["risk"]], -r.get("recent_24m", 0)))
     summary = Counter(r["risk"] for r in rows)
     checks = Counter(c for r in rows if r["risk"] == "high" for c in (r.get("diagnosis") or {}).get("checks", []))
+    own_rows = [r for r in rows if r.get("own")]
     return {"available": True, "rows": rows, "summary": {k: summary.get(k, 0) for k in order},
+            "compare": ({"name": (compare or {}).get("name") or ", ".join(sorted(keys)), "keys": sorted(keys),
+                         "source": (compare or {}).get("source", "chosen"),
+                         "products_failed": sum(1 for r in own_rows if r["own"]["alerts"]),
+                         "alerts": sum(r["own"]["alerts"] for r in own_rows)} if keys else None),
             "period": {"first": d["Parsed_Date"].min().strftime("%Y-%m"), "last": d["Parsed_Date"].max().strftime("%Y-%m")},
             "common_checks": [{"check": c, "products": n} for c, n in checks.most_common(6) if n > 1],
-            "note": "Risk reads how the whole market fails each product in CDSCO NSQ alerts — not your own record. "
-                    "No form in a line means the form most often failed."}
+            "note": "Risk reads how the whole market fails each product in CDSCO NSQ alerts. A company's own record is shown "
+                    "only when one is chosen (or you sign in as an organisation). No form in a line means the form most often failed."}
 
 
 def maker_products(mfr_key: str, limit: int = 60) -> list[str]:

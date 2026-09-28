@@ -258,13 +258,23 @@ def forensics_detail(key: str = Query(..., min_length=3, max_length=300), user: 
 
 class PortfolioIn(BaseModel):
     lines: list[str] = Field(default_factory=list, max_length=150)
+    compare_keys: list[str] = Field(default_factory=list, max_length=20)  # manufacturer ontology keys to compare with
+    compare_name: str = Field("", max_length=200)
 
 
 @router.post("/forensics/portfolio")
-def forensics_portfolio(body: PortfolioIn, user: User = Depends(current_user)):
-    """Risk of each product in a maker's list, read from how the whole market fails it."""
+def forensics_portfolio(body: PortfolioIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Risk of each product in a list, read from how the whole market fails it — plus one company's own NSQ record:
+    the maker chosen on the page, or, for an organisation's users, their own organisation's manufacturer keys."""
     from .. import gaps
-    return gaps.portfolio([str(x)[:200] for x in body.lines])
+    compare = None
+    if body.compare_keys:
+        compare = {"keys": [k[:200] for k in body.compare_keys], "name": body.compare_name, "source": "chosen"}
+    elif user.org_id:
+        org = db.get(Org, user.org_id)
+        if org and org.ontology_keys:
+            compare = {"keys": list(org.ontology_keys), "name": org.name, "source": "organisation"}
+    return gaps.portfolio([str(x)[:200] for x in body.lines], compare)
 
 
 @router.get("/forensics/portfolio/maker")

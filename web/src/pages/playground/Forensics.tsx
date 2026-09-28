@@ -10,7 +10,7 @@ import { ExpandedProvider, Figure, Tile, useExpanded, type Section } from "../..
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
-import { Needed, Portfolio } from "./ForensicsTools";
+import { HowItWorks, Needed, Portfolio } from "./ForensicsTools";
 
 const ARCH: Record<string, { label: string; tone: any; icon: ReactNode; color: string }> = {
   born: { label: "Released that way", tone: "rose", icon: <Beaker size={12} />, color: "#e11d48" },
@@ -231,7 +231,7 @@ export function Forensics() {
           <div className="mt-1 max-w-3xl font-display text-xl font-bold leading-snug">Before you make a product, see how everyone else failed it — which test, how early in its shelf life, whether it's the formula or a few plants — and what to check so your batches don't.</div>
         </div>
         <Segmented value={view} onChange={setView} options={[{ value: "patterns", label: "Failure patterns" }, { value: "portfolio", label: "Check my portfolio" }, { value: "needed", label: "Needed & badly made" }]} />
-        {view === "portfolio" && <Portfolio onOpen={openKey} />}
+        {view === "portfolio" && <div className="space-y-4"><HowItWorks /><Portfolio onOpen={openKey} /></div>}
         {view === "needed" && <Needed onOpen={openKey} />}
         {view === "patterns" && <>
         <Tiles o={o} onFilter={setFilter} />

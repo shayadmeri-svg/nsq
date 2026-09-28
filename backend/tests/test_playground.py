@@ -106,3 +106,12 @@ def test_portfolio_and_needed(root):
     n = root.get("/api/playground/forensics/needed").json()
     assert n["available"] and {c["key"] for c in n["conditions"]} >= {"diabetes", "hypertension", "anaemia"}
     assert all(r["conditions"] for r in n["ranked"])
+
+
+def test_portfolio_compare(root):
+    from app import forensics as F
+    d = F._frame()
+    key = d[d["_group"] == d["_group"].value_counts().index[0]]["Mfg_Ontology_Key"].dropna().iloc[0]
+    label = F._label(d["_group"].value_counts().index[0]).replace(" · ", " ")
+    p = root.post("/api/playground/forensics/portfolio", json={"lines": [label], "compare_keys": [key], "compare_name": "X"}, headers=H).json()
+    assert p["compare"]["name"] == "X" and p["rows"][0]["own"]["alerts"] >= 1
