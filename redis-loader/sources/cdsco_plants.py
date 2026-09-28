@@ -936,7 +936,8 @@ def run(ctx: Ctx) -> int:
         units = extract_who_units(pdf, ctx.log)
     else:
         # newest candidate first; a PDF that is only a state-wise summary (few units) is passed over for the next one
-        want = max(200, len(prev_units) // 2)
+        # a previous list only sets the bar when it read correctly (a misread one inflates the count)
+        want = max(200, len(prev_units) // 2) if name_quality(prev_units) >= 0.85 else 200
         best_ref: Optional[str] = None
         todo = who_gmp_candidates(ctx)
         while todo:
