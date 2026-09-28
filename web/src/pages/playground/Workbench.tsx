@@ -48,22 +48,43 @@ function FitParts({ detail }: { detail?: any }) {
   );
 }
 
-function PlantSearch({ onPick }: { onPick: (id: string) => void }) {
+// One picker for every plant: your plant profiles (and the demo profiles, marked) first, then any plant in the registry.
+function PlantPicker({ plants, current, onPick }: { plants: any[]; current?: string | null; onPick: (id: string) => void }) {
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [open, setOpen] = useState(false);
   useEffect(() => { const t = setTimeout(() => setDq(q.trim()), 250); return () => clearTimeout(t); }, [q]);
-  const r = useQuery({ queryKey: ["plant-search", dq], enabled: dq.length >= 2, queryFn: () => api<any>(`/api/plants?${new URLSearchParams({ q: dq, size: "8", sort: "name" })}`) });
+  const r = useQuery({ queryKey: ["plant-search", dq], enabled: open && dq.length >= 2, queryFn: () => api<any>(`/api/plants?${new URLSearchParams({ q: dq, size: "8", sort: "name" })}`) });
+  const cur = plants.find((p) => p.asset_id === current);
+  const ql = q.trim().toLowerCase();
+  const mine = plants.filter((p) => !ql || `${p.name} ${p.company ?? ""}`.toLowerCase().includes(ql));
+  const pick = (id: string) => { onPick(id); setQ(""); setOpen(false); };
   return (
     <div className="relative">
-      <input className="input h-10 w-60" placeholder="Score any plant — name or PIN" value={q}
-        onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} />
-      {open && dq.length >= 2 && (
-        <div className="absolute z-20 mt-1 max-h-80 w-[28rem] overflow-auto rounded-lg border border-line bg-white p-1 shadow-lg">
-          {r.isLoading && <div className="p-2 text-xs text-ink-muted">Searching…</div>}
-          {r.data?.items?.length === 0 && <div className="p-2 text-xs text-ink-muted">No plant matches.</div>}
-          {r.data?.items?.map((p: any) => (
-            <button key={p.id} className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-50" onMouseDown={() => { onPick(p.id); setQ(""); setOpen(false); }}>
+      <input className="input h-10 w-[26rem] max-w-full" value={open ? q : ""} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={cur ? `Scored for: ${cur.name}${cur.demo ? " (demo)" : ""}` : "Pick a plant — your plants or any registry plant"} />
+      {!open && cur && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{cur.kind === "registry" ? "registry" : cur.demo ? "demo" : "yours"}</span>}
+      {open && (
+        <div className="absolute z-20 mt-1 max-h-96 w-[30rem] overflow-auto rounded-lg border border-line bg-white p-1 shadow-lg">
+          {mine.length > 0 && <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Plant profiles</div>}
+          {mine.map((p) => (
+            <button key={p.asset_id} className={cn("block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-50", p.asset_id === current && "bg-brand-50")} onMouseDown={() => pick(p.asset_id)}>
+              <div className="flex items-center gap-1.5 font-medium">{p.name}
+                {p.kind === "registry" ? <Badge>registry</Badge> : p.demo ? <Badge tone="amber">demo</Badge> : <Badge tone="brand">yours</Badge>}</div>
+              <div className="text-ink-muted">
+                {p.company && <>modelled on {p.company} · </>}
+                {p.kind === "registry" ? "picked from the registry" : p.certs?.length ? p.certs.map((c: string) => c.replace(/_/g, " ")).join(", ") : "no certification on record"}
+                {p.claimed?.length > 0 && <span className="text-amber-700"> · claimed, not confirmed: {p.claimed.map((c: string) => c.replace(/_/g, " ")).join(", ")}</span>}
+              </div>
+            </button>
+          ))}
+          <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Plant registry (CDSCO · EU GMP · US FDA)</div>
+          {dq.length < 2 && <div className="px-2 pb-2 text-xs text-ink-muted">Type a company, town or PIN to score any of ~2,850 registry plants.</div>}
+          {dq.length >= 2 && r.isLoading && <div className="p-2 text-xs text-ink-muted">Searching…</div>}
+          {dq.length >= 2 && r.data?.items?.length === 0 && <div className="p-2 text-xs text-ink-muted">No registry plant matches.</div>}
+          {dq.length >= 2 && r.data?.items?.map((p: any) => (
+            <button key={p.id} className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-50" onMouseDown={() => pick(`reg:${p.id}`)}>
               <div className="font-medium">{p.name}</div>
               <div className="text-ink-muted">{[p.district, p.state, p.pin].filter(Boolean).join(" · ")} · {p.dosage_forms.slice(0, 5).join(", ") || "forms not listed"}</div>
             </button>
@@ -476,8 +497,7 @@ export function Workbench({ initial }: { initial?: string }) {
       <Card className="flex flex-wrap items-center gap-3 p-3">
         <FlaskConical size={18} className="ml-1 text-brand-700" />
         <select className="input h-10 w-64" value={key} onChange={(e) => setKey(e.target.value)}>{list.data?.molecules.map((m: any) => <option key={m.key} value={m.key}>{m.name}</option>)}</select>
-        {d?.plants?.length > 0 && <select className="input h-10 w-64" value={d.plant_id ?? ""} onChange={(e) => setPlant(e.target.value)}>{d.plants.map((p: any) => <option key={p.asset_id} value={p.asset_id}>{p.kind === "registry" ? "Registry plant: " : "Scored for: "}{p.name}</option>)}</select>}
-        <PlantSearch onPick={(id) => setPlant(`reg:${id}`)} />
+        <PlantPicker plants={d?.plants ?? []} current={d?.plant_id} onPick={setPlant} />
         {d && <span className="ml-auto text-[11px] text-ink-muted">{d.patent.origin === "curated" ? "Curated profile" : d.patent.origin === "manual" ? "Added in the app" : "Built from public sources"} · {(d.patent.signals?.sources ?? []).length} sources</span>}
       </Card>
       {q.error && <ErrorNote error={q.error} />}
