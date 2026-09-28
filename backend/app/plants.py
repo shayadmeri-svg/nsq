@@ -997,7 +997,7 @@ def fit_records(key: str) -> dict[str, dict[str, Any]]:
     return rec
 
 
-def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: str = "") -> Optional[dict[str, Any]]:
+def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: str = "", band: str = "") -> Optional[dict[str, Any]]:
     """Plant fit of every registry plant for a molecule, best first (form, capabilities, segregation, standing)."""
     import plant_fit
     from intelligence_scorer import plant_available_capabilities
@@ -1028,7 +1028,11 @@ def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: s
         _fit_cache[ck] = rows
     plants = reg["plants"]
     sel = [r for r in rows if _matches(plants[r["id"]], q, state, "", "", cert, "")]
-    dist = Counter(("80+" if r["score"] >= 80 else "60–79" if r["score"] >= 60 else "40–59" if r["score"] >= 40 else "<40") for r in rows)
+    def _band(s: float) -> str:
+        return "80+" if s >= 80 else "60–79" if s >= 60 else "40–59" if s >= 40 else "<40"
+    dist = Counter(_band(r["score"]) for r in sel)  # bands of what the other filters leave, so a band's count is what clicking it shows
+    if band:
+        sel = [r for r in sel if _band(r["score"]) == band]
     top = sel[0]["score"] if sel else None
     return {"molecule": need, "total": len(sel), "scored": len(rows), "tied_at_top": sum(1 for r in sel if r["score"] == top) if sel else 0,
             "bands": {k: dist.get(k, 0) for k in ("80+", "60–79", "40–59", "<40")},

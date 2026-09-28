@@ -296,6 +296,10 @@ def test_plant_fit_across_registry_and_registry_plant_in_workbench(admin):
     fits = [x["fit"] for x in r["items"]]
     assert fits == sorted(fits, reverse=True) and all(set(x["parts"]) == {"form", "capabilities", "segregation", "standing", "record"} for x in r["items"])
     assert all("tablet" in x["dosage_forms"] for x in r["items"])
+    for b, n in r["bands"].items():  # each band's count is what filtering on it returns
+        if n:
+            got = admin.get("/api/playground/molecule/telmisartan/plant-fit", params={"band": b, "limit": 100}, headers=H).json()
+            assert got["total"] == n and all((x["fit"] >= 80) if b == "80+" else (x["fit"] < 40) if b == "<40" else True for x in got["items"])
     eu = admin.get("/api/playground/molecule/telmisartan/plant-fit", params={"cert": "eu_gmp", "limit": 5}, headers=H).json()
     assert all(x["eu_gmp"] for x in eu["items"])
     top = r["items"][0]["id"]

@@ -103,11 +103,11 @@ def molecule(key: str, plant_id: str = "", w_patent: Optional[float] = None, w_r
 @router.get("/molecule/{key}/plant-fit")
 def molecule_plant_fit(key: str, limit: int = Query(25, ge=1, le=100), state: str = "", q: str = "",
                        cert: str = Query("", pattern="^(|who_gmp|eu_gmp|us_fda|sugam|schedule_c|loan)$"),
-                       user: User = Depends(current_user)):
+                       band: str = Query("", pattern="^(|80\\+|60–79|40–59|<40)$"), user: User = Depends(current_user)):
     """Plant fit of every plant in the registry for this molecule, best first."""
     from .. import plants as registry_plants
 
-    out = registry_plants.fit_ranking(key, limit=limit, state=state, cert=cert, q=q)
+    out = registry_plants.fit_ranking(key, limit=limit, state=state, cert=cert, q=q, band=band)
     if out is None:
         raise HTTPException(404, "Molecule not tracked.")
     return out

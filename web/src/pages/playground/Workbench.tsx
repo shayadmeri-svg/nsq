@@ -179,8 +179,9 @@ function FitRanking({ moleculeKey, onScore, bare, highlight }: { moleculeKey: st
   const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "us_fda">("");
   const [state, setState] = useState("");
   const [limit, setLimit] = useState(15);
-  const r = useQuery({ queryKey: ["fit-rank", moleculeKey, cert, state, limit], enabled: !!moleculeKey, placeholderData: keepPreviousData,
-    queryFn: () => api<any>(`/api/playground/molecule/${moleculeKey}/plant-fit?${new URLSearchParams({ cert, state, limit: String(limit) })}`) });
+  const [band, setBand] = useState("");
+  const r = useQuery({ queryKey: ["fit-rank", moleculeKey, cert, state, band, limit], enabled: !!moleculeKey, placeholderData: keepPreviousData,
+    queryFn: () => api<any>(`/api/playground/molecule/${moleculeKey}/plant-fit?${new URLSearchParams({ cert, state, band, limit: String(limit) })}`) });
   const f = useQuery({ queryKey: ["plant-facets"], queryFn: () => api<any>("/api/plants/facets") });
   const m = r.data;
   return (
@@ -191,7 +192,12 @@ function FitRanking({ moleculeKey, onScore, bare, highlight }: { moleculeKey: st
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Segmented value={cert} onChange={setCert} options={[{ value: "", label: "All" }, { value: "us_fda", label: "US FDA" }, { value: "eu_gmp", label: "EU GMP" }, { value: "who_gmp", label: "WHO-GMP" }]} />
             <select className="input h-9 w-48" value={state} onChange={(e) => setState(e.target.value)}><option value="">All states</option>{f.data?.states?.map((s: string) => <option key={s} value={s}>{s}</option>)}</select>
-            <span className="ml-auto flex gap-1 text-[11px]">{Object.entries(m.bands).map(([b, n]: any) => <Badge key={b} tone={b === "80+" ? "brand" : b === "60–79" ? "sky" : b === "40–59" ? "amber" : "slate"}>{b}: {n.toLocaleString()}</Badge>)}</span>
+            <span className="ml-auto flex items-center gap-1 text-[11px]"><span className="mr-1 text-ink-faint">Fit</span>{Object.entries(m.bands).map(([b, n]: any) => (
+              <button key={b} disabled={!n} onClick={() => setBand(band === b ? "" : b)} title={band === b ? "Show every band" : `Only plants scoring ${b}`}
+                className={cn("rounded-full transition disabled:opacity-40", band === b ? "ring-2 ring-brand-500 ring-offset-1" : band ? "opacity-50 hover:opacity-100" : "hover:ring-1 hover:ring-slate-300")}>
+                <Badge tone={b === "80+" ? "brand" : b === "60–79" ? "sky" : b === "40–59" ? "amber" : "slate"}>{b}: {n.toLocaleString()}</Badge>
+              </button>))}
+              {band && <button onClick={() => setBand("")} className="ml-1 text-brand-700 hover:underline">all</button>}</span>
           </div>
           {m.tied_at_top > 3 && <p className="mb-2 text-[11px] text-ink-muted">{m.tied_at_top} plants tie at the top score — public records don't separate them further, so they are ordered by most recent EU / FDA inspection.</p>}
           <div className="overflow-x-auto">
