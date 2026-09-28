@@ -10,7 +10,7 @@ import { ExpandedProvider, Figure, Tile, useExpanded, type Section } from "../..
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
-import { HowItWorks, Needed, Portfolio } from "./ForensicsTools";
+import { HowItWorks, Needed, PatternsSource, Portfolio } from "./ForensicsTools";
 
 const ARCH: Record<string, { label: string; tone: any; icon: ReactNode; color: string }> = {
   born: { label: "Released that way", tone: "rose", icon: <Beaker size={12} />, color: "#e11d48" },
@@ -234,6 +234,7 @@ export function Forensics() {
         {view === "portfolio" && <div className="space-y-4"><HowItWorks /><Portfolio onOpen={openKey} /></div>}
         {view === "needed" && <Needed onOpen={openKey} />}
         {view === "patterns" && <>
+        {o.source && <PatternsSource src={o.source} />}
         <Tiles o={o} onFilter={setFilter} />
         <div className="grid gap-4 xl:grid-cols-2">
           <List title="Quality gaps" icon={<Gem size={15} className="text-brand-600" />} onOpen={(k) => openKey(k)}

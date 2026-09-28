@@ -340,3 +340,62 @@ export function Needed({ onOpen }: { onOpen: Open }) {
     </div>
   );
 }
+
+// Where Failure patterns come from and how each label is worked out — for readers who know pharma QA but not this site.
+const STORE_SRC = "nsq.forensics.source.v1";
+export function PatternsSource({ src }: { src: any }) {
+  const [open, setOpen] = useState(() => get(STORE_SRC) !== "closed");
+  const toggle = () => { put(STORE_SRC, open ? "closed" : null); setOpen(!open); };
+  const n = (v: number) => v?.toLocaleString("en-IN");
+  return (
+    <Card className="overflow-hidden">
+      <button onClick={toggle} className="flex w-full items-center gap-2 px-4 py-3 text-left">
+        <Info size={15} className="text-brand-600" />
+        <span className="flex-1 text-[13px] font-semibold">Where this data comes from, and how each pattern is worked out</span>
+        <span className="hidden text-[11px] text-ink-muted sm:inline">CDSCO NSQ alerts · {src.first} – {src.last}</span>
+        <ChevronDown size={15} className={cn("text-ink-faint transition", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="space-y-4 border-t border-line px-4 pb-4 pt-3 text-[12.5px] leading-relaxed text-ink-soft">
+          <p>
+            <b>The source is one public dataset: CDSCO's monthly lists of drug samples declared Not of Standard Quality (NSQ)</b> by
+            central and state drug-testing laboratories (<a className="text-brand-700 hover:underline" href="https://cdscoonline.gov.in/CDSCO/publicNsqDrugTable" target="_blank" rel="noreferrer">cdscoonline.gov.in · NSQ drug alerts</a>),
+            every month from {src.first} to {src.last} — {n(src.alerts_total)} alerts, from {n(src.makers)} manufacturers, reported by {src.labs} laboratories.
+            Each alert is one failed batch and gives: product name, batch number, manufacturing and expiry date, the manufacturer, the laboratory,
+            the month it was reported, and the result in words (e.g. <i>"does not conform to IP with respect to Dissolution"</i>).
+            Nothing here comes from a company's own records.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <Col title="1 · Grouping into products" tone="text-ink">
+              <li>Active ingredients are read from the product name (brands resolved where the name carries the generic) and paired with the dosage form: <i>Albendazole · Tablet</i>.</li>
+              <li>A product needs at least {src.min_alerts} alerts before it gets a pattern ({n(src.alerts_with_ingredients)} alerts had readable ingredients).</li>
+            </Col>
+            <Col title="2 · Which test failed" tone="text-ink">
+              <li>Keywords in the result text: dissolution, assay / content, related substances, disintegration, uniformity, description, identification, sterility, endotoxin, particulate matter, microbial, pH, water / LOD, labelling / spurious.</li>
+              <li>One alert can name several tests.</li>
+            </Col>
+            <Col title="3 · When in the shelf life" tone="text-ink">
+              <li>(report month − manufacturing date) ÷ (expiry − manufacturing): 0% = just made, 100% = at expiry. {n(src.timed)} alerts have both dates.</li>
+              <li>The report month lags the day the sample was drawn, so this is an upper bound — a batch may have failed earlier.</li>
+            </Col>
+            <Col title="4 · The labels" tone="text-ink">
+              <li><b>Released that way</b>: ≥ 35% of its main-test failures in the first quarter of shelf life, and ≥ 1.6× the share for all products failing that test.</li>
+              <li><b>Fails with age</b>: ≥ 45% after 60% of shelf life, and &lt; 20% early.</li>
+              <li><b>Plant problem</b>: the three biggest makers cause ≥ 60% of alerts. <b>Class-wide</b>: ≥ 8 makers and the top three &lt; 45%.</li>
+              <li><b>Sterile process</b>: mostly sterility / endotoxin / particulates. <b>Labelling</b>: mostly misbranding / spurious. Otherwise <b>marginal formula</b>.</li>
+            </Col>
+            <Col title="5 · Laboratories and chemistry" tone="text-ink">
+              <li>A lab is flagged when its share of a product's alerts is ≥ 2× its share of all alerts (it tests differently, or sees older / hotter stock).</li>
+              <li>Chemistry from PubChem: XLogP ≥ 3 (poorly water-soluble), free amines (Maillard browning with lactose).</li>
+            </Col>
+            <Col title="6 · What it is not" tone="text-rose-700">
+              <li>✗ Not a failure rate: NSQ counts failed samples, not batches sold; big sellers are sampled more.</li>
+              <li>✗ Root causes are hypotheses from the pattern, to test — not findings about any company.</li>
+            </Col>
+          </div>
+          <p className="text-[11.5px] text-ink-muted">Open any product for its evidence: the timing chart against all products, the tests, the makers (each links to its alerts in Investigate) and the latest alerts with their full result text.</p>
+        </div>
+      )}
+    </Card>
+  );
+}

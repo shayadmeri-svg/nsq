@@ -327,8 +327,15 @@ def overview() -> dict[str, Any]:
     # maker who gets it right, and the fix is known.
     gaps = sorted([g for g in gs if g["class_wide"] and g["recent_24m"] >= 5],
                   key=lambda g: -(g["recent_24m"] * (1 + g["makers"] / 20)))[:12]
+    d = _frame()
+    full = data.frame()
+    source = {"alerts_total": int(len(full)), "alerts_with_ingredients": int(len(d)),
+              "first": d["Parsed_Date"].min().strftime("%Y-%m") if d["Parsed_Date"].notna().any() else None,
+              "last": d["Parsed_Date"].max().strftime("%Y-%m") if d["Parsed_Date"].notna().any() else None,
+              "timed": int(d["_frac"].notna().sum()), "labs": int(d["Reporting by Lab/State"].nunique()),
+              "makers": int(d["Mfg_Ontology_Key"].nunique()), "min_alerts": MIN_ALERTS}
     return {
-        "available": True, "groups": len(gs), "alerts": int(sum(g["n"] for g in gs)),
+        "available": True, "source": source, "groups": len(gs), "alerts": int(sum(g["n"] for g in gs)),
         "archetypes": [{"id": k, "label": ARCHETYPES[k], "products": counts.get(k, 0)} for k in ARCHETYPES],
         "class_wide": sum(1 for g in gs if g["class_wide"]), "maker_specific": sum(1 for g in gs if g["maker_specific"]),
         "quality_gaps": gaps,
