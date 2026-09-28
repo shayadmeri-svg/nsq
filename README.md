@@ -179,3 +179,16 @@ front (then set `COOKIE_SECURE=true`).
 - The DECRS and Import Alert parsers find columns/sections by name; the first live run logs the header it saw — check it.
 - CDSCO's month filter parameter names are undocumented; `backfill-nsq` tries several spellings and refuses rows for the wrong month.
 - `tests/test_loader_record_keys.py::test_real_file_preparation_numbers` expects an older CSV row count (5,635 vs 5,619).
+
+# See what's using space first
+docker system df
+
+# 1. Dangling images (untagged leftovers from every rebuild) — the main culprit after deploys
+docker image prune -f
+
+# 2. Build cache (can be several GB after many `--build` deploys)
+docker builder prune -f
+
+# 3. Stopped containers and unused networks
+docker container prune -f
+docker network prune -f
