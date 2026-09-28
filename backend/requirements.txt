@@ -25,3 +25,6 @@ lifelines==0.30.3
 pdfplumber==0.11.9
 # fda_dmf: FDA still publishes the DMF list as legacy .xls
 xlrd==2.0.2
+# ord: Open Reaction Database scan on the server (reaction protos; RDKit is above)
+ord-schema==0.8.3
+protobuf>=4.22.3,<6

@@ -76,6 +76,11 @@ services:
       - SCHEDULE_TZ=${SCHEDULE_TZ:-Asia/Kolkata}
       - UNIVERSE_MIN_ALERTS=${UNIVERSE_MIN_ALERTS:-5}
       - UNIVERSE_MAX_AUTO=${UNIVERSE_MAX_AUTO:-250}
+      # Source keys for data jobs (optional; set them in .env): FDA Data Dashboard API (FDA inspections),
+      # UN Comtrade (full API instead of the public preview)
+      - FDA_DD_USER=${FDA_DD_USER:-}
+      - FDA_DD_KEY=${FDA_DD_KEY:-}
+      - COMTRADE_KEY=${COMTRADE_KEY:-}
     volumes:
       # Seeds, snapshot and CSV uploads. Read-write: the snapshot and
       # refresh jobs write here.

@@ -253,8 +253,9 @@ def scan(files: Iterable[Path], targets: dict[str, dict[str, Any]], log=print) -
         name = (pf.metadata.metadata or {}).get(b"ord.name", f.stem.encode()).decode("utf-8", "replace")
         n = found = 0
         t0 = time.time()
-        for g in range(pf.num_row_groups):
-            for raw in pf.read_row_group(g, columns=["reaction"]).column("reaction").to_pylist():
+        # small batches, not whole row groups: a USPTO row group is hundreds of MB, and the server has 1 GB of RAM
+        for batch in pf.iter_batches(batch_size=2000, columns=["reaction"]):
+            for raw in batch.column(0).to_pylist():
                 n += 1
                 rxn = reaction_pb2.Reaction.FromString(raw)
                 for smi in product_smiles(rxn):

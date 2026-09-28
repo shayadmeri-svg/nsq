@@ -246,10 +246,10 @@ _SOURCE_JOB_DESC = {
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
     "cdsco_wc": "CDSCO International Cell: every Written Confirmation for API exports to the EU (~700 letters since 2013) with its PDF — Playground · Written confirmations. CDSCO refuses cloud servers: run just fetch-cdsco-wc on a laptop, then just push-wc (PDFs ~2.7 GB).",
     "eudragmdp": "Every EU GMP certificate and statement of non-compliance for Indian sites, with the approved operations (Union coded scope) — stated capabilities and EU status in the plant registry. Needs a network EudraGMDP answers (a laptop works).",
-    "fda_inspections": "Every FDA drug / biologic inspection of an Indian site with its outcome (NAI / VAI / OAI) — US FDA status in the plant registry. Needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API access), or upload the Inspections table exported to Excel.",
+    "fda_inspections": "Every FDA drug / biologic inspection of an Indian site with its outcome (NAI / VAI / OAI) — US FDA status in the plant registry. Needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API access) in the server's .env, or upload the Inspections table exported to Excel.",
     "fda_dmf": "FDA's quarterly list of Drug Master Files: active Type II (drug substance) holders per API — 'Who can make it' → API filings. Upload the .xls if FDA blocks the server.",
     "edqm_cep": "EDQM's CEP data file: valid Certificates of Suitability per substance and holder — 'Who can make it' → API filings. If the link is not found, download 'CEP data file' from the EDQM CEP database page and upload it.",
-    "ord": "Scans the Open Reaction Database (~1.3 GB, 1.8 M patent reactions) for reactions that make tracked molecules: conditions, solvents, catalysts and what they demand of an API plant (hydrogenation, cryogenic, pressure, hazardous reagents). Needs rdkit + ord-schema; best run on a laptop (just fetch-ord).",
+    "ord": "Scans the Open Reaction Database (~1.3 GB, 1.8 M patent reactions) for reactions that make tracked molecules (their structures come from PubChem): conditions, solvents, catalysts and what they demand of an API plant (hydrogenation, cryogenic, pressure, hazardous reagents). Runs on the server at low CPU priority: the first run downloads 1.3 GB into data/raw/ord and scans for about an hour; later runs download only changed files. Monthly schedule available (off by default).",
     "nfhs": "NFHS indicators by district / state and survey round (blood sugar, blood pressure, obesity, anaemia, child infections) — Playground · Health & trade. Downloads open extracts of the NFHS-5 fact sheets (NFHS-4 alongside); upload a table to add NFHS-6.",
     "idsp": "Outbreaks reported to IDSP each week (state, district, disease, cases, deaths), parsed from the weekly PDFs — latest 26 weeks. Upload PDFs if the site refuses the server.",
     "comtrade": "India's exports and imports of pharmaceutical HS codes by partner, last 6 years (UN Comtrade; COMTRADE_KEY for the full API).",
@@ -263,16 +263,15 @@ _MOLECULE_SOURCES = {"orange_book", "purple_book", "ema", "clinical_trials"}
 LAPTOP: dict[str, dict[str, str]] = {
     "cdsco_plants": {"fetch": "just fetch-plants", "push": "just push-plant-registry HOST KEY", "why": "CDSCO refuses cloud servers"},
     "eudragmdp": {"fetch": "just fetch-eudragmdp", "push": "just push-plant-registry HOST KEY", "why": "EudraGMDP refuses cloud servers"},
-    "fda_inspections": {"fetch": "just fetch-fda-inspections", "push": "just push-plant-registry HOST KEY",
-                        "why": "needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API) in your shell"},
     "fda_dmf": {"fetch": "just fetch-fda-dmf FILE", "push": "just push-plant-registry HOST KEY", "why": "FDA blocks automated downloads of the DMF list"},
     "edqm_cep": {"fetch": "just fetch-cep", "push": "just push-plant-registry HOST KEY", "why": "EDQM's file is easier from a browser session"},
     "cdsco_wc": {"fetch": "just fetch-cdsco-wc", "push": "just push-wc HOST KEY", "why": "CDSCO refuses cloud servers; the letters are ~2.7 GB of PDFs"},
-    "ord": {"fetch": "just fetch-ord", "push": "just push-signals HOST KEY", "why": "a 1.3 GB download and an RDKit scan — too heavy for the server"},
-    "nfhs": {"fetch": "just fetch-nfhs", "push": "just push-signals HOST KEY", "why": "data.gov.in is unreliable from servers"},
     "idsp": {"fetch": "just fetch-idsp", "push": "just push-signals HOST KEY", "why": "IDSP refuses cloud servers"},
 }
-_NOT_ON_SERVER = {"ord", "cdsco_wc"}  # never in the server's sync-sources: they would fill its disk
+# never in the daily sync-sources: the WC letters are ~2.7 GB (laptop only), ORD is a 1.3 GB download and a ~1 h scan
+# (it has its own monthly schedule, off by default, and runs at low CPU priority)
+_NOT_ON_SERVER = {"ord", "cdsco_wc"}
+_NICE = {"ord"}  # long CPU-bound scans: run under `nice` so the site stays responsive on a small server
 
 
 def source_status(key: str) -> dict[str, Any]:
@@ -309,6 +308,8 @@ def _one_source(k: str):
     def steps(p: dict[str, Any]):
         s = _source_steps([k], p)
         s[0].allow_fail = False
+        if k in _NICE:
+            s[0].cmd = ["nice", "-n", "15", *s[0].cmd]
         if (p.get("file") or "").strip():
             s[0].cmd += ["--from-file", str(upload_path(p["file"]))]
             s[0].label += " (from uploaded file)"
@@ -385,6 +386,8 @@ SCHEDULABLE: dict[str, dict[str, Any]] = {
     "src-fda-establishments": {"enabled": False, "frequency": "weekly", "hour": 4, "minute": 30, "weekday": 6},
     "src-fda-import-alerts": {"enabled": False, "frequency": "daily", "hour": 4, "minute": 45},
     "src-fda-recalls": {"enabled": False, "frequency": "weekly", "hour": 5, "minute": 0, "weekday": 6},
+    "src-fda-inspections": {"enabled": False, "frequency": "weekly", "hour": 5, "minute": 15, "weekday": 6},
+    "src-ord": {"enabled": False, "frequency": "monthly", "hour": 1, "minute": 0, "day": 2},
     "build-frame": {"enabled": False, "frequency": "daily", "hour": 5, "minute": 30},
     "snapshot": {"enabled": False, "frequency": "weekly", "hour": 5, "minute": 45, "weekday": 6},
     "backup-to-upstash": {"enabled": False, "frequency": "daily", "hour": 7, "minute": 0, "params": {"dry_run": False}},
@@ -427,6 +430,10 @@ def live_log(run_id: int) -> Optional[str]:
 def _redact(line: str) -> str:
     for secret in filter(None, [settings.upstash_url]):
         line = line.replace(secret, "rediss://***")
+    for name in ("FDA_DD_USER", "FDA_DD_KEY", "COMTRADE_KEY"):  # source keys never reach a job log
+        v = os.environ.get(name)
+        if v and len(v) > 3:
+            line = line.replace(v, "***")
     return line
 
 

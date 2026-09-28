@@ -79,7 +79,8 @@ flowchart LR
 
   CDSCO --> SYNC --> CSV
   FDA & EMA & CT & FDAS --> FETCH --> SRC
-  CPL & EUG & FDI & FIL & HLT & ORD -->|laptop, then push| FETCH
+  FDI & ORD -->|server: API key in .env / monthly scan| FETCH
+  CPL & EUG & FIL & HLT -->|laptop, then push: publisher refuses cloud servers| FETCH
   UPL --> FETCH
   SEED --> UNI
   CSV --> LOAD --> RN & RO
@@ -179,11 +180,11 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 | `sources/<source>.json`, `sources/manifest.json` | `fetch_source`, `sync_cdsco` (manifest) | build_universe, site directory, pipelines page, molecule lookup |
 | `sources/cdsco_plants.json` (+ `.csv`) | `fetch_source cdsco_plants` (`just fetch-plants`, job src-cdsco-plants / plant-registry) | plant registry (Plants tab, site directory match, Infrastructure "Match with CDSCO registry", "Add as plant") |
 | `sources/eudragmdp.json` | `fetch_source eudragmdp` (`just fetch-eudragmdp`, job src-eudragmdp / plant-registry) | plant registry (EU GMP status, stated capabilities, non-compliance findings) |
-| `sources/ord.json` | `fetch_source ord` (`just fetch-ord [FILE]` on a laptop — ~1.3 GB Parquet from the Hugging Face mirror, scanned with RDKit; job src-ord; `just push-signals` copies it) | Molecule workbench · How it's made: reactions that make each tracked molecule, conditions, solvents, catalysts, hazardous reagents and the API-plant equipment they call for |
-| `sources/nfhs.json`, `sources/idsp.json`, `sources/comtrade.json` | `fetch_source nfhs` / `idsp` / `comtrade` (`just fetch-nfhs FILE`, `just fetch-idsp [FILE]`, `just fetch-comtrade`, then `just push-signals HOST KEY`; jobs src-nfhs / src-idsp / src-comtrade) | Playground · Health & trade: disease burden by district and survey round, weekly outbreaks with the medicines they drive, India's pharma exports / imports by partner and API import share from China |
+| `sources/ord.json` | `fetch_source ord` on the server (job src-ord, low CPU priority, monthly schedule off by default; ~1.3 GB Parquet from the Hugging Face mirror kept in `raw/ord`, streamed and matched with RDKit against PubChem structures; `ord-schema` + `rdkit` are in the api image). `just fetch-ord` still works on a laptop | Molecule workbench · How it's made: reactions that make each tracked molecule, conditions, solvents, catalysts, hazardous reagents and the API-plant equipment they call for |
+| `sources/nfhs.json`, `sources/idsp.json`, `sources/comtrade.json` | `fetch_source nfhs` / `idsp` / `comtrade` (jobs src-nfhs and src-comtrade run on the server; IDSP refuses cloud servers: `just fetch-idsp [FILE]` then `just push-signals HOST KEY`, which copies only idsp.json) | Playground · Health & trade: disease burden by district and survey round, weekly outbreaks with the medicines they drive, India's pharma exports / imports by partner and API import share from China |
 | `sources/cdsco_wc.json`, `docs/cdsco_wc/<id>.pdf` | `fetch_source cdsco_wc` on a laptop (`just fetch-cdsco-wc [LIMIT]`, index only with `NSQ_WC_PDFS=0`; then `just push-wc HOST KEY`, which rsyncs only new PDFs; job src-cdsco-wc) | Playground · Written confirmations: every CDSCO Written Confirmation for API exports to the EU, searchable (company, WC number, products, letter text), each letter viewable as a PDF |
 | `sources/fda_dmf.json`, `sources/edqm_cep.json` | `fetch_source fda_dmf` / `edqm_cep` (`just fetch-fda-dmf [FILE]`, `just fetch-cep [FILE]`, jobs src-fda-dmf / src-edqm-cep) | "Who can make it" → API filings: active Type II DMF and valid CEP holders per ingredient, linked to registry plants by company name |
-| `sources/fda_inspections.json` | `fetch_source fda_inspections` (`just fetch-fda-inspections [FILE]`, job src-fda-inspections / plant-registry) — API key (FDA_DD_USER / FDA_DD_KEY) or Data Dashboard Excel export | plant registry (US FDA status: latest NAI / VAI / OAI per FEI, import-alert flag), "Who can make it" ranking, USFDA certification on "add as plant" |
+| `sources/fda_inspections.json` | `fetch_source fda_inspections` (job src-fda-inspections / plant-registry on the server with FDA_DD_USER / FDA_DD_KEY in the server's .env; or `just fetch-fda-inspections [FILE]` / an uploaded Data Dashboard Excel export) | plant registry (US FDA status: latest NAI / VAI / OAI per FEI, import-alert flag), "Who can make it" ranking, USFDA certification on "add as plant" |
 | `raw/cdsco_plants/*` | SUGAM pages + WHO-GMP PDF from the last crawl | the next `cdsco_plants` run when CDSCO is unreachable |
 | `uploads/*` | Data jobs → Upload | `--from-file` fetches, refresh-nsq |
 | `*_seed.json` | hand-edited | build_universe, load-seeds, molecule lookup |

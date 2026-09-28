@@ -277,7 +277,7 @@ EDGES: list[dict[str, Any]] = [
                                                  ("ext_ct", "count queries"), ("ext_fdasites", "DECRS · import alert · recalls"),
                                                  ("ext_cdsco_plants", "SUGAM pages + WHO-GMP PDF · laptop"), ("ext_eudragmdp", "certificate pages · laptop"),
                                                  ("ext_fda_insp", "API key or Excel export"), ("ext_filings", "quarterly .xls · daily .txt"),
-                                                 ("ext_ord", "Parquet · laptop"), ("ext_health", "CSV files · weekly PDFs"), ("ext_comtrade", "API / public preview"), ("ext_cdsco_wc", "page + PDFs · laptop"))],
+                                                 ("ext_ord", "Parquet · server, monthly"), ("ext_health", "CSV files · weekly PDFs"), ("ext_comtrade", "API / public preview"), ("ext_cdsco_wc", "page + PDFs · laptop"))],
     _e("in_sources", "f_raw", "write", "downloads + ETags", "sync-sources · daily 02:30 IST, or src-*"),
     _e("in_sources", "f_sources", "write", "normalised JSON", "sync-sources, src-*"),
     _e("in_sources", "f_manifest", "write", "status per source", "sync-sources, src-*"),
