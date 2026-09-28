@@ -226,3 +226,12 @@ def test_new_forms():
     assert f("Mouth Dissolving Strip") == ["oral_film_gum"] and f("L.V.P") == ["lvp"] and f("Respiratory Solution") == ["inhalation"]
     assert f("Exteernal Preparation") == ["topical"]
     assert f("Tablet, Capsules (Soft Gelatin)") == ["capsule_soft", "tablet"]
+
+
+def test_who_gmp_name_quality_rejects_address_fragments():
+    from sources.cdsco_plants import name_quality
+    good = [{"name_address": "M/s. Andhra Organics Limited, Plot No.110A, I.D.A, Pydibhimavaram, Srikakulam 532409"},
+            {"name_address": "Arene Life Sciences Private Limited, UNIT 3, Sy. No. 12 & 13, Yavapur(V), Sangareddy"}]
+    bad = [{"name_address": n} for n in ["13", "13TH FLOOR", "BLOCK NO. - 10 - 13", "MFGD AT :- BLOCK NO. - 10 - 13", "Plot No 1A"]]
+    assert name_quality(good) == 1.0
+    assert name_quality(bad) < 0.2

@@ -848,6 +848,30 @@ def _name_date(url: str) -> str:
     return f"20{m.group(1)[-2:]}-12-31" if m else ""
 
 
+_BAD_NAME = re.compile(r"^\s*(\d|m/?s\.?\s*$|block\b|plot\b|mfgd|manufactured|survey|sy\.?\s*no|s\.?\s*no|khasra|village|vill\b|gat\b|"
+                       r"shed\b|unit\s*[-:]?\s*\d|floor|\d+\s*(st|nd|rd|th)\b|sector|near\b|opp\.?\b|at\s*[:\-]|dist)", re.I)
+
+
+def name_quality(units: list[dict[str, Any]]) -> float:
+    """Share of units whose parsed name looks like a firm (not an address fragment such as '13TH FLOOR' or
+    'MFGD AT :- BLOCK NO. 10'). A list in a layout the parser does not know scores low and is passed over."""
+    if not units:
+        return 0.0
+    good = 0
+    for u in units:
+        name = split_name_address(u.get("name_address") or "")[0] or ""
+        words = re.findall(r"[A-Za-z]{2,}", name)
+        if len(words) >= 2 and not _BAD_NAME.match(name):
+            good += 1
+    return good / len(units)
+
+
+def healthy() -> bool:
+    """False when the WHO-GMP units in the current output have address fragments for names (a layout misread)."""
+    units = (read_normalized("cdsco_plants") or {}).get("who_units") or []
+    return not units or name_quality(units) >= 0.85
+
+
 def who_gmp_candidates(ctx: Ctx) -> list[str]:
     """Every WHO-GMP list URL worth trying, newest first: an explicit option, links found on CDSCO's pages, the known ones."""
     from .common import page_links
@@ -913,6 +937,7 @@ def run(ctx: Ctx) -> int:
     else:
         # newest candidate first; a PDF that is only a state-wise summary (few units) is passed over for the next one
         want = max(200, len(prev_units) // 2)
+        best_ref: Optional[str] = None
         todo = who_gmp_candidates(ctx)
         while todo:
             try:
@@ -923,13 +948,16 @@ def run(ctx: Ctx) -> int:
                 break
             todo = todo[todo.index(ref) + 1:]
             got = extract_who_units(pdf, ctx.log)
-            ctx.log(f"  WHO-GMP list {ref.rsplit('/', 1)[-1]}: {len(got)} certified units")
-            if len(got) >= want:
-                units = got
+            q = name_quality(got)
+            ctx.log(f"  WHO-GMP list {ref.rsplit('/', 1)[-1]}: {len(got)} certified units, {round(100 * q)}% with firm-like names")
+            if len(got) >= want and q >= 0.85:
+                units, best_ref = got, ref
                 break
-            if len(got) > len(units):
-                units = got
-        if len(units) < want and prev_units:
+            if q >= 0.85 and len(got) > len(units):
+                units, best_ref = got, ref
+        if units:
+            ref = best_ref
+        if len(units) < want and prev_units and name_quality(prev_units) >= 0.85:
             units, ref = prev_units, (prev.get("inputs") or {}).get("who_gmp")
             ctx.log(f"  using the {len(units)} units from the previous output")
     if units:

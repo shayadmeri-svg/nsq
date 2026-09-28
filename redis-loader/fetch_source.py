@@ -36,6 +36,10 @@ def run_one(name: str, args) -> int:
     # also keeps publishers' abuse detection (FDA) from blocking the server.
     min_days = spec.get("min_interval_days", 0)
     last = (read_manifest().get(name) or {}).get("last_success")
+    healthy = spec.get("healthy")  # a source can say its last output is bad, which bypasses the interval
+    if healthy and last and not healthy():
+        print("  last output failed its quality check — fetching again now", flush=True)
+        last = None
     if min_days and last and not args.force and not args.from_file and not os.environ.get("NSQ_IGNORE_INTERVAL"):
         from datetime import datetime, timezone
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() / 86400

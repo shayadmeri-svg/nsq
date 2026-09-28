@@ -26,7 +26,7 @@ SOURCES: dict[str, dict[str, Any]] = {
     "ema": {**ema.META, "run": ema.run, "group": "molecules"},
     "clinical_trials": {**clinical_trials.META, "run": clinical_trials.run, "group": "demand"},
     "pubchem": {**pubchem.META, "run": pubchem.run, "group": "chemistry"},
-    "cdsco_plants": {**cdsco_plants.META, "run": cdsco_plants.run, "group": "sites", "min_interval_days": 7},
+    "cdsco_plants": {**cdsco_plants.META, "run": cdsco_plants.run, "group": "sites", "min_interval_days": 7, "healthy": cdsco_plants.healthy},
     "cdsco_wc": {**cdsco_wc.META, "run": cdsco_wc.run, "group": "sites", "min_interval_days": 3},
     "eudragmdp": {**eudragmdp.META, "run": eudragmdp.run, "group": "sites", "min_interval_days": 7},
     "fda_establishments": {**fda_sites.DECRS, "run": fda_sites.run_establishments, "group": "sites", "min_interval_days": 3},
