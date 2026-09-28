@@ -88,6 +88,20 @@ just run-web      # :5173, proxies /api
 just test
 ```
 
+### Tests
+
+| Command | What it checks | Needs |
+|---|---|---|
+| `just test` | all four below except the UI | — |
+| `just test-core` | engine / shared code (`tests/`) | nothing |
+| `just test-loader` | source parsers on offline fixtures (`redis-loader/tests/`) | nothing |
+| `just test-api` | FastAPI endpoints, jobs, forensics, the Update-everything DAG (`backend/tests/`) | Postgres `nsq_test` + seeded Redis (`just seed-local`); skips otherwise |
+| `just typecheck-web` | TypeScript of the React app (what the Docker build runs) | `cd web && npm install` once |
+| `just test-ui [URL]` | signs in and opens every screen; fails on JS errors, API 5xx, error boxes, "Invalid Date"/"NaN" | a running app; `E2E_EMAIL` / `E2E_PASSWORD` in the environment |
+
+Extra pytest arguments pass through (`just test-api -k forensics`). `just test-ui http://<server> --shots` also saves a
+screenshot of every screen to `e2e/shots/`.
+
 ## Data jobs (Admin → Data jobs)
 
 | Job | Does | Who |
