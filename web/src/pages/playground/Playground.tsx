@@ -37,13 +37,13 @@ export function Playground() {
   const cur = TABS.find((t) => t.id === tab) ?? TABS[0];
   return (
     <>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-5 space-y-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-700"><Compass size={13} /> Playground</div>
           <h1 className="mt-0.5 font-display text-2xl font-extrabold tracking-tight">{cur.label}</h1>
-          <p className="text-xs text-ink-muted">{cur.hint}</p>
+          <p className="truncate text-xs text-ink-muted">{cur.hint}</p>
         </div>
-        <div className="flex items-center gap-1 rounded-2xl bg-white p-1.5 ring-1 ring-inset ring-line">
+        <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl bg-white p-1.5 ring-1 ring-inset ring-line">
           {TABS.map((t) => {
             const on = tab === t.id;
             return (
