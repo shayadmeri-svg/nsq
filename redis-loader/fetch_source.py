@@ -47,6 +47,11 @@ def run_one(name: str, args) -> int:
     try:
         n = spec["run"](ctx)
     except NotModified:
+        if not ctx.out_path.exists() and not ctx.force:
+            # the download is cached but its parsed file is missing (e.g. a fresh checkout): parse it again
+            print("  unchanged upstream, but the parsed file is missing — downloading again", flush=True)
+            args.force = True
+            return run_one(name, args)
         print("  unchanged since the last download", flush=True)
         update_manifest(name, status="unchanged", last_checked=now_iso(), error="")
         return EXIT_UNCHANGED

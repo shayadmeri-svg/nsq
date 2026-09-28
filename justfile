@@ -380,10 +380,10 @@ push-plant-registry HOST KEY="" DIR="/opt/nsq-platform":
     #!/usr/bin/env bash
     set -euo pipefail
     k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
-    files=$(ls data/sources/cdsco_plants.json data/sources/cdsco_plants.csv data/sources/eudragmdp.json data/sources/fda_inspections.json data/sources/fda_dmf.json data/sources/edqm_cep.json 2>/dev/null || true)
+    files=$(ls data/sources/cdsco_plants.json data/sources/cdsco_plants.csv data/sources/eudragmdp.json data/sources/fda_inspections.json data/sources/fda_dmf.json data/sources/edqm_cep.json data/sources/fda_import_alerts.json data/sources/fda_establishments.json 2>/dev/null || true)
     [ -n "$files" ] || { echo "No registry files — run just fetch-plant-registry first"; exit 1; }
     scp $k $files {{HOST}}:~/
-    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in cdsco_plants.json cdsco_plants.csv eudragmdp.json fda_inspections.json fda_dmf.json edqm_cep.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done && cd {{DIR}} && (docker compose restart api 2>/dev/null || sudo docker compose restart api)'
+    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in cdsco_plants.json cdsco_plants.csv eudragmdp.json fda_inspections.json fda_dmf.json edqm_cep.json fda_import_alerts.json fda_establishments.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done && cd {{DIR}} && (docker compose restart api 2>/dev/null || sudo docker compose restart api)'
     echo "Registry files copied; API restarted."
 
 _plant-deps:
