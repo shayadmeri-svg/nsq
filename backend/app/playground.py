@@ -486,6 +486,25 @@ def world(molecule: str = "") -> dict[str, Any]:
 
 # --- molecule workbench ----------------------------------------------------------------------------
 
+def _selected_plant(key: str, plant: Any, cand: Any, linked: Optional[str], is_registry: bool) -> dict[str, Any]:
+    """The plant being scored, for the workbench's 'this plant for this molecule' card."""
+    from . import plants as registry_plants
+
+    ref = plant.reference or {}
+    rp = registry_plants.registry()["plants"].get(linked) if linked else None
+    detail = cand.plant_fit_detail or {}
+    return {
+        "asset_id": plant.asset_id, "name": plant.site_name, "city": plant.city, "state": plant.state,
+        "kind": "registry" if is_registry else ("demo" if ref.get("demo") else "yours"),
+        "company": ref.get("company"), "registry_plant": linked,
+        "registry": registry_plants.brief(rp) if rp else None,
+        "certs": plant.certifications_active, "claimed": plant.certifications_claimed, "basis": plant.certification_basis,
+        "score": cand.plant_fit_score,
+        "fit": detail,
+        "position": registry_plants.fit_position(key, cand.plant_fit_score) if detail.get("method") == "dosage form" else None,
+    }
+
+
 def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str], plant_id: str = "") -> Optional[dict[str, Any]]:
     from intelligence_scorer import derive_manufacturing_complexity, score_candidate
 
@@ -505,8 +524,11 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
     plant = reg_plant or next((x for x in plants if x.asset_id == plant_id), plants[0] if plants else None)
     cx = derive_manufacturing_complexity(key, p, reg)
     needs = registry_plants.fit_needs(key)
-    if reg_plant is not None and needs.get("forms"):
-        needs = {**needs, "record": registry_plants.fit_records(key).get(plant_id[4:], {})}
+    # the plant's track record with this molecule: a registry plant's own, or the registry plant a profile is linked to
+    linked = plant_id[4:] if reg_plant is not None else ((plant.reference or {}).get("registry_plant")
+                                                          or ((plant.reference or {}).get("registry") or {}).get("id")) if plant else None
+    if linked and needs.get("forms"):
+        needs = {**needs, "record": registry_plants.fit_records(key).get(linked, {})}
     cand = score_candidate(key, p, plant, weights=weights or None, regulatory=reg, demand=dem, fit_needs=needs)
 
     # curated knowledge for the 17 catalogue drugs
@@ -560,6 +582,7 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
                     "certs": x.certifications_active, "claimed": x.certifications_claimed} for x in plants]
                   + ([{"asset_id": reg_plant.asset_id, "name": reg_plant.site_name, "kind": "registry"}] if reg_plant else []),
         "plant_id": plant.asset_id if plant else None,
+        "selected_plant": _selected_plant(key, plant, cand, linked, reg_plant is not None) if plant else None,
         "fit_needs": needs,
         "orange_book_curated": ob_curated,
         "pharmacopeia": pharma,

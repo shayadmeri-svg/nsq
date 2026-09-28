@@ -451,11 +451,11 @@ export function SiteRegistryLink({ cdsco }: { cdsco: any }) {
 
 
 // "Who can make it" — for the Molecule workbench.
-function MakerRow({ p, right, sub }: { p: any; right?: React.ReactNode; sub?: React.ReactNode }) {
+function MakerRow({ p, right, sub, highlight }: { p: any; right?: React.ReactNode; sub?: React.ReactNode; highlight?: string | null }) {
   // name on its own line (never squeezed by the badges), place under it, badges last
   const where = [p.district, p.state, p.pin].filter(Boolean).join(" · ").replace(/\uFFFD/g, "");
   return (
-    <Link to={`/playground/plants?plant=${encodeURIComponent(p.id)}`} className="block rounded-lg border-b border-line/60 px-2 py-2 text-xs last:border-0 hover:bg-slate-50">
+    <Link to={`/playground/plants?plant=${encodeURIComponent(p.id)}`} className={cn("block rounded-lg border-b border-line/60 px-2 py-2 text-xs last:border-0 hover:bg-slate-50", p.id === highlight && "bg-brand-50 ring-1 ring-inset ring-brand-300")}>
       <span className="flex items-start justify-between gap-2">
         <span className="line-clamp-2 min-w-0 font-semibold leading-snug text-ink" title={p.name}>{p.name}</span>
         {right && <span className="shrink-0">{right}</span>}
@@ -495,7 +495,7 @@ function FilingsRow({ m }: { m: any }) {
   );
 }
 
-export function MakersCard({ moleculeKey, bare }: { moleculeKey: string; bare?: boolean }) {
+export function MakersCard({ moleculeKey, bare, highlight }: { moleculeKey: string; bare?: boolean; highlight?: string | null }) {
   const { data: m, error, isLoading } = useQuery({ queryKey: ["makers", moleculeKey], queryFn: () => api<any>(`/api/plants/for-molecule/${moleculeKey}`), enabled: !!moleculeKey });
   if (error || (!isLoading && !m)) return null;
   const req = m?.molecule;
@@ -506,12 +506,12 @@ export function MakersCard({ moleculeKey, bare }: { moleculeKey: string; bare?: 
           <div>
             <div className="label mb-1.5">API makers <span className="font-normal normal-case text-ink-faint">· {m.api_makers_total} EU-inspected{m.listed_total ? ` · ${m.listed_total} named in CDSCO lists` : ""}</span></div>
             {m.api_makers.length + m.listed.length === 0 && <div className="text-xs text-ink-muted">No plant in the registry is inspected or listed for this API. (EU inspections name the substances; CDSCO lists name forms, rarely molecules.)</div>}
-            {[...m.api_makers, ...m.listed].slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} sub={<span title={p.evidence}>{p.evidence.startsWith("EU") ? "EU-inspected API" : "CDSCO listing"}</span>} />)}
+            {[...m.api_makers, ...m.listed].slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} highlight={highlight} sub={<span title={p.evidence}>{p.evidence.startsWith("EU") ? "EU-inspected API" : "CDSCO listing"}</span>} />)}
           </div>
           <div>
             <div className="label mb-1.5">Made it and failed (NSQ) <span className="font-normal normal-case text-ink-faint">· {m.made_total} registry plants{m.nsq_alerts_unlinked ? ` · ${m.nsq_alerts_unlinked} alerts from unlisted makers` : ""}</span></div>
             {m.made.length === 0 && <div className="text-xs text-ink-muted">No NSQ alert for this molecule traces to a registry plant.</div>}
-            {m.made.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} right={<Badge tone="rose">{p.alerts_for_molecule} NSQ</Badge>} />)}
+            {m.made.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} highlight={highlight} right={<Badge tone="rose">{p.alerts_for_molecule} NSQ</Badge>} />)}
           </div>
           <div>
             <div className="label mb-1.5">Permitted to make the form <span className="font-normal normal-case text-ink-faint">· {m.capable_total} plants</span></div>
@@ -521,7 +521,7 @@ export function MakersCard({ moleculeKey, bare }: { moleculeKey: string; bare?: 
                   <Badge tone="sky">{m.capable_fda ?? 0} US FDA</Badge><Badge tone="indigo">{m.capable_eu} EU GMP</Badge><Badge tone="brand">{m.capable_who} WHO-GMP</Badge>{m.capable_ncr > 0 && <Badge tone="rose">{m.capable_ncr} EU non-compliant</Badge>}
                   {Object.entries(m.capable_by_state).slice(0, 4).map(([s, n]: any) => <Badge key={s}>{s} {n}</Badge>)}
                 </div>
-                {m.capable.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} />)}
+                {m.capable.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} highlight={highlight} />)}
                 <Link to={`/playground/plants?capability=${req.forms[0]}${req.segregated?.[0] ? `&segregated=${req.segregated[0]}` : ""}`} className="mt-1 block px-2 text-xs text-brand-700 hover:underline">All {m.capable_total} in the Plants tab →</Link>
               </>
             )}

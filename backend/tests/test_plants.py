@@ -300,6 +300,9 @@ def test_plant_fit_across_registry_and_registry_plant_in_workbench(admin):
     assert all(x["eu_gmp"] for x in eu["items"])
     top = r["items"][0]["id"]
     w = admin.get("/api/playground/molecule/telmisartan", params={"plant_id": f"reg:{top}"}, headers=H).json()
+    sp = w["selected_plant"]  # the up-front 'this plant for this molecule' card
+    assert sp["kind"] == "registry" and sp["registry_plant"] == top and sp["position"]["rank"] == 1 and sp["position"]["of"] == r["scored"]
+    assert set(sp["fit"]["parts"]) == {"form", "capabilities", "segregation", "standing", "record"}
     assert w["plant_id"] == f"reg:{top}" and any(p["kind"] == "registry" for p in w["plants"])
     assert w["score"]["plant_fit_detail"]["method"] == "dosage form" and abs(w["score"]["plant_fit_score"] - r["items"][0]["fit"]) < 0.11
     assert admin.get("/api/playground/molecule/nope/plant-fit", headers=H).status_code == 404

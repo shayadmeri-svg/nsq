@@ -1041,6 +1041,17 @@ def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: s
                       "No capacity: no public source has it."}
 
 
+def fit_position(key: str, score: float) -> Optional[dict[str, Any]]:
+    """Where a plant-fit score sits among every registry plant scored for the molecule."""
+    r = fit_ranking(key, limit=1)
+    rows = _fit_cache.get((key, id(registry())))
+    if not r or not rows:
+        return None
+    better = sum(1 for x in rows if x["score"] > score)
+    return {"rank": better + 1, "of": len(rows), "better": better, "same": sum(1 for x in rows if x["score"] == score),
+            "top": rows[0]["score"], "bands": r["bands"]}
+
+
 _filings_cache: Optional[tuple[tuple, dict[str, Any]]] = None
 
 

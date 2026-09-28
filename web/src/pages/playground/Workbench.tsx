@@ -48,6 +48,75 @@ function FitParts({ detail }: { detail?: any }) {
   );
 }
 
+const CERT_LABEL: Record<string, string> = { USFDA: "US FDA", EU_GMP: "EU GMP", WHO_GMP: "WHO-GMP", FDA_OAI: "FDA OAI", FDA_IMPORT_ALERT: "FDA import alert",
+  EU_NCR: "EU non-compliant", UK_MHRA: "UK MHRA" };
+const SHORT_PART: Record<string, string> = { form: "Makes the form", capabilities: "Capabilities", segregation: "Separate block", standing: "Regulatory standing", record: "Track record" };
+const certName = (c: string) => CERT_LABEL[c] ?? c.replace(/_/g, " ");
+const BAD = new Set(["FDA_OAI", "FDA_IMPORT_ALERT", "EU_NCR"]);
+
+// Up front: what the chosen plant means for this molecule — fit part by part, its rank, gaps, and what its certifications rest on.
+function ThisPlant({ sp, onWhy, onRanking }: { sp: any; onWhy: () => void; onRanking: () => void }) {
+  const f = sp.fit ?? {};
+  const byForm = f.method === "dosage form" && f.parts;
+  const pos = sp.position;
+  const tone = sp.score >= 80 ? "#0a9a7d" : sp.score >= 60 ? "#0284c7" : sp.score >= 40 ? "#d97706" : "#e11d48";
+  const gaps: string[] = [...(f.warnings ?? []), ...(f.missing_capabilities?.length ? [`missing: ${f.missing_capabilities.map((x: string) => x.replace(/_/g, " ")).join(", ")}`] : [])];
+  return (
+    <Card className="overflow-hidden">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_auto_minmax(0,1.6fr)]">
+        <div className="min-w-0 border-b border-line p-5 lg:border-b-0 lg:border-r">
+          <div className="label mb-1.5 flex items-center gap-1.5"><Factory size={12} /> This plant for this molecule</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-display text-lg font-bold leading-tight">{sp.name}</span>
+            {sp.kind === "registry" ? <Badge>registry</Badge> : sp.kind === "demo" ? <Badge tone="amber">demo</Badge> : <Badge tone="brand">yours</Badge>}
+          </div>
+          <div className="mt-0.5 text-xs text-ink-muted">{[sp.city, sp.state].filter(Boolean).join(", ")}{sp.company && sp.kind === "demo" ? ` · modelled on ${sp.company}` : ""}
+            {sp.registry_plant && <> · <a className="text-brand-700 hover:underline" href={`/playground/plants?plant=${encodeURIComponent(sp.registry_plant)}`}>official record</a></>}</div>
+          <div className="mt-3 flex flex-wrap gap-1">
+            {(sp.certs ?? []).map((c: string) => <span key={c} title={sp.basis?.[c]}><Badge tone={BAD.has(c) ? "rose" : "brand"}>{certName(c)}</Badge></span>)}
+            {(sp.claimed ?? []).map((c: string) => <span key={c} title={sp.basis?.[c]}><Badge tone="amber">{certName(c)} · claimed</Badge></span>)}
+            {!(sp.certs?.length || sp.claimed?.length) && <span className="text-xs text-ink-muted">No certification on record</span>}
+          </div>
+          {(sp.claimed?.length > 0 || (sp.certs ?? []).some((c: string) => BAD.has(c))) && (
+            <p className="mt-2 text-[11px] leading-snug text-ink-muted">{(sp.claimed ?? []).concat((sp.certs ?? []).filter((c: string) => BAD.has(c))).map((c: string) => sp.basis?.[c]).filter((x: string | undefined, i: number, a: (string | undefined)[]) => x && a.indexOf(x) === i).slice(0, 2).join(" · ")}</p>
+          )}
+        </div>
+        <button onClick={onWhy} className="flex min-w-[11rem] flex-col items-center justify-center border-b border-line px-6 py-5 text-center transition hover:bg-slate-50 lg:border-b-0 lg:border-r" title="Why this score">
+          <div className="font-display text-5xl font-extrabold tabular-nums leading-none" style={{ color: tone }}>{Math.round(sp.score)}</div>
+          <div className="mt-1 text-[11px] uppercase tracking-wider text-ink-muted">plant fit / 100</div>
+          {pos && <div className="mt-2 text-xs text-ink-soft">#{pos.rank.toLocaleString()} of {pos.of.toLocaleString()} plants{pos.same > 1 ? <span className="text-ink-faint"> · tied with {(pos.same - 1).toLocaleString()}</span> : null}</div>}
+          {pos && <div className="text-[11px] text-ink-faint">best in the registry: {Math.round(pos.top)}</div>}
+        </button>
+        <div className="min-w-0 p-5">
+          {byForm ? (
+            <>
+              <div className="mb-2 flex items-baseline justify-between gap-2 text-[11px] text-ink-muted"><span>Needs: <b className="text-ink-soft">{f.molecule_forms?.join(", ")}</b>{f.segregated_needed?.length ? ` · separate ${f.segregated_needed.join(" / ")} block` : ""}</span>
+                <button onClick={onRanking} className="shrink-0 text-brand-700 hover:underline">compare with every plant →</button></div>
+              <div className="space-y-1.5">{Object.entries(f.parts).map(([k, v]: any) => {
+                const max = f.max?.[k] || 1;
+                return (
+                  <div key={k} className="grid grid-cols-[9rem_minmax(0,1fr)_3rem] items-center gap-2 text-xs" title={PART_LABEL[k]}>
+                    <span className="truncate text-ink-soft">{SHORT_PART[k] ?? k}</span>
+                    <Bar value={(100 * v) / max} color={v >= max ? "#0a9a7d" : v > 0 ? "#f59e0b" : "#e11d48"} />
+                    <span className="text-right tabular-nums text-ink-muted">{v}/{max}</span>
+                  </div>
+                );
+              })}</div>
+              {gaps.length > 0
+                ? <div className="mt-3 flex flex-wrap gap-1">{gaps.slice(0, 4).map((g) => <Badge key={g} tone="rose">{g}</Badge>)}</div>
+                : <div className="mt-3 text-[11px] text-emerald-700">No gap found for this molecule's form.</div>}
+              <div className="mt-2 text-[11px] leading-snug text-ink-muted">{f.standing} · {f.record}</div>
+            </>
+          ) : (
+            <div className="text-sm text-ink-soft">{f.summary || "Plant fit is estimated from the molecule class (its dosage form is not known)."}
+              <div className="mt-1 text-xs text-ink-muted">Add the dosage form in the molecule's Regulatory tab to score plants part by part.</div></div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 // One picker for every plant: your plant profiles (and the demo profiles, marked) first, then any plant in the registry.
 function PlantPicker({ plants, current, onPick }: { plants: any[]; current?: string | null; onPick: (id: string) => void }) {
   const [q, setQ] = useState("");
@@ -61,7 +130,7 @@ function PlantPicker({ plants, current, onPick }: { plants: any[]; current?: str
   const pick = (id: string) => { onPick(id); setQ(""); setOpen(false); };
   return (
     <div className="relative">
-      <input className="input h-10 w-[26rem] max-w-full" value={open ? q : ""} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+      <input className="input h-10 w-[26rem] max-w-full pr-20" value={open ? q : ""} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder={cur ? `Scored for: ${cur.name}${cur.demo ? " (demo)" : ""}` : "Pick a plant — your plants or any registry plant"} />
       {!open && cur && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{cur.kind === "registry" ? "registry" : cur.demo ? "demo" : "yours"}</span>}
@@ -95,7 +164,7 @@ function PlantPicker({ plants, current, onPick }: { plants: any[]; current?: str
   );
 }
 
-function FitRanking({ moleculeKey, onScore, bare }: { moleculeKey: string; onScore: (id: string) => void; bare?: boolean }) {
+function FitRanking({ moleculeKey, onScore, bare, highlight }: { moleculeKey: string; onScore: (id: string) => void; bare?: boolean; highlight?: string | null }) {
   const [cert, setCert] = useState<"" | "who_gmp" | "eu_gmp" | "us_fda">("");
   const [state, setState] = useState("");
   const [limit, setLimit] = useState(15);
@@ -118,12 +187,12 @@ function FitRanking({ moleculeKey, onScore, bare }: { moleculeKey: string; onSco
             <table className="w-full text-xs">
               <thead><tr className="text-left text-ink-muted"><th className="py-1.5 pr-3 font-medium">Fit</th><th className="pr-3 font-medium">Plant</th><th className="pr-3 font-medium">Form · caps · block · standing · record</th><th className="pr-3 font-medium">Why</th><th /></tr></thead>
               <tbody>{m.items.map((p: any) => (
-                <tr key={p.id} className="border-t border-line align-top">
+                <tr key={p.id} className={cn("border-t border-line align-top", p.id === highlight && "bg-brand-50/70 ring-1 ring-inset ring-brand-300")}>
                   <td className="py-2 pr-3 font-display text-base font-bold tabular-nums">{Math.round(p.fit)}</td>
                   <td className="py-2 pr-3"><div className="font-medium">{p.name}</div><div className="text-ink-muted">{[p.district, p.state].filter(Boolean).join(", ")}</div><div className="mt-1"><RegistryBadges p={p} /></div></td>
                   <td className="py-2 pr-3 tabular-nums text-ink-soft">{["form", "capabilities", "segregation", "standing", "record"].map((k) => `${Math.round(p.parts[k])}/${m.max[k]}`).join(" · ")}</td>
                   <td className="max-w-md py-2 pr-3 text-ink-muted">{p.fit_record}{p.fit_warnings?.length ? <span className="text-rose-700"> · {p.fit_warnings.join("; ")}</span> : null}</td>
-                  <td className="py-2"><button className="rounded-md border border-line px-2 py-1 hover:bg-slate-50" onClick={() => onScore(p.id)}>Score</button></td>
+                  <td className="py-2">{p.id === highlight ? <span className="text-[11px] font-semibold text-brand-700">scored ✓</span> : <button className="rounded-md border border-line px-2 py-1 hover:bg-slate-50" onClick={() => onScore(p.id)}>Score</button>}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -486,8 +555,8 @@ export function Workbench({ initial }: { initial?: string }) {
     { id: "markets", title: "Where it can be sold", icon: <Globe2 size={16} />, subtitle: "Patent status per country", render: () => <MarketsDetail d={d} /> },
     { id: "demand", title: "Demand & complexity", icon: <TrendingUp size={16} />, subtitle: d.demand?.disease_area, render: () => <DemandDetail d={d} /> },
     ...(d.nsq ? [{ id: "nsq", title: "NSQ record — all India", icon: <ShieldAlert size={16} />, subtitle: `${d.nsq.alerts} alerts across ${d.nsq.manufacturers} manufacturers`, render: () => <NsqDetail d={d} /> }] : []),
-    { id: "fit", title: "Plant fit across the registry", icon: <Factory size={16} />, subtitle: "Every plant scored for this molecule's form", render: () => <FitRanking bare moleculeKey={key} onScore={(id) => { setPlant(`reg:${id}`); }} /> },
-    { id: "makers", title: "Who can make it", icon: <Users size={16} />, subtitle: "API makers, plants that made it, plants permitted to make the form, API filings", render: () => <MakersCard bare moleculeKey={key} /> },
+    { id: "fit", title: "Plant fit across the registry", icon: <Factory size={16} />, subtitle: "Every plant scored for this molecule's form", render: () => <FitRanking bare moleculeKey={key} highlight={d.selected_plant?.registry_plant} onScore={(id) => { setPlant(`reg:${id}`); setActive(null); }} /> },
+    { id: "makers", title: "Who can make it", icon: <Users size={16} />, subtitle: "API makers, plants that made it, plants permitted to make the form, API filings", render: () => <MakersCard bare moleculeKey={key} highlight={d.selected_plant?.registry_plant} /> },
     { id: "synthesis", title: "How it's made", icon: <FlaskConical size={16} />, subtitle: "Reactions from the Open Reaction Database", render: () => <Synthesis bare moleculeKey={key} /> },
   ] : [], [d, key]);
 
@@ -504,6 +573,7 @@ export function Workbench({ initial }: { initial?: string }) {
       {!d ? <Skeleton className="h-96" /> : (
         <div className={cn("space-y-4 transition-opacity", q.isFetching && "opacity-70")}>
           <Identity d={d} />
+          {d.selected_plant && <ThisPlant sp={d.selected_plant} onWhy={() => open("score")} onRanking={() => open("fit")} />}
           <div className="grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <Card className="flex flex-col">
               <CardHeader title="Four-pillar score" subtitle="Weighted average of the pillars — the weights move the total only"
