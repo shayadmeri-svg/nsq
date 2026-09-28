@@ -44,9 +44,9 @@ export function TrendArea({ data, height = 260, stacked = true }: { data: Series
           ))}
         </defs>
         <CartesianGrid vertical={false} stroke="#eef1f6" />
-        <XAxis dataKey="month" tickFormatter={(m) => fmtMonth(m).replace(/ 20/, " '")} tickLine={false} axisLine={false} minTickGap={28} />
+        <XAxis dataKey="month" tickFormatter={tickPeriod} tickLine={false} axisLine={false} minTickGap={28} />
         <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} />
-        <Tooltip content={<TooltipBox labelFmt={fmtMonth} />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 3" }} />
+        <Tooltip content={<TooltipBox labelFmt={labelPeriod} />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 3" }} />
         {data.series.map((s, i) => (
           <Area key={s.name} type="monotone" dataKey={s.name} stackId={stacked ? "1" : undefined} stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.6}
             fill={`url(#g${i})`} animationDuration={1100} />
@@ -55,6 +55,11 @@ export function TrendArea({ data, height = 260, stacked = true }: { data: Series
     </ResponsiveContainer>
   );
 }
+
+// month keys ("2026-07") or ISO week keys ("2026-W31", used by the IDSP outbreak series)
+const WEEK = /^(\d{4})-W(\d{1,2})$/;
+const tickPeriod = (m: string) => { const w = WEEK.exec(m); return w ? `W${Number(w[2])} '${w[1].slice(2)}` : fmtMonth(m).replace(/ 20/, " '"); };
+const labelPeriod = (m: string) => { const w = WEEK.exec(m); return w ? `Week ${Number(w[2])}, ${w[1]}` : fmtMonth(m); };
 
 export function TrendBars({ data, height = 260 }: { data: Series; height?: number }) {
   const rows = data.months.map((m, i) => {
@@ -66,9 +71,9 @@ export function TrendBars({ data, height = 260 }: { data: Series; height?: numbe
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={rows} margin={{ top: 10, right: 8, left: -6, bottom: 0 }} barCategoryGap={1}>
         <CartesianGrid vertical={false} stroke="#eef1f6" />
-        <XAxis dataKey="month" tickFormatter={(m) => fmtMonth(m).replace(/ 20/, " '")} tickLine={false} axisLine={false} minTickGap={28} />
+        <XAxis dataKey="month" tickFormatter={tickPeriod} tickLine={false} axisLine={false} minTickGap={28} />
         <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} />
-        <Tooltip content={<TooltipBox labelFmt={fmtMonth} />} cursor={{ fill: "#f1f5f9" }} />
+        <Tooltip content={<TooltipBox labelFmt={labelPeriod} />} cursor={{ fill: "#f1f5f9" }} />
         {data.series.map((s, i) => (
           <RBar key={s.name} dataKey={s.name} stackId="1" fill={PALETTE[i % PALETTE.length]} animationDuration={900}
             radius={i === data.series.length - 1 ? [3, 3, 0, 0] : 0} />
