@@ -458,6 +458,7 @@ export function Workbench({ initial }: { initial?: string }) {
 
   const [active, setActive] = useState<string | null>(null);
   const open = (id: string) => setActive(id);
+  useEffect(() => setActive(null), [key]);  // a new molecule starts with the modal closed
   const sections: Section[] = useMemo(() => d ? [
     { id: "score", title: "Why these scores", icon: <Gauge size={16} />, subtitle: "Each pillar's explanation and the plant fit part by part", render: () => <ScoreDetail d={d} /> },
     { id: "passport", title: "Regulatory passport", icon: <ScrollText size={16} />, subtitle: d.patent.brand_name ? `${d.patent.brand_name} · ${d.patent.originator}` : d.patent.originator, render: () => <PassportDetail d={d} /> },

@@ -2,8 +2,8 @@
 // view (with its own section navigation), so pages stay short: each tile shows the two or three facts that
 // matter and an Expand button.
 import { Maximize2, X } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useIsPresent } from "motion/react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { Card, CardHeader } from "./index";
 
@@ -33,50 +33,46 @@ export function ExpandedProvider({ sections, title, subtitle, children, active: 
 export function ExpandedView({ sections, active, onChange, title, subtitle }: {
   sections: Section[]; active: string | null; onChange: (id: string | null) => void; title: ReactNode; subtitle?: ReactNode;
 }) {
-  const cur = sections.find((s) => s.id === active);
-  const isOpen = !!active;
-  // Lock/unlock body scroll only when the modal transitions open <-> closed, not on every
-  // section switch. Switching `active` between two open sections used to re-run this effect
-  // (its dependency included `active`), which re-captured `document.body.style.overflow` as
-  // "hidden" (the value the modal itself had just set) and restored that "hidden" value back
-  // on the next change instead of the original pre-modal value — so the lock could get stuck
-  // on after closing. Keying the lock off `isOpen` instead means it only sets once on open and
-  // only restores once on close, so the original overflow value is always the one restored.
+  const cur = active ? sections.find((s) => s.id === active) : undefined;
+  const open = !!cur;
+  // latest values for the key handler, so the listener is bound once per open (not on every parent render)
+  const ref = useRef({ sections, active, onChange });
+  ref.current = { sections, active, onChange };
+  // the open section vanished (e.g. another molecule loaded without it): close instead of leaving a stale state
+  useEffect(() => { if (active && !cur && sections.length) onChange(null); }, [active, cur, sections.length, onChange]);
   useEffect(() => {
-    if (!isOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [isOpen]);
-  useEffect(() => {
-    if (!active) return;
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); onChange(null); return; }
-      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.altKey) {
+      const { sections: ss, active: a, onChange: set } = ref.current;
+      if (e.key === "Escape") set(null);
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.altKey && ss.length) {
         e.preventDefault();
-        const idx = sections.findIndex((s) => s.id === active);
-        if (idx === -1) return;
-        const n = sections[(idx + (e.key === "ArrowDown" ? 1 : sections.length - 1)) % sections.length];
-        onChange(n.id);
+        const idx = Math.max(0, ss.findIndex((s) => s.id === a));
+        set(ss[(idx + (e.key === "ArrowDown" ? 1 : ss.length - 1)) % ss.length].id);
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // Only re-run when the modal opens/closes, not on every re-render of the
-    // caller's `sections` array (a fresh array/function identity each render
-    // would tear down and re-attach these listeners continuously, which can
-    // eat clicks meant for the close button and make the page feel frozen).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, onChange]);
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [open]);
   return (
     <AnimatePresence>
-      {cur && (
-        <motion.div key="expanded" className="fixed inset-0 z-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+      {cur && <Overlay key="expanded" cur={cur} sections={sections} onChange={onChange} title={title} subtitle={subtitle} />}
+    </AnimatePresence>
+  );
+}
+
+function Overlay({ cur, sections, onChange, title, subtitle }: {
+  cur: Section; sections: Section[]; onChange: (id: string | null) => void; title: ReactNode; subtitle?: ReactNode;
+}) {
+  // While it animates out the overlay must not catch clicks: if the exit animation is slow or never
+  // finishes (heavy re-renders as data arrives), the page underneath still works.
+  const present = useIsPresent();
+  return (
+        <motion.div className="fixed inset-0 z-50" style={{ pointerEvents: present ? "auto" : "none" }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
           <div className="absolute inset-0 bg-night-900/40 backdrop-blur-sm" onClick={() => onChange(null)} />
-          <motion.div
-            className="absolute inset-2 flex overflow-hidden rounded-2xl bg-canvas shadow-lift ring-1 ring-line md:inset-6"
-            initial={{ scale: 0.98, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.98, y: 12 }} transition={{ type: "spring", damping: 30, stiffness: 320 }}
-          >
+          <div className="absolute inset-2 flex overflow-hidden rounded-2xl bg-canvas shadow-lift ring-1 ring-line md:inset-6">
             {sections.length > 1 && (
               <nav className="scrollbar-thin hidden w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line bg-white p-3 md:flex">
                 <div className="px-2 pb-3 pt-1">
@@ -109,15 +105,12 @@ export function ExpandedView({ sections, active, onChange, title, subtitle }: {
                   <button onClick={() => onChange(null)} className="rounded-lg p-2 text-ink-muted hover:bg-slate-100" title="Close (Esc)"><X size={18} /></button>
                 </div>
               </div>
-              <motion.div key={cur.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}
-                className="scrollbar-thin flex-1 overflow-y-auto p-5 md:p-6">
+              <div key={cur.id} className="scrollbar-thin flex-1 overflow-y-auto p-5 md:p-6">
                 {cur.render()}
-              </motion.div>
+              </div>
             </div>
-          </motion.div>
+          </div>
         </motion.div>
-      )}
-    </AnimatePresence>
   );
 }
 
