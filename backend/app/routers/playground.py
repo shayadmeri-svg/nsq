@@ -180,3 +180,51 @@ def wc_pdf(rid: str, user: User = Depends(current_user)):
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{r.get('wc') or 'CDSCO'}_{r.get('company') or rid}")[:80] + ".pdf"
     return FileResponse(p, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"',
                                                                    "Cache-Control": "private, max-age=86400"})
+
+
+# --- Investigate: any product or manufacturer, nationally (replaces the Streamlit investigation tab) ----------
+
+@router.get("/investigate/search")
+def investigate_search(q: str = Query("", max_length=120), user: User = Depends(current_user)):
+    from .. import insights
+    return {"products": insights.product_search(q, 10), "manufacturers": insights.manufacturer_search(q, 10)}
+
+
+@router.get("/investigate/product")
+def investigate_product(name: str = Query(..., min_length=1, max_length=300), user: User = Depends(current_user)):
+    from .. import insights
+    out = insights.product_detail(name)
+    if out is None:
+        raise HTTPException(404, "No NSQ alert for this product.")
+    return out
+
+
+@router.get("/investigate/manufacturer/{key}")
+def investigate_manufacturer(key: str, user: User = Depends(current_user)):
+    from .. import insights
+    out = insights.org_quality([key])
+    if out.get("empty"):
+        raise HTTPException(404, "No NSQ alert for this manufacturer.")
+    hit = next((x for x in insights.manufacturer_search(key, 50) if x["key"] == key), None)
+    return {**out, "manufacturer": hit or {"key": key, "name": key.title()}}
+
+
+@router.get("/investigate/manufacturer/{key}/alerts")
+def investigate_manufacturer_alerts(key: str, q: str = "", category: str = "", form: str = "", product: str = "",
+                                    page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200), user: User = Depends(current_user)):
+    from .. import insights
+    df = data.org_frame([key])
+    if product:
+        df = df[df["Product_Name_Canonical"].fillna(df["Name of Product"]).astype(str) == product]
+    return insights.paginate(insights.filter_issues(df, q, category, form), page, size)
+
+
+@router.get("/investigate/manufacturer/{key}/alerts/{issue_id}")
+def investigate_alert(key: str, issue_id: str, user: User = Depends(current_user)):
+    """One alert with its diagnosis: GMP & testing standards, probable causes, mitigation plan."""
+    from .. import insights
+    detail = insights.org_issue_detail([key], issue_id)
+    if detail is None:
+        raise HTTPException(404, "Alert not found for this manufacturer.")
+    detail["persona"] = user.persona
+    return detail

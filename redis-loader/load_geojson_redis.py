@@ -6,7 +6,7 @@ Redis layout:
   geo:india_states:meta -> HASH: size_bytes, loaded_at, source_file
 
 Usage:
-    python load_geojson_redis.py --input ../analytics/india_states_slim.geojson \
+    python load_geojson_redis.py --input ../data/geo/india_states_slim.geojson \
         --redis-url "$REDIS_URL" --key geo:india_states
 """
 

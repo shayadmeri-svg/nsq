@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build analytics/india_states_slim.geojson from the LGD states parquet.
+"""Build data/geo/india_states_slim.geojson from the LGD states parquet.
 
 Source of truth for state/UT boundaries is the Local Government Directory
 (the official GoI registry) via the india-geodata release
@@ -38,7 +38,7 @@ from shapely.ops import transform
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_PARQUET = REPO / "data" / "LGD_States.parquet"
-DEFAULT_OUTPUT = REPO / "analytics" / "india_states_slim.geojson"
+DEFAULT_OUTPUT = REPO / "data" / "geo" / "india_states_slim.geojson"
 
 # LGD STNAME (as stored, UPPERCASE) -> canonical display name. Deliberately
 # an explicit map, not case-munging: the display names must match

@@ -253,9 +253,16 @@ def india_geo() -> Optional[dict[str, Any]]:
     with _lock:
         if "india" in _geo_cache:
             return _geo_cache["india"]
-        raw = data.redis_client().get("geo:india_states")
-        if not raw:
-            return None
+        try:
+            raw = data.redis_client().get("geo:india_states")
+        except Exception:
+            raw = None
+        if not raw:  # fall back to the file in the repo (data/geo)
+            from .config import settings
+            f = settings.data_dir / "geo" / "india_states_slim.geojson"
+            if not f.exists():
+                return None
+            raw = f.read_text(encoding="utf-8")
         try:
             text = gzip.decompress(base64.b64decode(raw)).decode("utf-8")
         except Exception:

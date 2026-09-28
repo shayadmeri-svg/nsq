@@ -26,7 +26,7 @@ browser ──▶ gateway (nginx :80)
               ├── /api/    api       FastAPI (one service)
               │              ├── Postgres  users, orgs, sessions, invites, audit, job runs, user plants
               │              └── Redis     NSQ dataset + CDMO seeds (in-server copy)
-              └── /analytics/  legacy Streamlit dashboard (optional, behind login)
+              └── /analytics   retired Streamlit dashboard → redirects to /playground/investigate
 
 Upstash Redis (free tier) = upstream/backup copy. Only the Sync / refresh jobs touch it.
 ```
@@ -38,11 +38,11 @@ Upstash Redis (free tier) = upstream/backup copy. Only the Sync / refresh jobs t
 | `web/` | The React app. |
 | `redis-loader/` | Data scripts (CSV load, seeds, frame build, snapshot, Upstash pull/push). Run by the job runner or `just`. |
 | `data/` | Seeds, the bundled snapshot, CSV uploads (the CDSCO CSV itself is gitignored). |
-| `analytics/` | Legacy Streamlit dashboard (`--profile legacy`). To be retired. |
 | `gateway/`, `deploy/`, `terraform/` | nginx routing, optional host nginx, AWS single-box deploy. |
 
 Replaced in this version: `engine/`, `manufacturer_api/` (→ `backend/`), the
-Streamlit `manufacturer/` app (→ `web/`), `simulator/` (patent/plant/portfolio
+Streamlit `manufacturer/` app (→ `web/`), the Streamlit `analytics/` dashboard (→ Playground: NSQ explorer,
+Ledger, Insights, Investigate; its India map file is now `data/geo/`), `simulator/` (patent/plant/portfolio
 pages → Opportunities & EU; process-model API → `/api/process/*`). The old
 16-drug simulator catalogue is in git history (`b4d9a3d:simulator/app.py`).
 

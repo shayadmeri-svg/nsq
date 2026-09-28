@@ -1,4 +1,4 @@
-"""Structural tests for analytics/india_states_slim.geojson.
+"""Structural tests for data/geo/india_states_slim.geojson.
 
 The file is built by redis-loader/build_states_geojson.py from the LGD
 (Local Government Directory) states parquet — the official GoI registry —
@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-GEOJSON_PATH = REPO / "analytics" / "india_states_slim.geojson"
+GEOJSON_PATH = REPO / "data" / "geo" / "india_states_slim.geojson"
 
 
 def _stname_map() -> dict:

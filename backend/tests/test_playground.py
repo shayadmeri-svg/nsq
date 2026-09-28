@@ -66,3 +66,19 @@ def test_datamap(client, root):
     client.post("/api/auth/logout", headers=H)
     login(client, email, pw)
     assert client.get("/api/platform/datamap").status_code == 403
+
+
+def test_investigate_product_to_manufacturer_to_diagnosis(root):
+    """Playground · Investigate (the retired Streamlit dashboard's investigation tab)."""
+    s = root.get("/api/playground/investigate/search", params={"q": "paracetamol"}).json()
+    assert s["products"] and all("paracetamol" in p["name"].lower() for p in s["products"])
+    p = root.get("/api/playground/investigate/product", params={"name": s["products"][0]["name"]}).json()
+    assert p["alerts"] == s["products"][0]["alerts"] and p["manufacturers"] and p["categories"]
+    key = next(m["key"] for m in p["manufacturers"] if m["key"])
+    m = root.get(f"/api/playground/investigate/manufacturer/{key}").json()
+    assert m["kpis"]["alerts"] >= 1 and m["manufacturer"]["key"] == key
+    alerts = root.get(f"/api/playground/investigate/manufacturer/{key}/alerts", params={"product": p["product"]}).json()
+    assert alerts["total"] >= 1 and all(a["product"] == p["product"] for a in alerts["items"])
+    d = root.get(f"/api/playground/investigate/manufacturer/{key}/alerts/{alerts['items'][0]['id']}").json()
+    assert d["issue"]["id"] == alerts["items"][0]["id"] and "mitigations" in d["diagnosis"]
+    assert root.get("/api/playground/investigate/product", params={"name": "no such product"}).status_code == 404

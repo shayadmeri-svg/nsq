@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Simplify a states GeoJSON so the choropleth stops being the slow part.
 
-Why: analytics/india_states_slim.geojson is 7.2 MB / ~525k coordinate pairs
+Why: data/geo/india_states_slim.geojson is 7.2 MB / ~525k coordinate pairs
 despite the "slim" in its name (Gujarat alone carries 113k points). Plotly
 embeds the whole GeoJSON in the figure JSON, and Streamlit pushes that figure
 over the websocket on *every* rerun — every filter change, every widget
@@ -21,8 +21,8 @@ What it does, per feature:
 
 Usage:
     python3 simplify_geojson.py \
-        --input ../analytics/india_states_slim.geojson \
-        --output ../analytics/india_states_slim.geojson \
+        --input ../data/geo/india_states_slim.geojson \
+        --output ../data/geo/india_states_slim.geojson \
         --tolerance 0.01
 
 Re-run it on any replacement boundary file; then push it to Redis with

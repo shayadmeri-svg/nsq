@@ -164,7 +164,7 @@ def test_output_names_match_geojson_features():
     """The choropleth join key: every value extract_state can emit (the
     _STATE_CANONICAL image) except '' must be a NAME_1 feature of the
     committed LGD geojson."""
-    geo_path = REPO / "analytics" / "india_states_slim.geojson"
+    geo_path = REPO / "data" / "geo" / "india_states_slim.geojson"
     try:
         import json
         fc = json.loads(geo_path.read_text(encoding="utf-8"))

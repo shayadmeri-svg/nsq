@@ -331,6 +331,48 @@ def manufacturer_search(q: str, limit: int = 20) -> list[dict[str, Any]]:
     ]
 
 
+# --- playground: investigate (any product, any manufacturer, nationally) ------------------------
+
+def product_search(q: str, limit: int = 12) -> list[dict[str, Any]]:
+    """Products with NSQ alerts whose name contains the query (all products by alert count when empty)."""
+    df = data.frame()
+    if df.empty:
+        return []
+    name = df["Product_Name_Canonical"].fillna(df.get("Name of Product")).astype(str)
+    ql = (q or "").strip().lower()
+    d = df.assign(_p=name)
+    for w in ql.split():  # every word, in any order: "paracetamol 650" finds "Paracetamol Tablets IP 650mg"
+        d = d[d["_p"].str.lower().str.contains(re.escape(w), na=False)]
+    g = d.groupby("_p").agg(alerts=("record_id", "size"), manufacturers=("Mfg_Ontology_Key", "nunique"), last=("Parsed_Date", "max"))
+    g = g.sort_values("alerts", ascending=False).head(limit)
+    return [{"name": str(k), "alerts": int(r["alerts"]), "manufacturers": int(r["manufacturers"]),
+             "last": r["last"].strftime("%Y-%m") if pd.notna(r["last"]) else None} for k, r in g.iterrows() if str(k).strip()]
+
+
+def product_detail(product: str) -> Optional[dict[str, Any]]:
+    """One product nationally: its alerts over time, why they failed, and every manufacturer that had them."""
+    df = data.frame()
+    if df.empty:
+        return None
+    name = df["Product_Name_Canonical"].fillna(df.get("Name of Product")).astype(str)
+    hit = df[name == product]
+    if hit.empty:
+        return None
+    rows = []
+    for key, g in hit.groupby(hit["Mfg_Ontology_Key"].fillna("")):
+        nm = _s(g["Mfg_Company_Canonical"].iloc[0]) or _s(g["Mfg_Company"].iloc[0], "Unknown")
+        rows.append({"key": key or None, "name": re.sub(r"^M/s\.?\s*", "", nm, flags=re.I).strip() or nm,
+                     "state": _s(g["Mfg_State_Ontology"].iloc[0]) or _s(g.get("Mfg_State", pd.Series([""])).iloc[0]),
+                     "alerts": int(len(g)), "categories": _counts(g, "Failure_Category_Primary", 3),
+                     "last": g["Parsed_Date"].max().strftime("%Y-%m") if g["Parsed_Date"].notna().any() else None,
+                     "spurious": int(g["_spurious"].sum()) if "_spurious" in g.columns else 0})
+    rows.sort(key=lambda r: (-r["alerts"], r["name"]))
+    return {"product": product, "alerts": int(len(hit)), "period": _period(hit), "trend": _month_series(hit, "Failure_Category_Primary", top=4),
+            "categories": _counts(hit, "Failure_Category_Primary", 8), "forms": _counts(hit, "Form type", 5),
+            "labs": _counts(hit, "Reporting by Lab/State", 6), "manufacturers": rows,
+            "ingredients": product_ingredients(product)}
+
+
 # --- org: quality -------------------------------------------------------------
 
 def org_quality(ontology_keys: list[str]) -> dict[str, Any]:

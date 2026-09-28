@@ -1,10 +1,11 @@
-import { Compass, Cpu, Factory, FileCheck2, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
+import { Compass, Cpu, Factory, FileCheck2, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { cn } from "../../lib/cn";
 import { EMPTY, Explorer, FilterBar, Ledger, type Filters } from "./Explorer";
 import { InsightsTab } from "./Insights";
+import { Investigate } from "./Investigate";
 import { Lab } from "./Lab";
 import { Medicines } from "./Medicines";
 import { Plants } from "./Plants";
@@ -17,6 +18,7 @@ const TABS = [
   { id: "explore", label: "NSQ explorer", icon: Map, hint: "All-India alerts: map, heatmaps, flows" },
   { id: "ledger", label: "Ledger", icon: Table2, hint: "Every alert — sort, pick columns, export" },
   { id: "insights", label: "Insights", icon: Lightbulb, hint: "Patterns the raw alerts don't show" },
+  { id: "investigate", label: "Investigate", icon: ScanSearch, hint: "Any product or manufacturer: full NSQ history, and each alert's standards, causes and mitigation" },
   { id: "world", label: "Regulation map", icon: Globe2, hint: "India vs US vs EU vs Africa…" },
   { id: "molecule", label: "Molecule workbench", icon: FlaskConical, hint: "Passport, demand, scores, monographs" },
   { id: "plants", label: "Plants", icon: Factory, hint: "CDSCO plant registry: what each plant may make, and its NSQ record" },
@@ -59,6 +61,7 @@ export function Playground() {
         {tab === "explore" && <Explorer f={f} set={setF} />}
         {tab === "ledger" && <Ledger f={f} />}
         {tab === "insights" && <InsightsTab />}
+        {tab === "investigate" && <Investigate />}
         {tab === "world" && <RegulatoryMap />}
         {tab === "molecule" && <Workbench />}
         {tab === "plants" && <Plants />}

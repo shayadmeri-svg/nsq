@@ -39,11 +39,12 @@ const ORDER: Record<string, string[]> = {
   Executive: ["why", "pattern", "capa", "cause", "history", "methods", "corridor"],
 };
 
-export function IssueDrawer({ slug, issueId, onClose }: { slug: string; issueId?: string; onClose: () => void }) {
+export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: string; issueId?: string; onClose: () => void;
+  /** national use (Playground · Investigate): the alert URL, and whose alerts these are */ endpoint?: string; who?: string }) {
   const { data: me } = useMe();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["issue", slug, issueId],
-    queryFn: () => api<any>(`/api/orgs/${slug}/quality/issues/${issueId}`),
+    queryKey: ["issue", endpoint ?? slug, issueId],
+    queryFn: () => api<any>(endpoint ? `${endpoint}/${issueId}` : `/api/orgs/${slug}/quality/issues/${issueId}`),
     enabled: !!issueId,
   });
   const d = data?.diagnosis;
@@ -57,7 +58,7 @@ export function IssueDrawer({ slug, issueId, onClose }: { slug: string; issueId?
         <div className="mt-3 flex flex-wrap gap-2">
           <Badge tone="rose">{issue.category}</Badge>
           <Badge>{issue.form}</Badge>
-          {d.is_dominant_failure && <Badge tone="amber">Your most frequent failure mode</Badge>}
+          {d.is_dominant_failure && <Badge tone="amber">{who ? `${who}'s most frequent failure mode` : "Your most frequent failure mode"}</Badge>}
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
           <div><dt className="text-ink-muted">Tested by</dt><dd className="font-medium">{issue.lab} <span className="text-ink-faint">({issue.source})</span></dd></div>
@@ -68,7 +69,7 @@ export function IssueDrawer({ slug, issueId, onClose }: { slug: string; issueId?
       </Section>
     ),
     pattern: (
-      <Section key="pattern" i={1} icon={<TrendingUp size={15} />} title="Pattern across your alerts">
+      <Section key="pattern" i={1} icon={<TrendingUp size={15} />} title={who ? `Pattern across ${who}'s alerts` : "Pattern across your alerts"}>
         <div className="mb-3 text-xs text-ink-muted">{d.tenant_alert_count} alerts across {d.form_span} dosage forms.</div>
         <RankBars rows={d.dominant_failures.map((f: any) => ({ name: f[0], count: f[1], sub: `${f[2]}%` }))} color="#6366f1" />
         {d.temporal_clusters?.length > 0 && (

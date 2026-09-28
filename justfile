@@ -26,7 +26,7 @@ AUGMENT := env_var_or_default("NSQ_AUGMENT", "1")
 # the local .env. They refuse to run unless this is "yes".
 CONFIRM_FLUSH := env_var_or_default("CONFIRM_FLUSH", "no")
 CDSCO_URL := env_var_or_default("CDSCO_URL", "https://cdscoonline.gov.in/CDSCO/publicNsqDrugTable")
-GEOJSON := env_var_or_default("GEOJSON_FILE", "analytics/india_states_slim.geojson")
+GEOJSON := env_var_or_default("GEOJSON_FILE", "data/geo/india_states_slim.geojson")
 GEOJSON_KEY := env_var_or_default("GEOJSON_KEY", "geo:india_states")
 SNAPSHOT := env_var_or_default("NSQ_SNAPSHOT_OUT", "data/nsq_snapshot.json.gz")
 
@@ -184,8 +184,7 @@ verify:
     cd {{LOADER}} && .venv/bin/python verify_nsq_redis.py
 
 # (sync-shared / sync-manufacturer-api are gone: core/ is the single copy the
-# api image and the loaders import. The legacy analytics app keeps its own
-# vendored analytics/shared/ until it is retired.)
+# api image and the loaders import. The Streamlit analytics app is retired.)
 
 # Load the CDMO patent intelligence seed into Redis (cdmo:patent:*)
 # (Also available as Admin → Data jobs → Reload CDMO seeds.)
@@ -407,7 +406,7 @@ sync-sources:
     just build-universe
 
 # Push a GeoJSON file into Redis as a single key (default: the India
-# states file used by analytics/app.py), so it doesn't need to live in git
+# states file in data/geo), so it doesn't need to live in git
 push-geojson:
     cd {{LOADER}} && .venv/bin/python load_geojson_redis.py --input ../{{GEOJSON}} --key {{GEOJSON_KEY}} --redis-url "$REDIS_URL"
 

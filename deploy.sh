@@ -61,6 +61,12 @@ fi
 #     Everything except the PharmaPy `sim` service must come up. `sim` is
 #     built separately and allowed to fail: the lab falls back to its built-in
 #     crystallisation engine while it is down. Set DEPLOY_SIM=0 to skip it.
+# The Streamlit dashboard is retired: stop and remove its container (and image) if an older deploy left it running.
+if docker ps -a --format '{{.Names}}' | grep -qx nsq-analytics; then
+  echo "deploy: removing the retired Streamlit container (nsq-analytics)"
+  docker rm -f nsq-analytics >/dev/null
+  docker image rm nsq-analytics:local >/dev/null 2>&1 || true
+fi
 CORE_SERVICES=$(docker compose config --services | grep -vx sim | tr '\n' ' ')
 # shellcheck disable=SC2086
 docker compose up -d --build $CORE_SERVICES

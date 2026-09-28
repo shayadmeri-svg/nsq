@@ -9,9 +9,6 @@ name: nsq-platform
 #   redis           the NSQ dataset + CDMO seeds (copied from Upstash by the
 #                   "Pull from Upstash" job or ./pull-upstash.sh)
 #
-# Optional, behind login: the legacy Streamlit analytics dashboard
-#   docker compose --profile legacy up -d      -> /analytics/
-#
 # Secrets come from .env (gitignored): REDIS_URL (Upstash), POSTGRES_PASSWORD,
 # SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD (first boot), APP_BASE_URL.
 
@@ -123,25 +120,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    restart: unless-stopped
-    networks: [nsq-net]
-
-  # Legacy Streamlit dashboard, served at /analytics/ only to signed-in users
-  # (gateway auth_request). Not started unless --profile legacy is given.
-  analytics:
-    profiles: ["legacy"]
-    build:
-      context: ./analytics
-    image: nsq-analytics:local
-    container_name: nsq-analytics
-    expose: ["8501"]
-    environment:
-      - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}
-      - NSQ_SNAPSHOT=/app/nsq_snapshot.json.gz
-    volumes:
-      - ./data/nsq_snapshot.json.gz:/app/nsq_snapshot.json.gz:ro
-    depends_on:
-      redis: { condition: service_healthy }
     restart: unless-stopped
     networks: [nsq-net]
 

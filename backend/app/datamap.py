@@ -144,7 +144,7 @@ NODES: list[dict[str, Any]] = [
        keys=["data/nsq_snapshot.json.gz"]),
     _n("f_geo", "files", "file", "India states GeoJSON", "built from LGD parquet",
        "State boundaries for the India map, pushed to Redis by hand (just push-geojson).",
-       keys=["analytics/india_states_slim.geojson"]),
+       keys=["data/geo/india_states_slim.geojson"]),
 
     # --- build --------------------------------------------------------------------------------------
     _n("b_export", "build", "script", "export_watchlist", "runs before builds",
@@ -237,6 +237,9 @@ NODES: list[dict[str, Any]] = [
     _n("p_plants", "pages", "page", "Playground · Plants", "/playground/plants", "", group="Playground", route="/playground/plants", endpoints=["/api/plants", "/api/plants/summary", "/api/plants/{id}"]),
     _n("p_health", "pages", "page", "Playground · Health & trade", "/playground/health", "", group="Playground", route="/playground/health",
        endpoints=["/api/playground/signals/nfhs", "/api/playground/signals/outbreaks", "/api/playground/signals/trade"]),
+    _n("p_investigate", "pages", "page", "Playground · Investigate", "/playground/investigate", "", group="Playground", route="/playground/investigate",
+       endpoints=["/api/playground/investigate/search", "/api/playground/investigate/product", "/api/playground/investigate/manufacturer/{key}",
+                  "/api/playground/investigate/manufacturer/{key}/alerts/{id}"]),
     _n("p_wc", "pages", "page", "Playground · Written confirmations", "/playground/wc", "", group="Playground", route="/playground/wc",
        endpoints=["/api/playground/wc", "/api/playground/wc/{id}.pdf"]),
     _n("p_process", "pages", "page", "Playground · Lab", "/playground/process", "", group="Playground", route="/playground/process", endpoints=["/api/lab/*", "/api/process/*"]),
@@ -367,6 +370,7 @@ EDGES: list[dict[str, Any]] = [
     _e("s_plants", "s_cdmo", label="linked profiles: confirmed vs claimed certifications, official forms"),
     _e("in_sources", "f_docs", "write", "Written Confirmation PDFs", "laptop: just fetch-cdsco-wc · just push-wc"),
     _e("f_docs", "p_wc", label="PDF viewer"),
+    _e("s_frame", "p_investigate", label="any product / manufacturer, nationally"), _e("s_static", "p_investigate", label="GMP standards, causes, mitigation"),
     _e("s_sites", "s_plants", label="NSQ sites to link"), _e("s_plants", "p_plants"), _e("s_plants", "p_workbench", label="this plant for this molecule · who can make it · plant fit for every plant"), _e("s_plants", "p_admin_sites", label="registry match"),
     _e("s_plants", "p_org_infra", label="stated capabilities on 'add as plant'"),
     _e("pg_audit", "p_admin_audit"),
@@ -501,7 +505,7 @@ def _file_stats() -> dict[str, dict[str, Any]]:
         "f_entries": _file_stat([d / "generated" / f for f in ("watchlist.json", "molecules.json")]),
         "f_generated": _file_stat([d / "generated" / f for f in ("patents.json", "regulatory.json", "demand.json", "molecule_universe.json", "candidates.json")]),
         "f_snapshot": _file_stat([settings.snapshot_path]),
-        "f_geo": _file_stat([repo / "analytics" / "india_states_slim.geojson"]),
+        "f_geo": _file_stat([settings.data_dir / "geo" / "india_states_slim.geojson"]),
     }
 
 

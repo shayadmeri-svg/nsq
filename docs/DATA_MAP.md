@@ -241,7 +241,7 @@ Orange Book and Purple Book are fetched at most weekly. DECRS is fetched at most
 
 - **Spurious batches.** A batch declared spurious is listed under the company printed on its label, which may not be the real maker. The API flags these rows (`_spurious`) and keeps them out of every company ranking, the site directory and org ranks. They appear in Insights and in the Ledger's Authenticity column.
 - **Unused Redis keys.** `cdmo:complexity:*` and `cdmo:portfolio:*` have store functions but no writers today.
-- **Legacy `/analytics` service.** It reads the same Redis keys through `analytics/shared/*`, which is a copy of `core/*`. It only starts with the `legacy` compose profile.
+- **The Streamlit dashboard is retired.** Its tabs live in the Playground (NSQ explorer, Ledger, Insights, and Investigate for the product → manufacturer investigation with each alert's diagnosis). `/analytics` redirects to Playground · Investigate; `deploy.sh` removes an old `nsq-analytics` container. The India boundaries file moved to `data/geo/`.
 
 ## Plant registry (CDSCO)
 
