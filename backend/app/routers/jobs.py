@@ -57,6 +57,25 @@ def list_jobs(user: User = Depends(require_platform), db: Session = Depends(get_
     return {"jobs": out, "is_super": user.role == "super_admin"}
 
 
+@router.get("/full-refresh/plan")
+def full_refresh_plan(user: User = Depends(require_platform), db: Session = Depends(get_db)):
+    """The Update-everything DAG (tasks, derived dependencies, layers, artifacts → data-map nodes) and the state of
+    each task in the latest run, read from its log. The graph is drawn with the latest run's options."""
+    from .. import pipeline
+    last = db.scalars(select(JobRun).where(JobRun.job_key == "full-refresh").order_by(JobRun.created_at.desc()).limit(1)).first()
+    g = pipeline.graph(dict(last.params or {}) if last else {})
+    run = None
+    if last:
+        log = jobs.live_log(last.id) if last.status in ("queued", "running") and jobs.live_log(last.id) is not None else (last.log or "")
+        run = {**_run_row(last), "states": pipeline.states_from_log(log)}
+    g["run"] = run
+    g["running"] = jobs.is_running("full-refresh")
+    g["others_running"] = [k for k in jobs._running if k != "full-refresh"]
+    g["job"] = jobs.describe(jobs.REGISTRY["full-refresh"])
+    g["allowed"] = user.role == "super_admin"
+    return g
+
+
 @router.post("/{key}/run")
 def run_job(key: str, body: RunBody, request: Request, user: User = Depends(require_platform), db: Session = Depends(get_db)):
     job = jobs.REGISTRY.get(key)

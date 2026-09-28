@@ -46,6 +46,7 @@ class Step:
     allow_fail: bool = False  # log and continue on a non-zero exit
     ok_codes: set[int] = field(default_factory=set)  # extra exit codes that count as success
     stop_on: dict[int, str] = field(default_factory=dict)  # exit code -> stop here, successfully
+    fn: Optional[Callable[[], str]] = None  # run in-process instead of a subprocess (cmd is then ignored)
 
 
 def _as_step(s) -> Step:
@@ -69,6 +70,7 @@ class Job:
     invalidates: bool = True
     after: Optional[Callable[[], str]] = None
     before: Optional[Callable[[], str]] = None
+    dag: bool = False  # steps come from pipeline.tasks(), run task by task in dependency order
 
 
 def _local() -> str:
@@ -79,7 +81,7 @@ def _upstash() -> str:
     return settings.upstash_url
 
 
-UPLOAD_TYPES = {".csv", ".zip", ".json", ".txt", ".html", ".htm", ".xlsx"}
+UPLOAD_TYPES = {".csv", ".zip", ".json", ".txt", ".html", ".htm", ".xlsx", ".xls", ".pdf"}
 
 
 def upload_path(name: str) -> Path:
@@ -268,6 +270,73 @@ LAPTOP: dict[str, dict[str, str]] = {
     "cdsco_wc": {"fetch": "just fetch-cdsco-wc", "push": "just push-wc HOST KEY", "why": "CDSCO refuses cloud servers; the letters are ~2.7 GB of PDFs"},
     "idsp": {"fetch": "just fetch-idsp", "push": "just push-signals HOST KEY", "why": "Indian government sites (NCDC, which now hosts the IDSP reports) often refuse cloud servers"},
 }
+# When the server cannot download a source, the file can be fetched in a browser and uploaded (Data jobs → Upload data
+# file), then picked in the source job's file field. What to download, where, and in which format:
+MANUAL: dict[str, dict[str, Any]] = {
+    "orange_book": {"file": "Orange Book data files (zip with products.txt, patent.txt, exclusivity.txt)", "accepts": ".zip",
+                    "links": [("FDA · Orange Book data files", "https://www.fda.gov/drugs/drug-approvals-and-databases/orange-book-data-files"),
+                              ("Direct download (zip)", "https://www.fda.gov/media/76860/download")],
+                    "steps": ["Open the data-files page and download the compressed (.zip) data files", "Upload the .zip unchanged"]},
+    "purple_book": {"file": "Purple Book monthly data download (CSV)", "accepts": ".csv",
+                    "links": [("FDA · Purple Book downloads", "https://purplebooksearch.fda.gov/downloads")],
+                    "steps": ["Pick the latest month under 'Data download'", "Upload the CSV"]},
+    "ema": {"file": "EMA medicines report (JSON)", "accepts": ".json",
+            "links": [("EMA · Download medicine data", "https://www.ema.europa.eu/en/medicines/download-medicine-data"),
+                      ("Direct download (JSON)", "https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json")],
+            "steps": ["Download 'Medicines' in JSON format", "Upload the .json"]},
+    "fda_establishments": {"file": "Drug establishments current registration (DECRS) — drls_reg.zip or drls_reg.txt", "accepts": ".zip, .txt",
+                           "links": [("FDA · Drug establishments current registration site", "https://www.fda.gov/drugs/drug-approvals-and-databases/drug-establishments-current-registration-site"),
+                                     ("Direct download (zip)", "https://www.accessdata.fda.gov/cder/drls_reg.zip")],
+                           "steps": ["Download the registration file", "Upload the .zip (or the .txt inside it)"]},
+    "fda_import_alerts": {"file": "Import Alert 66-40 page for India, saved as HTML", "accepts": ".html",
+                          "links": [("FDA · Import Alert 66-40", "https://www.accessdata.fda.gov/cms_ia/importalert_189.html")],
+                          "steps": ["Open the page in a browser", "File → Save Page As… (HTML only)", "Upload the .html"]},
+    "fda_recalls": {"file": "openFDA drug enforcement results for India (JSON)", "accepts": ".json",
+                    "links": [("openFDA · drug enforcement API", "https://open.fda.gov/apis/drug/enforcement/"),
+                              ("Query for Indian firms (JSON)", "https://api.fda.gov/drug/enforcement.json?search=country:%22India%22&limit=1000")],
+                    "steps": ["Open the query link and save the JSON", "Upload the .json"]},
+    "cdsco_plants": {"file": "CDSCO WHO-GMP certified units list (PDF)", "accepts": ".pdf",
+                     "links": [("CDSCO · WHO-GMP data (latest known)", "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/Final%20WHO%20GMP%20data%20for%20website%2011.09.2025.pdf"),
+                               ("CDSCO · WHO-GMP CoPP list", "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/WHO%20GMP%20CoPP%20list24.pdf"),
+                               ("SUGAM · approved manufacturing sites", "https://cdscoonline.gov.in/CDSCO/manuf_site")],
+                     "steps": ["CDSCO often refuses servers outside India: download the WHO-GMP PDF in a browser",
+                               "If the link is dead, search cdsco.gov.in for 'WHO GMP data for website'", "Upload the .pdf"]},
+    "eudragmdp": {"file": "EudraGMDP GMP certificates / non-compliance for India", "accepts": "laptop run",
+                  "links": [("EudraGMDP · GMP compliance search", "https://eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do")],
+                  "steps": ["EudraGMDP has no export file: run `just fetch-eudragmdp` on a laptop", "then `just push-plant-registry HOST KEY`"]},
+    "fda_inspections": {"file": "FDA Data Dashboard inspections table (Country = India, Product Type = Drugs + Biologics), exported to Excel", "accepts": ".xlsx, .csv",
+                        "links": [("FDA Data Dashboard · Inspections", "https://datadashboard.fda.gov/oii/cd/inspections.htm"),
+                                  ("Or request an API key (FDA_DD_USER / FDA_DD_KEY)", "https://datadashboard.fda.gov/oii/api/index.htm")],
+                        "steps": ["Filter Country = India, Product Type = Drugs (and Biologics)", "Export → Excel", "Upload the .xlsx"]},
+    "fda_dmf": {"file": "FDA list of Drug Master Files (quarterly Excel)", "accepts": ".xls, .xlsx",
+                "links": [("FDA · List of Drug Master Files", "https://www.fda.gov/drugs/drug-master-files-dmfs/list-drug-master-files-dmfs")],
+                "steps": ["Download the current 'List of DMFs' Excel file", "Upload it unchanged"]},
+    "edqm_cep": {"file": "EDQM CEP data file", "accepts": ".xlsx, .csv, .txt",
+                 "links": [("EDQM · Certification database (CEP)", "https://extranet.edqm.eu/publications/recherches_CEP.shtml")],
+                 "steps": ["Open the CEP database page", "Click 'Download CEP data file'", "Upload the file"]},
+    "idsp": {"file": "IDSP / NCDC weekly outbreak reports (PDF, one per week)", "accepts": ".pdf",
+             "links": [("NCDC · Weekly outbreaks", "https://ncdc.mohfw.gov.in/includes/WeeklyOutbreaks.php"),
+                       ("IDSP · weekly reports (old site)", "https://idsp.mohfw.gov.in/index4.php?lang=1&level=0&linkid=406&lid=3689")],
+                 "steps": ["Download the latest weekly PDFs", "Upload each PDF and run the source with it (or `just fetch-idsp` + `just push-signals` for many weeks)"]},
+    "nfhs": {"file": "NFHS fact-sheet table (NFHS-5 districts CSV, or an NFHS-6 table)", "accepts": ".csv, .xlsx",
+             "links": [("NFHS-5 fact sheets (CSV extracts)", "https://github.com/jvargh7/nfhs5_factsheets"),
+                       ("IIPS · NFHS releases", "https://www.nfhsiips.in/nfhsuser/release-details.php")],
+             "steps": ["Download a districts / states table", "Upload it to add a round"]},
+    "comtrade": {"file": "UN Comtrade needs an API key rather than a file", "accepts": "COMTRADE_KEY in .env",
+                 "links": [("UN Comtrade developer portal (free key)", "https://comtradedeveloper.un.org/"),
+                           ("UN Comtrade Plus", "https://comtradeplus.un.org/")],
+                 "steps": ["Sign up, subscribe to 'comtrade - v1'", "Put the primary key in the server's .env as COMTRADE_KEY", "Restart with ./deploy.sh"]},
+    "cdsco_wc": {"file": "Written Confirmation letters (~700 PDFs, ~2.7 GB)", "accepts": "laptop run",
+                 "links": [("CDSCO · International Cell", "https://cdsco.gov.in/opencms/opencms/en/International-cell1/")],
+                 "steps": ["Run `just fetch-cdsco-wc` on a laptop in India", "then `just push-wc HOST KEY`"]},
+}
+
+
+def manual_for(key: Optional[str]) -> Optional[dict[str, Any]]:
+    m = MANUAL.get(key or "")
+    return {**m, "links": [{"label": a, "url": b} for a, b in m["links"]]} if m else None
+
+
 # never in the daily sync-sources: the WC letters are ~2.7 GB (laptop only), ORD is a 1.3 GB download and a ~1 h scan
 # (it has its own monthly schedule, off by default, and runs at low CPU priority)
 _NOT_ON_SERVER = {"ord", "cdsco_wc"}
@@ -371,7 +440,19 @@ REGISTRY: dict[str, Job] = {j.key: j for j in [
         "Data", _seed_steps, role="super_admin", destructive=lambda p: True, before=export_watchlist, after=sync_plants_to_redis),
     Job("sync-plants", "Re-publish user plants", "Write every user-created plant from Postgres back into Redis.",
         "Data", lambda p: [], after=sync_plants_to_redis),
+    Job("restore-cdmo", "Restore molecules & plants snapshot", "Load data/cdmo_snapshot.json.gz (written by Update everything) back into Redis: molecules, patents, regulatory, demand and plants. Keys not in the file are left alone.",
+        "Sync", lambda p: [Step("Restore cdmo:* keys from the snapshot", [], fn=_restore_cdmo)], role="super_admin", destructive=lambda p: True),
+    Job("full-refresh", "Update everything", "One run that refreshes every dataset in dependency order — new CDSCO months and the NSQ reload, every public source, the molecule universe (trials, structures, patents, regulatory, demand), plants and the India map — then persists portable copies of every store and warms the caches. Upstream / downstream order comes from the data map; a source that is down keeps its last file, and a hard failure skips only what depends on it.",
+        "Pipelines", lambda p: [], role="super_admin", destructive=lambda p: True, dag=True,
+        params=[Param("force", "Re-download sources even if unchanged", default=False),
+                Param("include_ord", "Include the Open Reaction Database (1.3 GB, ~1 h)", default=False),
+                Param("backup", "Back up to Upstash at the end", default=False)]),
 ]}
+
+
+def _restore_cdmo() -> str:
+    from . import pipeline
+    return pipeline.restore_cdmo()
 
 # Jobs a schedule may run, with their default schedule (IST).
 SCHEDULABLE: dict[str, dict[str, Any]] = {
@@ -391,6 +472,7 @@ SCHEDULABLE: dict[str, dict[str, Any]] = {
     "build-frame": {"enabled": False, "frequency": "daily", "hour": 5, "minute": 30},
     "snapshot": {"enabled": False, "frequency": "weekly", "hour": 5, "minute": 45, "weekday": 6},
     "backup-to-upstash": {"enabled": False, "frequency": "daily", "hour": 7, "minute": 0, "params": {"dry_run": False}},
+    "full-refresh": {"enabled": False, "frequency": "weekly", "hour": 1, "minute": 30, "weekday": 6},
 }
 
 
@@ -400,7 +482,7 @@ _SOURCE_OF_JOB = {f"src-{k.replace('_', '-')}": k for k in SOURCE_TITLES}
 def describe(job: Job) -> dict[str, Any]:
     src = _SOURCE_OF_JOB.get(job.key)
     return {
-        "source": src, "laptop": LAPTOP.get(src) if src else None,
+        "source": src, "laptop": LAPTOP.get(src) if src else None, "manual": manual_for(src),
         "schedule": SCHEDULABLE.get(job.key),
         "key": job.key, "title": job.title, "description": job.description, "group": job.group,
         "role": job.role, "needs_upstash": job.needs_upstash,
@@ -456,13 +538,97 @@ def launch(job: Job, params: dict[str, Any], started_by: Optional[int], email: s
     return run
 
 
+_READ_ONLY = {"ping", "verify"}
+
+
 def start(job: Job, params: dict[str, Any], run: JobRun) -> None:
     with _running_lock:
         if job.key in _running:
             raise RuntimeError("already running")
+        # Update everything owns every store while it runs; it waits for nothing and nothing interleaves with it
+        if "full-refresh" in _running and job.key not in _READ_ONLY:
+            raise RuntimeError("Update everything is running")
+        if job.dag and any(k not in _READ_ONLY for k in _running):
+            raise RuntimeError("other jobs are running: " + ", ".join(_running))
         _running[job.key] = run.id
     _live_logs[run.id] = []
     threading.Thread(target=_execute, args=(job, params, run.id), daemon=True, name=f"job-{job.key}-{run.id}").start()
+
+
+def _run_step(st: Step, emit: Callable[[str], None], base_env: dict[str, str]) -> int:
+    """One step: an in-process function or a subprocess in redis-loader/. Returns the exit code."""
+    t0 = time.time()
+    if st.fn is not None:
+        try:
+            emit(f"  {st.fn()}\n")
+            code = 0
+        except Exception as exc:
+            emit(f"  ERROR: {exc}\n")
+            code = 1
+    else:
+        proc = subprocess.Popen(st.cmd, cwd=str(settings.loader_dir), env={**base_env, **st.env},
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            emit(line)
+        code = proc.wait()
+    emit(f"  exit {code} · {time.time() - t0:.1f}s\n")
+    return code
+
+
+def _execute_dag(params: dict[str, Any], emit: Callable[[str], None]) -> tuple[str, int]:
+    """Run pipeline.tasks() in topological order. A soft task's failure is a warning; a hard failure skips the tasks
+    downstream of it. Progress lines `◆ <task> → <state>` let the Data jobs page colour the graph."""
+    from . import pipeline
+
+    g = pipeline.graph(params)
+    by = {t.id: t for t in pipeline.tasks(params)}
+    base_env = {**os.environ, "PYTHONUNBUFFERED": "1", "REDIS_URL": _local(), "DATA_DIR": str(settings.data_dir)}
+    blocked: dict[str, str] = {}
+    warned, failed, done = [], [], 0
+    emit(f"Update everything · {len(g['order'])} tasks in {len(g['layers'])} layers\n")
+    for tid in g["order"]:
+        t = by[tid]
+        if t.skip:
+            emit(f"\n◆ {tid} → skipped · {t.skip}\n")
+            continue
+        if tid in blocked:
+            emit(f"\n◆ {tid} → skipped · upstream {blocked[tid]} failed\n")
+            continue
+        emit(f"\n◆ {tid} → running\n")
+        state = "ok"
+        steps = [_as_step(x) for x in t.steps(params)]
+        for i, st in enumerate(steps, 1):
+            emit(f"▶ [{t.title} {i}/{len(steps)}] {st.label}\n")
+            code = _run_step(st, emit, base_env)
+            if code == 0 or code in st.ok_codes:
+                continue
+            if code in st.stop_on:
+                emit(f"■ {st.stop_on[code]}\n")
+                break
+            if st.allow_fail or t.soft:
+                state = "warn"
+                emit("  ↳ continuing without it\n")
+                if not st.allow_fail:
+                    break
+                continue
+            state = "failed"
+            break
+        done += 1
+        if state == "failed":
+            failed.append(t.title)
+            for d in pipeline.descendants(g, tid):
+                blocked.setdefault(d, t.title)
+        elif state == "warn":
+            warned.append(t.title)
+        emit(f"◆ {tid} → {state}\n")
+    if failed:
+        emit("\n✖ Failed: " + ", ".join(failed) + (f" · {len(blocked)} downstream task(s) skipped" if blocked else "") + "\n")
+    if warned:
+        emit("⚠ Kept the last good data for: " + ", ".join(warned) + "\n")
+    if not failed:
+        emit(f"\n✔ Everything updated and persisted ({done} tasks run).\n")
+    return ("failed" if failed else "partial" if warned else "succeeded"), (1 if failed else 0)
 
 
 def _execute(job: Job, params: dict[str, Any], run_id: int) -> None:
@@ -477,6 +643,9 @@ def _execute(job: Job, params: dict[str, Any], run_id: int) -> None:
         run.status, run.started_at = "running", utcnow()
         db.commit()
     try:
+        if job.dag:
+            status, code = _execute_dag(params, emit)
+            return
         if job.before:
             emit(f"▶ {job.before()}\n")
         steps = [_as_step(x) for x in job.steps(params)]
@@ -484,14 +653,7 @@ def _execute(job: Job, params: dict[str, Any], run_id: int) -> None:
         warnings: list[str] = []
         for i, st in enumerate(steps, 1):
             emit(f"\n▶ [{i}/{len(steps)}] {st.label}\n")
-            t0 = time.time()
-            proc = subprocess.Popen(st.cmd, cwd=str(settings.loader_dir), env={**base_env, **st.env},
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                emit(line)
-            code = proc.wait()
-            emit(f"  exit {code} · {time.time() - t0:.1f}s\n")
+            code = _run_step(st, emit, base_env)
             if code in st.stop_on:
                 emit(f"\n■ {st.stop_on[code]}\n")
                 code = 0

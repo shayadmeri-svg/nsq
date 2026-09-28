@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock, Play, TriangleAlert, Upload, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, ExternalLink, Info, Play, TriangleAlert, Upload, XCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Drawer, ErrorNote, Field, Modal } from "../ui";
@@ -55,7 +55,7 @@ export function RunModal({ job, onClose, onStarted }: { job: any | null; onClose
   const uploads = useQuery({ queryKey: ["uploads"], queryFn: () => api<any>("/api/jobs/uploads"), enabled: !!job?.params.some((p: any) => p.kind === "csv" || p.kind === "file") });
   useEffect(() => { if (job) { setParams(Object.fromEntries(job.params.map((p: any) => [p.name, p.default]))); setConfirm(""); setErr(null); } }, [job]);
   if (!job) return <Modal open={false} onClose={onClose} title="">{null}</Modal>;
-  const destructive = job.key === "refresh-nsq" || job.key === "fetch-nsq" || job.key === "load-seeds" || ((job.key === "pull-upstash" || job.key === "backup-to-upstash") && !params.dry_run) || (job.key === "restore-snapshot" && params.flush);
+  const destructive = !!job.destructive_by_default || job.key === "refresh-nsq" || job.key === "fetch-nsq" || job.key === "load-seeds" || ((job.key === "pull-upstash" || job.key === "backup-to-upstash") && !params.dry_run) || (job.key === "restore-snapshot" && params.flush);
 
   const run = async () => {
     setBusy(true);
@@ -108,7 +108,7 @@ export function RunModal({ job, onClose, onStarted }: { job: any | null; onClose
 
 
 
-export function UploadButton({ label = "Upload data file", accept = ".csv,.zip,.json,.txt,.html,.xlsx", hint }: { label?: string; accept?: string; hint?: string }) {
+export function UploadButton({ label = "Upload data file", accept = ".csv,.zip,.json,.txt,.html,.htm,.xlsx,.xls,.pdf", hint }: { label?: string; accept?: string; hint?: string }) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
@@ -130,4 +130,50 @@ export function UploadButton({ label = "Upload data file", accept = ".csv,.zip,.
     }
   };
   return <><input ref={fileRef} type="file" accept={accept} hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} /><Button variant="secondary" loading={uploading} onClick={() => fileRef.current?.click()}><Upload size={15} /> {label}</Button></>;
+}
+
+// "Where do I get this file?": for sources the server often cannot download, what to fetch in a browser, where, and how
+// to hand it to the job (upload here, then run the source with it).
+export type Manual = { file: string; accepts: string; links: { label: string; url: string }[]; steps: string[] };
+
+export function ManualFileButton({ manual, title, onRunWithFile, compact }: { manual: Manual; title: string; onRunWithFile?: () => void; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const uploadable = /\.\w+/.test(manual.accepts);
+  return (
+    <>
+      <button onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        className={compact ? "inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline"
+          : "inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-800 ring-1 ring-inset ring-brand-200 hover:bg-brand-100"}>
+        <Info size={13} /> {uploadable ? "Where do I get this file?" : "How to provide this data"}
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} title={title}
+        footer={<>
+          <Button variant="secondary" onClick={() => setOpen(false)}>Close</Button>
+          {uploadable && onRunWithFile && <Button onClick={() => { setOpen(false); onRunWithFile(); }}><Play size={14} /> Run with an uploaded file</Button>}
+        </>}>
+        <div className="space-y-4 text-sm">
+          <div>
+            <div className="label mb-1">The file</div>
+            <p className="text-ink-soft">{manual.file}</p>
+            <p className="mt-1 text-xs text-ink-muted">Accepted: <b>{manual.accepts}</b></p>
+          </div>
+          <div>
+            <div className="label mb-1.5">Where to find it</div>
+            <ul className="space-y-1.5">{manual.links.map((l) => (
+              <li key={l.url}><a href={l.url} target="_blank" rel="noreferrer noopener" className="group flex items-start gap-2 rounded-lg p-2 ring-1 ring-inset ring-line hover:bg-slate-50">
+                <ExternalLink size={14} className="mt-0.5 shrink-0 text-brand-600" />
+                <span className="min-w-0"><span className="font-medium text-ink group-hover:text-brand-700">{l.label}</span><span className="block truncate text-[11px] text-ink-faint">{l.url}</span></span>
+              </a></li>))}</ul>
+            <p className="mt-1.5 text-[11px] text-ink-faint">Publishers move files; if a link is dead, search the publisher's site for the file named above.</p>
+          </div>
+          <div>
+            <div className="label mb-1">Steps</div>
+            <ol className="list-decimal space-y-0.5 pl-5 text-ink-soft">{manual.steps.map((s, i) => <li key={i}>{s}</li>)}
+              {uploadable && <li>Then pick the upload in this source's file field and run it — Update everything uses the new file next time.</li>}</ol>
+          </div>
+          {uploadable && <div className="flex items-center gap-2 border-t border-line pt-3"><UploadButton hint="then run this source with it" /></div>}
+        </div>
+      </Modal>
+    </>
+  );
 }

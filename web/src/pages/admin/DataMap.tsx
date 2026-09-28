@@ -295,7 +295,7 @@ function Stores({ g, pick }: { g: Graph; pick: (id: string) => void }) {
 export function DataMap() {
   const { data: g, error, isLoading } = useQuery({ queryKey: ["datamap"], queryFn: () => api<Graph>("/api/platform/datamap"), staleTime: 60_000 });
   const [view, setView] = useState<"map" | "mutations" | "stores">("map");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get("node"));
   if (isLoading) return <PageSkeleton />;
   if (error || !g) return <ErrorNote error={error} />;
   const pick = (id: string) => { setSelected(id); setView("map"); window.scrollTo({ top: 0, behavior: "smooth" }); };

@@ -4,7 +4,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Beaker, ChevronDown, Copy, Database, Factory, FlaskConical, HeartPulse, Laptop, Lock, Pill, Play, Server, TerminalSquare, Workflow, Wrench } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { LogViewer, RunModal, STATUS, UploadButton } from "../../components/jobs";
+import { LogViewer, ManualFileButton, RunModal, STATUS, UploadButton } from "../../components/jobs";
+import { FullRefresh } from "./FullRefresh";
 import { Badge, Button, Card, ErrorNote, PageHeader, PageSkeleton, Segmented } from "../../components/ui";
 import { ExpandedProvider, Figure, Tile, useExpanded, type Section } from "../../components/ui/Expanded";
 import { api } from "../../lib/api";
@@ -111,6 +112,7 @@ function JobDetail({ j, onRun, onLog }: { j: Job; onRun: (j: Job) => void; onLog
         </div>
       )}
       {d?.error && <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-inset ring-amber-200"><b>Last attempt {d.last_attempt ? fmtDateTime(d.last_attempt) : ""}:</b> {d.error}</div>}
+      {j.manual && <ManualFileButton manual={j.manual} title={`${j.title} — providing the file`} onRunWithFile={() => onRun(j)} />}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl bg-white p-4 ring-1 ring-inset ring-line">
           <div className="label mb-2 flex items-center gap-1.5"><Server size={12} /> Run on the server</div>
@@ -205,7 +207,7 @@ export function Jobs() {
   const running = jobs.filter((j) => j.running);
   const show = (keys: string[]) => keys.map((k) => byKey[k]).filter(Boolean)
     .filter((j) => filter === "all" || (filter === "attention" ? attention(j) : !!j.laptop));
-  const placed = new Set([...THEMES.flatMap((t) => t.keys), ...PIPELINES]);
+  const placed = new Set([...THEMES.flatMap((t) => t.keys), ...PIPELINES, "full-refresh"]);
   const maintenance = jobs.filter((j) => !placed.has(j.key) && !j.source);
   const lastRun = jobs.map((j) => j.last_run).filter(Boolean).sort((a: any, b: any) => (b.created_at > a.created_at ? 1 : -1))[0];
 
@@ -213,6 +215,8 @@ export function Jobs() {
     <ExpandedProvider sections={sections} active={active} onActive={setActive} title="Data jobs" subtitle={`${jobs.length} jobs · ${sources.length} sources`}>
       <PageHeader eyebrow="Platform" title="Data jobs" subtitle="Every public source with the data the server holds from it, and the recipes that refresh it. Click a row for details, laptop commands and logs."
         actions={data.is_super && <UploadButton hint="pick it in the job's file field" />} />
+
+      <FullRefresh onRun={onRun} onLog={onLog} onRunSource={(src) => { const j = byKey[`src-${src.replace(/_/g, "-")}`]; if (j) onRun(j); }} />
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Tile title="Sources holding data" icon={<Database size={14} />} clickable={false}>
@@ -247,7 +251,7 @@ export function Jobs() {
           note="Redis health, Upstash sync, snapshots and reloads — run when something is off." />}
       </div>
 
-      <RunModal job={picked} onClose={() => setPicked(null)} onStarted={(id) => { setViewing(id); qc.invalidateQueries({ queryKey: ["jobs"] }); }} />
+      <RunModal job={picked} onClose={() => setPicked(null)} onStarted={(id) => { setViewing(id); qc.invalidateQueries({ queryKey: ["jobs"] }); qc.invalidateQueries({ queryKey: ["full-refresh-plan"] }); }} />
       <LogViewer runId={viewing} onClose={() => setViewing(undefined)} />
     </ExpandedProvider>
   );
