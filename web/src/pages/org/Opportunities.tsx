@@ -128,7 +128,8 @@ function Detail({ slug, molecule, onClose }: { slug: string; molecule?: string; 
 }
 
 function UnlockItem({ u, full }: { u: any; full?: boolean }) {
-  const n = full ? u.molecules.length : 4;
+  const mols = [...new Set<string>(u.molecules)];  // the same molecule can arrive from two capability rules
+  const n = full ? mols.length : 4;
   return (
     <div className="min-w-0 rounded-xl border border-line bg-white p-3.5">
       <div className="flex items-start justify-between gap-3">
@@ -139,8 +140,8 @@ function UnlockItem({ u, full }: { u: any; full?: boolean }) {
         <div className="shrink-0 text-right"><div className="font-display text-lg font-extrabold text-brand-700">+{u.count}</div><div className="flex items-center justify-end gap-1 text-[11px] text-ink-muted">{u.market_usd_bn ? <>${u.market_usd_bn} bn <Estimate field="market_size_usd_bn" align="right" /></> : "molecules"}</div></div>
       </div>
       <div className="mt-2 flex flex-wrap gap-1">
-        {u.molecules.slice(0, n).map((m: string) => <span key={m} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-ink-soft">{m}</span>)}
-        {u.molecules.length > n && <span className="rounded-md px-1.5 py-0.5 text-[11px] text-ink-muted">+{u.molecules.length - n} more</span>}
+        {mols.slice(0, n).map((m: string) => <span key={m} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-ink-soft">{m}</span>)}
+        {mols.length > n && <span className="rounded-md px-1.5 py-0.5 text-[11px] text-ink-muted">+{mols.length - n} more</span>}
       </div>
     </div>
   );

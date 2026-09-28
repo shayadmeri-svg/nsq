@@ -1,5 +1,6 @@
 """NFHS / IDSP / Comtrade parsing (synthetic files in the published layouts)."""
 
+import pytest
 import sys
 from pathlib import Path
 
@@ -41,6 +42,7 @@ def test_nfhs_long_table_rounds(tmp_path):
 
 
 def test_idsp_tables_and_pdf(tmp_path):
+    pytest.importorskip("reportlab", reason="reportlab builds the sample PDF: pip install reportlab")
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
     from reportlab.lib.styles import getSampleStyleSheet

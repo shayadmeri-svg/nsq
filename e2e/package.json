@@ -1,0 +1,8 @@
+{
+  "name": "nsq-e2e",
+  "private": true,
+  "type": "module",
+  "description": "UI smoke test: signs in and opens every screen, failing on crashes, API errors and broken rendering.",
+  "scripts": { "smoke": "node smoke.mjs" },
+  "devDependencies": { "playwright": "^1.48.0" }
+}

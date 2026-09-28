@@ -204,14 +204,14 @@ def test_real_file_preparation_numbers():
         rows = list(csv.DictReader(f))
     rl = _load_loader()
     prepared, stats = rl.prepare_rows(rows)
-    assert len(rows) == 5635
-    # 9 rows identical beyond Index collapse; 7 residual same-key pairs
-    # (verified 2026-08-27) differ only in the manufacturer line —
-    # whitespace / punctuation / plot-letter variants of the same alert —
-    # and collapse to the sorted-first row.
-    assert stats["true_duplicates_removed"] == 9
-    assert stats["same_key_collapsed"] == 7
-    assert len(prepared) == 5635 - 9 - 7
+    # The cumulative CSV grows every time fetch-nsq appends a month, so the lock is on the arithmetic, not on
+    # fixed counts: every input row is either kept, removed as an exact duplicate, or collapsed into a same-key row.
+    # (On the Jan 21-Jul 26 file as first swapped in, 2026-08-27: 5,635 rows, 9 exact duplicates, 7 same-key pairs
+    # that differ only in the manufacturer line.)
+    assert len(rows) > 5000
+    assert stats["true_duplicates_removed"] >= 0 and stats["same_key_collapsed"] >= 0
+    assert len(prepared) == len(rows) - stats["true_duplicates_removed"] - stats["same_key_collapsed"]
+    assert stats["true_duplicates_removed"] + stats["same_key_collapsed"] < 0.01 * len(rows)  # dedupe stays marginal
 
 
 if __name__ == "__main__":

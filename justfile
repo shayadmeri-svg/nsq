@@ -228,11 +228,39 @@ seed-local:
     cd {{LOADER}} && .venv/bin/python load_plant_assets.py --input ../data/plant_assets_seed.json --redis-url "${LOCAL_REDIS_URL:-redis://localhost:6379/0}"
     cd {{LOADER}} && REDIS_URL="${LOCAL_REDIS_URL:-redis://localhost:6379/0}" .venv/bin/python build_enriched_frame.py
 
-# Run the test suites: core/loader tests and the API tests (the API tests need
-# Postgres at $TEST_DATABASE_URL and a seeded local Redis; they skip otherwise).
-test:
-    REDIS_URL=redis://localhost:6379 python3 -m pytest tests/ -q
-    cd backend && DATABASE_URL="${TEST_DATABASE_URL:-postgresql+psycopg://nsq@localhost:5432/nsq_test}" REDIS_URL=redis://localhost:6379 python3 -m pytest tests -q
+# --- Tests -------------------------------------------------------------------------------------------------------
+# Everything that needs no running app: engine, source parsers, API, and the web type-check.
+# (`just test-ui` needs the app running — see below.)  Extra pytest args go to the single suites, e.g.
+#   just test-api -k forensics      just test-loader -x      just test-core -k loader
+test: test-core test-loader test-api typecheck-web
+
+# Engine / shared code (tests/): no services needed.
+test-core *ARGS:
+    REDIS_URL=redis://localhost:6379 python3 -m pytest tests/ -q {{ARGS}}
+
+# Source parsers (redis-loader/tests): offline fixtures, no network.
+test-loader *ARGS:
+    cd {{LOADER}} && PY=python3; .venv/bin/python -c "import pytest" 2>/dev/null && PY=.venv/bin/python; $PY -m pytest tests -q {{ARGS}}
+
+# API (backend/tests): needs Postgres at $TEST_DATABASE_URL (default nsq_test on localhost) and a seeded local Redis
+# (`just seed-local`); the suites skip, and say so, when either is missing. The test database is wiped per run.
+test-api *ARGS:
+    cd backend && DATABASE_URL="${TEST_DATABASE_URL:-postgresql+psycopg://nsq@localhost:5432/nsq_test}" REDIS_URL=redis://localhost:6379 python3 -m pytest tests -q {{ARGS}}
+
+# Web: TypeScript check of the React app (the same check the Docker build runs).
+typecheck-web:
+    cd web && npm run typecheck
+
+# UI smoke test (e2e/smoke.mjs): signs in and opens every screen of a RUNNING app — local (`just run-api` +
+# `just run-web`) or the server — and fails on JS errors, API 5xx, error boxes, "Invalid Date"/"NaN", or a screen
+# that never renders. Read-only. Credentials from the environment, never the command line:
+#   E2E_EMAIL=you@x E2E_PASSWORD=… just test-ui                          # http://localhost:5173
+#   E2E_EMAIL=you@x E2E_PASSWORD=… just test-ui http://<server> --shots   # + a screenshot per screen in e2e/shots/
+#   E2E_EMAIL=you@x E2E_PASSWORD=… just test-ui http://localhost:5173 --only=/admin    # only matching screens
+test-ui BASE="http://localhost:5173" ARGS="":
+    cd e2e && [ -d node_modules/playwright ] || npm install --no-audit --no-fund
+    cd e2e && npx playwright install chromium
+    cd e2e && BASE_URL="{{BASE}}" node smoke.mjs {{ARGS}}
 
 # Clean only the CDMO intelligence keys (DESTRUCTIVE, no confirmation)
 clean-intelligence:

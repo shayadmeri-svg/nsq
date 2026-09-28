@@ -22,3 +22,6 @@ data/sources/
 data/docs/
 data/generated/
 data/cdmo_snapshot.json.gz
+e2e/node_modules/
+e2e/shots/
+e2e/package-lock.json

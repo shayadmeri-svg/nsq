@@ -134,7 +134,7 @@ export function Empty({ icon, title, children }: { icon?: ReactNode; title: stri
 
 export function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null;
-  return <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">{(error as Error).message}</div>;
+  return <div data-testid="error-note" className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">{(error as Error).message}</div>;
 }
 
 // --- Page header --------------------------------------------------------------------------
