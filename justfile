@@ -284,7 +284,7 @@ sources:
 
 # Fetch one source: just fetch-source orange_book [~/Downloads/orange_book.zip]
 fetch-source NAME FILE="":
-    cd {{LOADER}} && DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py {{NAME}} {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }}
+    cd {{LOADER}} && DATA_DIR="$(cd .. && pwd)/data" .venv/bin/python fetch_source.py {{NAME}} {{ if FILE != "" { "--from-file '" + join(invocation_directory(), FILE) + "'" } else { "" } }} || [ $? -eq 3 ]  # 3 = unchanged / fetched recently: not a failure
 
 fetch-orange-book FILE="": (fetch-source "orange_book" FILE)
 fetch-purple-book FILE="": (fetch-source "purple_book" FILE)
@@ -331,8 +331,8 @@ push-wc HOST KEY="" DIR="/opt/nsq-platform":
     [ -f data/sources/cdsco_wc.json ] || { echo "Run just fetch-cdsco-wc first"; exit 1; }
     k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
     ssh $k {{HOST}} 'command -v rsync >/dev/null || sudo yum install -y rsync >/dev/null || sudo apt-get install -y rsync >/dev/null; sudo mkdir -p {{DIR}}/data/docs/cdsco_wc {{DIR}}/data/sources'
-    rsync -rt --chmod=D755,F644 --info=progress2 --rsync-path="sudo rsync" -e "ssh $k" data/docs/cdsco_wc/ {{HOST}}:{{DIR}}/data/docs/cdsco_wc/ 2>/dev/null \
-      || rsync -rt --chmod=D755,F644 --progress --rsync-path="sudo rsync" -e "ssh $k" data/docs/cdsco_wc/ {{HOST}}:{{DIR}}/data/docs/cdsco_wc/
+    rsync -rt --chmod=D755 --chmod=F644 --info=progress2 --rsync-path="sudo rsync" -e "ssh $k" data/docs/cdsco_wc/ {{HOST}}:{{DIR}}/data/docs/cdsco_wc/ 2>/dev/null \
+      || rsync -rt --chmod=D755 --chmod=F644 --progress --rsync-path="sudo rsync" -e "ssh $k" data/docs/cdsco_wc/ {{HOST}}:{{DIR}}/data/docs/cdsco_wc/
     scp $k data/sources/cdsco_wc.json {{HOST}}:~/
     ssh $k {{HOST}} 'sudo mv ~/cdsco_wc.json {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/cdsco_wc.json'
     echo "Written Confirmations copied: $(ls data/docs/cdsco_wc | wc -l | tr -d ' ') files."
