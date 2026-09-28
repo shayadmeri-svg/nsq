@@ -133,6 +133,12 @@ def _town_words(*texts: Optional[str]) -> set[str]:
     return {w for t in texts if t for w in re.findall(r"[a-z]{4,}", t.lower())}
 
 
+def _district_words(address: Optional[str]) -> set[str]:
+    """Words naming a district in an address ("Solan District", "Dist. Thane", "District Solan")."""
+    a = (address or "").lower()
+    return set(re.findall(r"([a-z]+)\s+(?:district|distt?\.?)\b", a)) | set(re.findall(r"\b(?:district|distt?\.?)\s*:?\s*([a-z]+)", a))
+
+
 def _score_pair(site: dict[str, Any], site_tokens: list[str], p: dict[str, Any], same_state_count: int) -> Optional[tuple]:
     """(pin_equal, name_score, address_score) or None when the pair cannot be the same plant."""
     from rapidfuzz import fuzz
@@ -294,7 +300,9 @@ def _find_plants(plants: dict[str, dict[str, Any]], by_pin: dict[str, list[str]]
     best, best_score = [], 0.0
     for pid in set(by_pin.get(pin, [])) | set().union(*(by_token.get(t, set()) for t in _tokens(site_name or "")[:2])):
         p = plants[pid]
-        pn = " ".join(_tokens(p["name"], drop=_town_words(p.get("district"), p.get("address")), keep_generic=True))
+        # drop place words from the registry name ("Indoco Remedies Goa"), but never words the other record's name also
+        # has: an address like "Dhirubhai Ambani Life Sciences Centre" must not strip "life" from "Reliance Life Sciences"
+        pn = " ".join(_tokens(p["name"], drop=_town_words(p.get("district"), p.get("address")) - set(name.split()), keep_generic=True))
         if not pn or not name:
             continue
         score = fuzz.token_sort_ratio(name, pn)
@@ -305,8 +313,12 @@ def _find_plants(plants: dict[str, dict[str, Any]], by_pin: dict[str, list[str]]
         else:
             town = _town_words(city, address) - _ADDRESS_STOP
             st = pin_state(pin) if pin else state  # FDA inspection records carry no postcode
-            if score < 92 or (st and p.get("state") and p["state"] != st) or (pin and p.get("state") != st) \
-                    or not (town & _town_words(p.get("district"), p.get("address"))):
+            # same plot number in both addresses is strong evidence: accept a looser name match then
+            shared = _site_numbers(address, pin or None) & _site_numbers(p.get("address"), p.get("pin"))
+            # a shared district alone ("Solan") is not the same town: Morepen's Parwanoo and Baddi plants are both in Solan
+            near = (town & _town_words(p.get("district"), p.get("address"))) - _district_words(p.get("address"))
+            if score < (80 if shared else 92) or (st and p.get("state") and p["state"] != st) or (pin and p.get("state") != st) \
+                    or not (near or (shared and town & _town_words(p.get("district"), p.get("address")))):
                 continue
             if not _same_site(address, p.get("address"), pin or None):
                 continue
@@ -814,6 +826,124 @@ def _molecule_requirements(key: str) -> dict[str, Any]:
 
 # --- plant fit against any registry plant -------------------------------------------------------
 
+def official_certs(p: dict[str, Any]) -> list[str]:
+    """Certification tokens the official records support (and the adverse ones), for scoring."""
+    eu, fda = p.get("eu") or {}, p.get("fda") or {}
+    return (["WHO_GMP"] if p.get("who_gmp_certified") else []) + (["EU_GMP"] if eu.get("certified") else []) \
+        + (["USFDA"] if fda.get("acceptable") else []) + (["EU_NCR"] if eu.get("status") == "non_compliant" else []) \
+        + (["FDA_OAI"] if fda.get("oai_recent") else []) + (["FDA_IMPORT_ALERT"] if fda.get("import_alert") or p.get("import_alert") else [])
+
+
+# Certifications our sources can confirm or refute. Others a profile states (UK MHRA, TGA, ANVISA…) are kept as stated.
+VERIFIABLE_CERTS = {"USFDA", "EU_GMP", "WHO_GMP"}
+_FDA_CODE = {"NAI": "no action indicated", "VAI": "voluntary action indicated", "OAI": "official action indicated"}
+
+
+def resolve_link(ref: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """The registry plant a plant profile is linked to: by id, else by its EU (LOC-…) or FDA (FEI) record key."""
+    reg = registry()["plants"]
+    pid = ref.get("registry_plant") or (ref.get("registry") or {}).get("id")  # demo seed link, or an organisation's confirmed link
+    if pid and pid in reg:
+        return reg[pid]
+    keys = ref.get("registry_keys") or {}
+    for p in reg.values():
+        if keys.get("eu") and keys["eu"] in (p.get("eu_records") or []):
+            return p
+        if keys.get("fda") and any(r.get("fei") == keys["fda"] for r in (p.get("fda_records") or [])):
+            return p
+    return None
+
+
+def official_record(p: dict[str, Any]) -> dict[str, Any]:
+    """What the official records say about a plant, in words, for a profile linked to it."""
+    eu, fda = p.get("eu") or {}, p.get("fda") or {}
+    out: dict[str, Any] = {"registry_plant": p["id"], "name": p["name"], "address": p.get("address"), "sources": p.get("sources", []),
+                           "dosage_forms": (p.get("capabilities") or {}).get("dosage_forms") or [], "certs": official_certs(p), "evidence": {}}
+    ev = out["evidence"]
+    if p.get("who_gmp_certified"):
+        ev["WHO_GMP"] = "CDSCO WHO-GMP list" + (f" (valid until {who_valid_until(p)})" if who_valid_until(p) else "")
+    if eu:
+        ev["EU_GMP"] = (f"EudraGMDP: {'compliant' if eu.get('status') == 'compliant' else eu.get('status')}, last inspected {eu.get('last_gmp_inspection')}"
+                        + ("" if eu.get("certified") or eu.get("status") != "compliant" else " — older than 3 years"))
+    if fda:
+        code = fda.get("last_code")
+        ev["USFDA"] = (f"FDA: last inspection {fda.get('last_inspection')} {code} ({_FDA_CODE.get(code, code)})"
+                       + (f"; {fda.get('oai_count')} OAI outcome{'s' if fda.get('oai_count', 0) > 1 else ''} in its history" if fda.get("oai_count") else "")
+                       + ("" if fda.get("acceptable") or code == "OAI" else " — older than 5 years"))
+    inspections = []
+    if eu.get("last_gmp_inspection"):
+        inspections.append({"date": eu["last_gmp_inspection"], "authority": "EU (EudraGMDP)", "outcome": eu.get("status"), "url": EU_URL})
+    for r in p.get("fda_records") or []:
+        for i in (r.get("inspections") or [])[:6]:
+            inspections.append({"date": i.get("date"), "authority": "US FDA", "outcome": i.get("code"), "url": r.get("profile")})
+    out["inspections"] = sorted(inspections, key=lambda x: x.get("date") or "", reverse=True)
+    return out
+
+
+_seed_cache: dict[str, Any] = {"mtime": None, "links": {}}
+
+
+def _seed_links() -> dict[str, dict[str, Any]]:
+    """Registry links of the demo plants, straight from data/plant_assets_seed.json."""
+    path = settings.data_dir / "plant_assets_seed.json"
+    try:
+        m = path.stat().st_mtime
+        if _seed_cache["mtime"] != m:
+            assets = json.loads(path.read_text(encoding="utf-8")).get("assets") or []
+            _seed_cache["links"] = {a["asset_id"]: {k: v for k, v in (a.get("reference") or {}).items()
+                                                    if k in ("registry_plant", "registry_keys", "registry_note", "demo")} for a in assets}
+            _seed_cache["mtime"] = m
+    except (OSError, ValueError, KeyError):
+        return {}
+    return _seed_cache["links"]
+
+
+def apply_official(asset):
+    """A plant profile (demo seed or organisation plant) linked to a registry plant: the official records decide the
+    certifications that FDA / EU / CDSCO data can confirm; what the company states but no record backs becomes 'claimed'
+    (shown, not scored). Dosage forms in the official records are added. Unlinked profiles are returned unchanged."""
+    ref = {**(asset.reference or {}), **_seed_links().get(asset.asset_id, {})}  # the seed file wins: no Redis reload needed
+    if ref.get("registry_note") and not ref.get("registry_plant"):
+        # no official record for this site: the verifiable certifications it states stay claims
+        claimed = [c for c in asset.certifications_active or [] if c in VERIFIABLE_CERTS]
+        active = [c for c in asset.certifications_active or [] if c not in VERIFIABLE_CERTS]
+        basis = {**(asset.certification_basis or {}), **{c: "Stated by the company, not confirmed: " + ref["registry_note"] for c in claimed}}
+        return asset.model_copy(update={"certifications_active": active, "certifications": active, "certification_basis": basis,
+                                        "certifications_claimed": list(dict.fromkeys([*(asset.certifications_claimed or []), *claimed])),
+                                        "reference": ref})
+    if not (ref.get("registry_plant") or ref.get("registry_keys") or (ref.get("registry") or {}).get("id")):
+        return asset
+    p = resolve_link(ref)
+    if p is None:
+        return asset
+    off = official_record(p)
+    stated = list(dict.fromkeys([*(asset.certifications_active or []), *(asset.certifications or [])]))
+    claimed = [c for c in stated if c in VERIFIABLE_CERTS and c not in off["certs"]]
+    kept = [c for c in stated if c not in VERIFIABLE_CERTS and c not in ("EU_NCR", "FDA_OAI", "FDA_IMPORT_ALERT")]
+    active = list(dict.fromkeys([*off["certs"], *kept]))
+    basis = {c: v for c, v in (asset.certification_basis or {}).items() if c in kept}
+    for c in off["certs"]:
+        key = {"EU_NCR": "EU_GMP", "FDA_OAI": "USFDA", "FDA_IMPORT_ALERT": "USFDA"}.get(c, c)
+        basis[c] = off["evidence"].get(key, "official record")
+    claimed = list(dict.fromkeys(c for c in [*(asset.certifications_claimed or []), *claimed] if c not in active))
+    none = {"USFDA": "FDA has no inspection of this site", "EU_GMP": "EudraGMDP has no GMP certificate for this site",
+            "WHO_GMP": "not in CDSCO's WHO-GMP list"}
+    for c in claimed:
+        basis[c] = "Stated by the company, not confirmed: " + off["evidence"].get(c, none.get(c, "no official record for this site"))
+    forms = list(asset.approved_forms or [])
+    new_forms = [f for f in off["dosage_forms"] if f not in forms]
+    cap_basis = {**(asset.capability_basis or {}), **{f: "official" for f in new_forms}}
+    return asset.model_copy(update={
+        "certifications": active, "certifications_active": active,
+        "certifications_claimed": claimed,
+        "certification_basis": basis,
+        "approved_forms": [*forms, *new_forms], "capabilities": list(dict.fromkeys([*(asset.capabilities or []), *new_forms])),
+        "capability_basis": cap_basis,
+        "inspections": off["inspections"] or asset.inspections,
+        "reference": {**ref, "registry_plant": p["id"], "official": {k: off[k] for k in ("name", "address", "sources", "certs", "evidence")}},
+    })
+
+
 def as_plant_asset(p: dict[str, Any]):
     """A registry plant as a PlantAsset the scorer understands (asset id 'reg:<id>')."""
     from intelligence_models import PlantAsset
@@ -828,10 +958,7 @@ def as_plant_asset(p: dict[str, Any]):
         basis[h["token"]] = h["basis"]
     forms = list(c.get("dosage_forms") or [])
     caps = [*basis, *forms, *(f"segregated_{b}" for b in (c.get("segregated") or {}))]
-    eu, fda = p.get("eu") or {}, p.get("fda") or {}
-    certs = (["WHO_GMP"] if p.get("who_gmp_certified") else []) + (["EU_GMP"] if eu.get("certified") else []) \
-        + (["USFDA"] if fda.get("acceptable") else []) + (["EU_NCR"] if eu.get("status") == "non_compliant" else []) \
-        + (["FDA_OAI"] if fda.get("oai_recent") else []) + (["FDA_IMPORT_ALERT"] if fda.get("import_alert") or p.get("import_alert") else [])
+    certs = official_certs(p)
     return PlantAsset(
         asset_id=f"reg:{p['id']}", site_name=p["name"] + (f", {p.get('district')}" if p.get("district") else ""),
         city=p.get("district") or "", state=p.get("state") or "", capabilities=list(dict.fromkeys(caps)),

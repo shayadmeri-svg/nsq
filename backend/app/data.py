@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import os
 import re
 import threading
@@ -19,6 +20,8 @@ import pandas as pd
 import redis
 
 from .config import settings
+
+log = logging.getLogger(__name__)
 
 # core/ modules read these from the environment.
 os.environ.setdefault("REDIS_URL", settings.redis_url)
@@ -101,6 +104,11 @@ def cdmo() -> dict[str, Any]:
         "demand": store.load_all_demand(r),
         "plants": store.load_all_plant_assets(r),
     }
+    try:  # profiles linked to a registry plant take their certifications from the official records
+        from . import plants as registry_plants
+        maps["plants"] = {k: registry_plants.apply_official(v) for k, v in maps["plants"].items()}
+    except Exception as exc:  # the registry is optional (no source files on a fresh install)
+        log.warning("plant profiles not linked to the registry: %s", exc)
     _cdmo = (now + 120.0, maps)
     return maps
 

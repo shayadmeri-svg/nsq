@@ -1,5 +1,5 @@
 {
-  "_comment": "Five demo plants, each modelled on a real, publicly documented Indian site (see each asset's 'reference'). Dosage forms, approvals, capacity and equipment come from the cited page; capability_basis marks tokens 'stated' by the source vs 'inferred' from a stated dosage form. talent_depth and experience years are estimates with no public source. Retrieved 2026-09-26.",
+  "_comment": "Five demo plants, each modelled on a real, publicly documented Indian site (see each asset's 'reference'). Dosage forms, approvals, capacity and equipment come from the cited page; capability_basis marks tokens 'stated' by the source vs 'inferred' from a stated dosage form. talent_depth and experience years are estimates with no public source. Retrieved 2026-09-26. Each demo plant is modelled on a real site; reference.registry_plant / registry_keys link it to that site in the plant registry, whose official records (EU GMP, US FDA, CDSCO WHO-GMP) replace the company's own certification claims.",
   "retired_ids": {
     "_note": "Old ids renamed to match the real site's city. Loaders and API startup move references and delete the old keys.",
     "ahmedabad-osd-liquid": "goa-osd-liquid",
@@ -23,7 +23,10 @@
             "label": "Indoco Remedies — formulation facilities",
             "url": "https://www.indoco.com/facilities-formulation.asp"
           }
-        ]
+        ],
+        "demo": true,
+        "registry_plant": null,
+        "registry_note": "Indoco's Baddi 'Plant II' is not in the official records: EudraGMDP lists two other Indoco sites in Baddi (Unit 1 and Baddi III, Village Katha), CDSCO's WHO-GMP list has no Indoco Baddi unit and FDA has no Indoco Baddi inspection."
       },
       "approved_forms": [
         "solid_oral",
@@ -104,7 +107,13 @@
             "label": "Indoco Remedies — formulation facilities",
             "url": "https://www.indoco.com/facilities-formulation.asp"
           }
-        ]
+        ],
+        "demo": true,
+        "registry_plant": "indoco-remedies--403722--l14",
+        "registry_keys": {
+          "eu": "LOC-100028900",
+          "fda": "3006644152"
+        }
       },
       "approved_forms": [
         "solid_oral",
@@ -205,7 +214,13 @@
             "label": "Shilpa Medicare — Unit IV Jadcherla",
             "url": "https://www.vbshilpa.com/formulation-jardchela.php"
           }
-        ]
+        ],
+        "demo": true,
+        "registry_plant": "eu-shilpa-medicare-limited--509301",
+        "registry_keys": {
+          "eu": "LOC-100021844",
+          "fda": "3009876430"
+        }
       },
       "approved_forms": [
         "tablet",
@@ -315,7 +330,12 @@
             "label": "Piramal Pharma Solutions — PDS Ahmedabad",
             "url": "https://www.piramalpharmasolutions.com/facilities/piramal-pharmaceutical-development-services-ahmedabad"
           }
-        ]
+        ],
+        "demo": true,
+        "registry_plant": "eu-piramal-pharma-limited--382213",
+        "registry_keys": {
+          "eu": "LOC-100088847"
+        }
       },
       "approved_forms": [
         "solid_oral",
@@ -404,7 +424,13 @@
             "label": "Reliance Life Sciences — infrastructure",
             "url": "https://www.rellife.com/web/lifesciences/infrastructure"
           }
-        ]
+        ],
+        "demo": true,
+        "registry_plant": "eu-reliance-life-sciences-private-limited--400701",
+        "registry_keys": {
+          "eu": "LOC-100010914",
+          "fda": "3009510975"
+        }
       },
       "approved_forms": [
         "vial",

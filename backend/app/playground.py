@@ -554,7 +554,10 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
         "demand": dem.model_dump(mode="json") if dem else None,
         "complexity": cx.model_dump(mode="json"),
         "score": cand.model_dump(mode="json"),
-        "plants": [{"asset_id": x.asset_id, "name": x.site_name, "kind": "profile"} for x in plants]
+        "plants": [{"asset_id": x.asset_id, "name": x.site_name, "kind": "profile", "demo": bool((x.reference or {}).get("demo")),
+                    "company": (x.reference or {}).get("company"), "registry_plant": (x.reference or {}).get("registry_plant")
+                    or ((x.reference or {}).get("registry") or {}).get("id"),
+                    "certs": x.certifications_active, "claimed": x.certifications_claimed} for x in plants]
                   + ([{"asset_id": reg_plant.asset_id, "name": reg_plant.site_name, "kind": "registry"}] if reg_plant else []),
         "plant_id": plant.asset_id if plant else None,
         "fit_needs": needs,
