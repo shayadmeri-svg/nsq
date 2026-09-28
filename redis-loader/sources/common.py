@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 # FDA's accessdata.fda.gov sits behind a bot filter that redirects clients it
 # does not recognise as browsers to a 404 page, so send ordinary browser headers.
@@ -157,6 +157,27 @@ class Ctx:
 
 # --- HTTP ---------------------------------------------------------------------
 
+# Indian government sites (CDSCO, NCDC / IDSP) often refuse requests from cloud data centres abroad. INDIA_PROXY in the
+# server's .env (http://user:password@host:port — any HTTP(S) proxy with an Indian exit) routes only those hosts
+# through India; everything else goes direct.
+INDIA_HOSTS = (".gov.in", ".nic.in")
+
+
+def india_proxy_for(url: str) -> Optional[str]:
+    from urllib.parse import urlparse
+    proxy = os.environ.get("INDIA_PROXY", "").strip()
+    host = (urlparse(url).hostname or "").lower()
+    return proxy if proxy and host.endswith(INDIA_HOSTS) else None
+
+
+def open_url(req: Request, timeout: int):
+    """urlopen, through INDIA_PROXY for Indian government hosts when one is configured."""
+    proxy = india_proxy_for(req.full_url)
+    if proxy:
+        return build_opener(ProxyHandler({"http": proxy, "https": proxy})).open(req, timeout=timeout)
+    return urlopen(req, timeout=timeout)
+
+
 def _cache_file(raw_dir: Path) -> Path:
     return raw_dir / ".http-cache.json"
 
@@ -170,7 +191,7 @@ def http_get(url: str, *, params: Optional[dict] = None, timeout: int = 120, ret
         base = headers_for(url)
         req = Request(url, data=data, headers={**base, **({"Accept": accept} if accept != "*/*" else {}), **(headers or {})})
         try:
-            with urlopen(req, timeout=timeout) as resp:
+            with open_url(req, timeout) as resp:
                 return resp.read()
         except HTTPError as exc:
             if exc.code in (429, 500, 502, 503, 504) and attempt < retries:
@@ -219,7 +240,7 @@ def _download(ctx: Ctx, url: str, filename: str, base_headers: dict[str, str], t
             headers["If-Modified-Since"] = prev["last_modified"]
     req = Request(url, headers=headers)
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        with open_url(req, timeout) as resp:
             final = resp.geturl()
             if "apology" in (final or "") or "abuse-detection" in (final or ""):
                 raise NotFound(f"blocked: {url} redirected to {final}")

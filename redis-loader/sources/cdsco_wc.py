@@ -32,7 +32,7 @@ from typing import Any, Optional
 from urllib.parse import quote, urljoin
 from urllib.request import Request, urlopen
 
-from .common import Ctx, NotFound, data_dir, headers_for, http_get, read_normalized, write_normalized
+from .common import Ctx, NotFound, data_dir, headers_for, http_get, open_url, read_normalized, write_normalized
 
 PAGE = "https://cdsco.gov.in/opencms/opencms/en/International-cell1/"
 META = {
@@ -157,7 +157,7 @@ def fetch_pdf(url: str, dest: Path) -> int:
     req = Request(url, headers=headers_for(url) or {})
     tmp = dest.with_suffix(".part")
     n = 0
-    with urlopen(req, timeout=180) as resp, open(tmp, "wb") as f:
+    with open_url(req, 180) as resp, open(tmp, "wb") as f:
         first = True
         while True:
             chunk = resp.read(1 << 16)
@@ -224,9 +224,23 @@ def run(ctx: Ctx) -> int:
     want_pdfs = os.environ.get("NSQ_WC_PDFS", "1") != "0" and not ctx.from_file
     folder = docs_dir()
     if want_pdfs:
-        todo = [r for r in rows if not (folder / f"{r['id']}.pdf").exists()]
+        # newest letters first, so a partial run (time budget, --limit, disk) still brings the recent ones in
+        todo = sorted((r for r in rows if not (folder / f"{r['id']}.pdf").exists()), key=lambda r: r["date"] or "", reverse=True)
         if ctx.limit:
             todo = todo[: ctx.limit]
+        # keep at least WC_MIN_FREE_GB free on the server's disk (default 3): stop adding PDFs before that
+        import shutil
+        room = shutil.disk_usage(folder).free - float(os.environ.get("WC_MIN_FREE_GB", "3")) * 1024 ** 3
+        fit, used = [], 0.0
+        for r in todo:
+            need = (r["size_kb"] or 2048) * 1024
+            if used + need > room:
+                break
+            fit.append(r)
+            used += need
+        if len(fit) < len(todo):
+            ctx.log(f"  disk: room for {len(fit)} of {len(todo)} new PDFs (keeping {os.environ.get('WC_MIN_FREE_GB', '3')} GB free)")
+        todo = fit
         ctx.log(f"  {len(todo)} PDFs to download ({sum(r['size_kb'] or 0 for r in todo) / 1024:,.0f} MB listed)")
 
         def one(r: dict[str, Any]) -> tuple[str, Optional[str]]:

@@ -81,6 +81,8 @@ services:
       - FDA_DD_USER=${FDA_DD_USER:-}
       - FDA_DD_KEY=${FDA_DD_KEY:-}
       - COMTRADE_KEY=${COMTRADE_KEY:-}
+      - INDIA_PROXY=${INDIA_PROXY:-}
+      - WC_MIN_FREE_GB=${WC_MIN_FREE_GB:-3}
     volumes:
       # Seeds, snapshot and CSV uploads. Read-write: the snapshot and
       # refresh jobs write here.

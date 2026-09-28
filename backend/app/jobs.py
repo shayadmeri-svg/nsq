@@ -247,7 +247,7 @@ _SOURCE_JOB_DESC = {
     "pubchem": "SMILES, XLogP3 and experimental melting points per molecule for the lab (80 per run; each re-checked monthly).",
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
-    "cdsco_wc": "CDSCO International Cell: every Written Confirmation for API exports to the EU (~700 letters since 2013) with its PDF — Playground · Written confirmations. CDSCO refuses cloud servers: run just fetch-cdsco-wc on a laptop, then just push-wc (PDFs ~2.7 GB).",
+    "cdsco_wc": "CDSCO International Cell: every Written Confirmation for API exports to the EU (~700 letters since 2013) with its PDF — Playground · Written confirmations. Runs on the server: the index every time, then only letters not yet held, newest first, while the disk keeps WC_MIN_FREE_GB free (first full download ~1.5 GB, spread over runs by the time budget). If CDSCO refuses the server, set INDIA_PROXY in .env — or run just fetch-cdsco-wc on a laptop and just push-wc.",
     "eudragmdp": "Every EU GMP certificate and statement of non-compliance for Indian sites, with the approved operations (Union coded scope) — stated capabilities and EU status in the plant registry. Needs a network EudraGMDP answers (a laptop works).",
     "fda_inspections": "Every FDA drug / biologic inspection of an Indian site with its outcome (NAI / VAI / OAI) — US FDA status in the plant registry. Needs FDA_DD_USER / FDA_DD_KEY (Data Dashboard API access) in the server's .env, or upload the Inspections table exported to Excel.",
     "fda_dmf": "FDA's quarterly list of Drug Master Files: active Type II (drug substance) holders per API — 'Who can make it' → API filings. Upload the .xls if FDA blocks the server.",
@@ -264,11 +264,11 @@ _MOLECULE_SOURCES = {"orange_book", "purple_book", "ema", "clinical_trials"}
 # Sources the server cannot fetch (the publisher refuses cloud networks, needs a key, or the download is too big for
 # the server): run the recipe on a laptop, then push the file. The server's daily sync skips the heavy ones.
 LAPTOP: dict[str, dict[str, str]] = {
-    "cdsco_plants": {"fetch": "just fetch-plants", "push": "just push-plant-registry HOST KEY", "why": "CDSCO refuses cloud servers"},
+    "cdsco_plants": {"fetch": "just fetch-plants", "push": "just push-plant-registry HOST KEY", "why": "CDSCO sometimes refuses cloud servers (INDIA_PROXY in .env fixes it)"},
     "eudragmdp": {"fetch": "just fetch-eudragmdp", "push": "just push-plant-registry HOST KEY", "why": "EudraGMDP refuses cloud servers"},
     "fda_dmf": {"fetch": "just fetch-fda-dmf FILE", "push": "just push-plant-registry HOST KEY", "why": "FDA blocks automated downloads of the DMF list"},
     "edqm_cep": {"fetch": "just fetch-cep", "push": "just push-plant-registry HOST KEY", "why": "EDQM's file is easier from a browser session"},
-    "cdsco_wc": {"fetch": "just fetch-cdsco-wc", "push": "just push-wc HOST KEY", "why": "CDSCO refuses cloud servers; the letters are ~2.7 GB of PDFs"},
+    "cdsco_wc": {"fetch": "just fetch-cdsco-wc", "push": "just push-wc HOST KEY", "why": "CDSCO sometimes refuses cloud servers (INDIA_PROXY fixes it); first full download ~1.5 GB"},
     "idsp": {"fetch": "just fetch-idsp", "push": "just push-signals HOST KEY", "why": "Indian government sites (NCDC, which now hosts the IDSP reports) often refuse cloud servers"},
 }
 # When the server cannot download a source, the file can be fetched in a browser and uploaded (Data jobs → Upload data
@@ -300,25 +300,25 @@ MANUAL: dict[str, dict[str, Any]] = {
                      "links": [("CDSCO · WHO-GMP data (latest known)", "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/Final%20WHO%20GMP%20data%20for%20website%2011.09.2025.pdf"),
                                ("CDSCO · WHO-GMP CoPP list", "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/WHO%20GMP%20CoPP%20list24.pdf"),
                                ("SUGAM · approved manufacturing sites", "https://cdscoonline.gov.in/CDSCO/manuf_site")],
-                     "steps": ["CDSCO often refuses servers outside India: download the WHO-GMP PDF in a browser",
+                     "steps": ["Automatic: the newest WHO-GMP list is found on CDSCO's pages (state-wise summaries are passed over); SUGAM is read directly. If CDSCO refuses the server, set INDIA_PROXY in .env", "CDSCO often refuses servers outside India: download the WHO-GMP PDF in a browser",
                                "If the link is dead, search cdsco.gov.in for 'WHO GMP data for website'", "Upload the .pdf"]},
     "eudragmdp": {"file": "EudraGMDP GMP certificates / non-compliance for India", "accepts": "laptop run",
                   "links": [("EudraGMDP · GMP compliance search", "https://eudragmdp.ema.europa.eu/inspections/gmpc/searchGMPCompliance.do")],
-                  "steps": ["EudraGMDP has no export file: run `just fetch-eudragmdp` on a laptop", "then `just push-plant-registry HOST KEY`"]},
+                  "steps": ["Automatic when 'Include slow sources' is ticked (only new certificates are opened after the first run)", "EudraGMDP has no export file: run `just fetch-eudragmdp` on a laptop", "then `just push-plant-registry HOST KEY`"]},
     "fda_inspections": {"file": "FDA Data Dashboard inspections table (Country = India, Product Type = Drugs + Biologics), exported to Excel", "accepts": ".xlsx, .csv",
                         "links": [("FDA Data Dashboard · Inspections", "https://datadashboard.fda.gov/oii/cd/inspections.htm"),
                                   ("Or request an API key (FDA_DD_USER / FDA_DD_KEY)", "https://datadashboard.fda.gov/oii/api/index.htm")],
-                        "steps": ["Filter Country = India, Product Type = Drugs (and Biologics)", "Export → Excel", "Upload the .xlsx"]},
+                        "steps": ["Automatic once FDA_DD_USER and FDA_DD_KEY are in .env", "Filter Country = India, Product Type = Drugs (and Biologics)", "Export → Excel", "Upload the .xlsx"]},
     "fda_dmf": {"file": "FDA list of Drug Master Files (quarterly Excel)", "accepts": ".xls, .xlsx",
                 "links": [("FDA · List of Drug Master Files", "https://www.fda.gov/drugs/drug-master-files-dmfs/list-drug-master-files-dmfs")],
-                "steps": ["Download the current 'List of DMFs' Excel file", "Upload it unchanged"]},
+                "steps": ["Automatic: the current quarter's file is found on FDA's DMF page", "Download the current 'List of DMFs' Excel file", "Upload it unchanged"]},
     "edqm_cep": {"file": "EDQM CEP data file", "accepts": ".xlsx, .csv, .txt",
                  "links": [("EDQM · Certification database (CEP)", "https://extranet.edqm.eu/publications/recherches_CEP.shtml")],
-                 "steps": ["Open the CEP database page", "Click 'Download CEP data file'", "Upload the file"]},
+                 "steps": ["Automatic: EDQM's daily CEP export is downloaded", "Open the CEP database page", "Click 'Download CEP data file'", "Upload the file"]},
     "idsp": {"file": "IDSP / NCDC weekly outbreak reports (PDF, one per week)", "accepts": ".pdf",
              "links": [("NCDC · Weekly outbreaks", "https://ncdc.mohfw.gov.in/includes/WeeklyOutbreaks.php"),
                        ("IDSP · weekly reports (old site)", "https://idsp.mohfw.gov.in/index4.php?lang=1&level=0&linkid=406&lid=3689")],
-                 "steps": ["Download the latest weekly PDFs", "Upload each PDF and run the source with it (or `just fetch-idsp` + `just push-signals` for many weeks)"]},
+                 "steps": ["Automatic from the NCDC page; if it refuses the server, set INDIA_PROXY in .env", "Download the latest weekly PDFs", "Upload each PDF and run the source with it (or `just fetch-idsp` + `just push-signals` for many weeks)"]},
     "nfhs": {"file": "NFHS fact-sheet table (NFHS-5 districts CSV, or an NFHS-6 table)", "accepts": ".csv, .xlsx",
              "links": [("NFHS-5 fact sheets (CSV extracts)", "https://github.com/jvargh7/nfhs5_factsheets"),
                        ("IIPS · NFHS releases", "https://www.nfhsiips.in/nfhsuser/release-details.php")],
@@ -326,10 +326,10 @@ MANUAL: dict[str, dict[str, Any]] = {
     "comtrade": {"file": "UN Comtrade needs an API key rather than a file", "accepts": "COMTRADE_KEY in .env",
                  "links": [("UN Comtrade developer portal (free key)", "https://comtradedeveloper.un.org/"),
                            ("UN Comtrade Plus", "https://comtradeplus.un.org/")],
-                 "steps": ["Sign up, subscribe to 'comtrade - v1'", "Put the primary key in the server's .env as COMTRADE_KEY", "Restart with ./deploy.sh"]},
+                 "steps": ["Automatic; with COMTRADE_KEY in .env it uses the full API instead of the throttled preview", "Sign up, subscribe to 'comtrade - v1'", "Put the primary key in the server's .env as COMTRADE_KEY", "Restart with ./deploy.sh"]},
     "cdsco_wc": {"file": "Written Confirmation letters (~700 PDFs, ~2.7 GB)", "accepts": "laptop run",
                  "links": [("CDSCO · International Cell", "https://cdsco.gov.in/opencms/opencms/en/International-cell1/")],
-                 "steps": ["Run `just fetch-cdsco-wc` on a laptop in India", "then `just push-wc HOST KEY`"]},
+                 "steps": ["Automatic: Update everything reads the International Cell page and downloads only new letters, newest first (45 min per run, keeps WC_MIN_FREE_GB free). If CDSCO refuses the server, set INDIA_PROXY in .env", "Run `just fetch-cdsco-wc` on a laptop in India", "then `just push-wc HOST KEY`"]},
 }
 
 
@@ -514,7 +514,7 @@ def live_log(run_id: int) -> Optional[str]:
 def _redact(line: str) -> str:
     for secret in filter(None, [settings.upstash_url]):
         line = line.replace(secret, "rediss://***")
-    for name in ("FDA_DD_USER", "FDA_DD_KEY", "COMTRADE_KEY"):  # source keys never reach a job log
+    for name in ("FDA_DD_USER", "FDA_DD_KEY", "COMTRADE_KEY", "INDIA_PROXY"):  # source keys never reach a job log
         v = os.environ.get(name)
         if v and len(v) > 3:
             line = line.replace(v, "***")

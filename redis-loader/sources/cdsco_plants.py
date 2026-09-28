@@ -45,8 +45,16 @@ from urllib.parse import urlencode
 from .common import Ctx, Unreachable, http_get, read_normalized, write_normalized
 
 SUGAM_URL = "https://cdscoonline.gov.in/CDSCO/app_srv/cdsco/global/jsp/Approved_Manuf_Site.jsp"
+# Pages that link the current WHO-GMP list; any PDF under UploadIndustryCommon whose name mentions WHO / GMP / CoPP is
+# a candidate, newest (by the date in its name) first. The known URLs below are the fallback.
+WHO_GMP_PAGES = [
+    "https://cdsco.gov.in/opencms/opencms/en/Home/",
+    "https://cdsco.gov.in/opencms/opencms/en/Drugs/",
+    "https://cdsco.gov.in/opencms/opencms/en/Industry/",
+]
 WHO_GMP_URLS = [
     # newest first; the first one that downloads is used
+    "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/WHO%20GMP%20CoPP%20Complied%20up%20to%2031st%20Dec%202025%20data%20(1).pdf",
     "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/Final%20WHO%20GMP%20data%20for%20website%2011.09.2025.pdf",
     "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/WHO%20GMP%20CoPP%20list24.pdf",
     "https://cdsco.gov.in/opencms/resources/UploadCDSCOWeb/2018/UploadIndustryCommon/listwhogmp.pdf",
@@ -823,8 +831,41 @@ def write_csv(path: Path, plants: dict[str, dict[str, Any]]) -> None:
 
 # --------------------------------------------------------------------------- run
 
-def _download_pdf(ctx: Ctx) -> tuple[Path, str]:
-    urls = [u for u in ([ctx.options.get("who_url")] + WHO_GMP_URLS) if u]
+_MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
+def _name_date(url: str) -> str:
+    """A sortable date guessed from a file name: 11.09.2025 · 31st Dec 2025 · list24 · 2025. '' when none."""
+    from urllib.parse import unquote
+    n = unquote(url.rsplit("/", 1)[-1]).lower()
+    m = re.search(r"(\d{1,2})[._-](\d{1,2})[._-](20\d\d)", n)
+    if m:
+        return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    m = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*\s+(20\d\d)", n)
+    if m and m.group(2) in _MONTHS:
+        return f"{m.group(3)}-{_MONTHS[m.group(2)]:02d}-{int(m.group(1)):02d}"
+    m = re.search(r"(20\d\d)", n) or re.search(r"list(\d\d)\b", n)
+    return f"20{m.group(1)[-2:]}-12-31" if m else ""
+
+
+def who_gmp_candidates(ctx: Ctx) -> list[str]:
+    """Every WHO-GMP list URL worth trying, newest first: an explicit option, links found on CDSCO's pages, the known ones."""
+    from .common import page_links
+    found: list[str] = []
+    for page in WHO_GMP_PAGES:
+        found += page_links(page, r"UploadIndustryCommon/[^\"']*(who|gmp|copp)[^\"']*\.pdf")
+    seen, out = set(), []
+    for u in sorted(found, key=_name_date, reverse=True) + WHO_GMP_URLS:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    if found:
+        ctx.log(f"  WHO-GMP: {len(set(found))} candidate list(s) found on CDSCO's pages")
+    return [u for u in [ctx.options.get("who_url")] if u] + out
+
+
+def _download_pdf(ctx: Ctx, urls: Optional[list[str]] = None) -> tuple[Path, str]:
+    urls = urls if urls is not None else who_gmp_candidates(ctx)
     errors = []
     for u in urls:
         try:
@@ -865,19 +906,33 @@ def run(ctx: Ctx) -> int:
     units: list[dict[str, Any]] = []
     ref: Optional[str] = None
     pdf: Optional[Path] = None
+    prev_units = prev.get("who_units") or []
     if ctx.from_file:
         pdf, ref = ctx.from_file, ctx.from_file.name
-    else:
-        try:
-            pdf, ref = _download_pdf(ctx)
-        except Unreachable as exc:
-            if prev.get("who_units"):
-                units, ref = prev["who_units"], (prev.get("inputs") or {}).get("who_gmp")
-                ctx.log(f"  WHO-GMP list unreachable ({exc}); using the {len(units)} units from the previous output")
-            else:
-                raise
-    if pdf:
         units = extract_who_units(pdf, ctx.log)
+    else:
+        # newest candidate first; a PDF that is only a state-wise summary (few units) is passed over for the next one
+        want = max(200, len(prev_units) // 2)
+        todo = who_gmp_candidates(ctx)
+        while todo:
+            try:
+                pdf, ref = _download_pdf(ctx, todo)
+            except Unreachable as exc:
+                pdf = None
+                ctx.log(f"  WHO-GMP list unreachable ({exc})")
+                break
+            todo = todo[todo.index(ref) + 1:]
+            got = extract_who_units(pdf, ctx.log)
+            ctx.log(f"  WHO-GMP list {ref.rsplit('/', 1)[-1]}: {len(got)} certified units")
+            if len(got) >= want:
+                units = got
+                break
+            if len(got) > len(units):
+                units = got
+        if len(units) < want and prev_units:
+            units, ref = prev_units, (prev.get("inputs") or {}).get("who_gmp")
+            ctx.log(f"  using the {len(units)} units from the previous output")
+    if units:
         ctx.log(f"  WHO-GMP list: {len(units)} certified units")
     if not units and not sugam:
         raise Unreachable("neither CDSCO list could be read")

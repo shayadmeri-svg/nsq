@@ -96,7 +96,7 @@ def _jobs():
 # Time budget per source fetch inside Update everything (seconds). A source that runs out keeps its last file, so one
 # slow or hanging publisher can never hold the whole refresh hostage.
 SOURCE_BUDGET = 15 * 60
-_BUDGET = {"comtrade": 30 * 60, "clinical_trials": 20 * 60, "pubchem": 20 * 60, "ord": 3 * 3600, "eudragmdp": 3 * 3600}
+_BUDGET = {"cdsco_wc": 45 * 60, "comtrade": 30 * 60, "clinical_trials": 20 * 60, "pubchem": 20 * 60, "ord": 3 * 3600, "eudragmdp": 3 * 3600}
 # Scrapes that take hours from a server; off unless asked for (their last pushed file is used)
 _SLOW = {"eudragmdp": "EudraGMDP opens every certificate one page at a time — hours from a server"}
 
@@ -107,9 +107,7 @@ def _source_task(k: str, p: dict[str, Any]) -> Task:
     if k == "ord":
         reads = {"src:pubchem"}
     skip = None
-    if k == "cdsco_wc":
-        skip = "laptop only: ~2.7 GB of PDFs, CDSCO refuses cloud servers — `just fetch-cdsco-wc` then `just push-wc`"
-    elif k == "ord" and not p.get("include_ord"):
+    if k == "ord" and not p.get("include_ord"):
         skip = "off: 1.3 GB download and ~1 h scan — tick 'Include the Open Reaction Database'"
     elif k in _SLOW and not p.get("include_slow"):
         skip = (f"off: {_SLOW[k]}; the last pushed file is used — `just fetch-eudragmdp` + `just push-plant-registry` "

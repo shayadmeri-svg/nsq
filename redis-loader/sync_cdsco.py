@@ -113,7 +113,11 @@ def rows_from_cdsco(payload: dict) -> list[dict]:
 
 def fetch(url: str, timeout: int, data: bytes | None = None) -> dict:
     req = Request(url, data=data, headers={"User-Agent": "Mozilla/5.0 (nsq-platform sync)", "Accept": "application/json"})
-    with urlopen(req, timeout=timeout) as resp:
+    try:
+        from sources.common import open_url  # routes through INDIA_PROXY when one is configured
+    except ImportError:
+        open_url = lambda r, t: urlopen(r, timeout=t)  # noqa: E731
+    with open_url(req, timeout) as resp:
         return json.loads(resp.read().decode("utf-8", errors="replace"))
 
 

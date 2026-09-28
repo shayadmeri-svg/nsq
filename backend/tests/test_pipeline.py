@@ -16,7 +16,7 @@ def test_full_refresh_dag():
     assert before("plants-seed", "plants-user") and before("nsq-load", "geo")
     assert g["order"][-1] in ("serve-warm", "persist-upstash")
     t = {x["id"]: x for x in g["tasks"]}
-    assert t["src-cdsco-wc"]["skip"] and t["src-ord"]["skip"]
+    assert not t["src-cdsco-wc"]["skip"] and t["src-ord"]["skip"] and t["src-eudragmdp"]["skip"]
     assert not pipeline.graph({"include_ord": True})["tasks"][[x["id"] for x in g["tasks"]].index("src-ord")]["skip"]
     down = pipeline.descendants(g, "nsq-load")
     assert {"nsq-frame", "universe-build", "load-cdmo", "serve-warm"} <= down and "src-orange-book" not in down
