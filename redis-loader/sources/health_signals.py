@@ -57,7 +57,96 @@ INDICATORS: dict[str, tuple[str, str, str]] = {
     "diarrhoea_children": ("Children <5: diarrhoea in the last 2 weeks", "Infections", r"prevalence of diarrh"),
     "ari_children": ("Children <5: acute respiratory infection symptoms", "Infections", r"prevalence of symptoms of acute respiratory|^prevalence of ari"),
     "tobacco_men": ("Men 15+: use any tobacco", "Risk factors", r"(?<!wo)men age 15 years and above who use any kind of tobacco"),
+    # --- more from the same fact sheets (NFHS-5 district tables carry ~100 indicators; these are the ones that move
+    #     medicine demand, or say whether people can reach treatment)
+    "sugarvh_women": ("Women 15+: very high blood sugar (>160 mg/dl)", "Diabetes", r"women.*blood sugar level.{0,5}very high"),
+    "sugarvh_men": ("Men 15+: very high blood sugar (>160 mg/dl)", "Diabetes", r"(?<!wo)men.*blood sugar level.{0,5}very high"),
+    "bpsev_women": ("Women 15+: moderately / severely raised blood pressure", "Hypertension", r"women.*moderately or severely elevated blood pressure"),
+    "bpsev_men": ("Men 15+: moderately / severely raised blood pressure", "Hypertension", r"(?<!wo)men.*moderately or severely elevated blood pressure"),
+    "waist_women": ("Women: high-risk waist-to-hip ratio", "Obesity", r"^women who have high risk waist.to.hip"),
+    "overweight_children": ("Children <5: overweight", "Obesity", r"children under 5 years who are overweight"),
+    "anaemia_pregnant": ("Pregnant women: anaemic", "Anaemia", r"^pregnant women age 15.?49 years who are anaemic"),
+    "anaemia_teen": ("Girls 15–19: anaemic", "Anaemia", r"^all women age 15.?19 years who are anaemic"),
+    "ifa_100": ("Mothers who took iron-folic acid ≥100 days in pregnancy", "Anaemia", r"iron folic acid for 100 days"),
+    "ifa_180": ("Mothers who took iron-folic acid ≥180 days in pregnancy", "Anaemia", r"iron folic acid for 180 days"),
+    "stunted": ("Children <5: stunted", "Child nutrition", r"children under 5 years who are stunted"),
+    "wasted": ("Children <5: wasted", "Child nutrition", r"children under 5 years who are wasted"),
+    "wasted_severe": ("Children <5: severely wasted", "Child nutrition", r"children under 5 years who are severely wasted"),
+    "underweight": ("Children <5: underweight", "Child nutrition", r"children under 5 years who are underweight"),
+    "thin_women": ("Women: underweight (BMI < 18.5)", "Child nutrition", r"women whose body mass index.*below normal"),
+    "ors_given": ("Children with diarrhoea given ORS", "Infections", r"diarrh.*received oral rehydration"),
+    "zinc_given": ("Children with diarrhoea given zinc", "Infections", r"diarrh.*received zinc"),
+    "careseek_ari": ("Children with fever / ARI taken to a health facility", "Infections", r"fever or symptoms of ari.*taken to a health facility"),
+    "vacc_full": ("Children 12–23 months fully vaccinated", "Vaccines", r"fully vaccinated based on information from either"),
+    "vacc_rota": ("Children 12–23 months: 3 doses of rotavirus vaccine", "Vaccines", r"3 doses of rotavirus"),
+    "vacc_hepb": ("Children 12–23 months: 3 doses of penta / hepatitis B", "Vaccines", r"3 doses of penta or hepatitis b"),
+    "vacc_mcv2": ("Children 24–35 months: second measles dose", "Vaccines", r"second dose of measles"),
+    "vit_a": ("Children 9–35 months: vitamin A dose in last 6 months", "Vaccines", r"vitamin a dose"),
+    "csection": ("Births by caesarean section", "Maternity", r"^births delivered by caesarean section"),
+    "csection_private": ("Births in private facilities by caesarean section", "Maternity", r"births in a private health facility.*caesarean"),
+    "inst_births": ("Institutional births", "Maternity", r"^institutional births \("),
+    "anc4": ("Mothers with at least 4 antenatal visits", "Maternity", r"at least 4 antenatal care visits"),
+    "fp_modern": ("Married women using a modern contraceptive", "Contraception", r"^any modern method"),
+    "fp_pill": ("Married women using the pill", "Contraception", r"^pill\b"),
+    "fp_injectable": ("Married women using injectables", "Contraception", r"^injectables"),
+    "fp_condom": ("Couples using condoms", "Contraception", r"^condom"),
+    "fp_unmet": ("Married women with unmet need for family planning", "Contraception", r"^total unmet need"),
+    "insurance": ("Households with health insurance", "Access to care", r"covered under a health insurance"),
+    "oop_delivery": ("Out-of-pocket spend per delivery, public facility (Rs.)", "Access to care", r"out.of.pocket expenditure per delivery"),
+    "screen_cervical": ("Women 30–49: ever screened for cervical cancer", "Cancer screening", r"screening test for cervical cancer"),
+    "screen_breast": ("Women 30–49: ever had a breast examination", "Cancer screening", r"breast examination for breast cancer"),
+    "screen_oral": ("Women 30–49: ever had an oral cavity examination", "Cancer screening", r"oral cavity examination"),
+    "tobacco_women": ("Women 15+: use any tobacco", "Risk factors", r"^women age 15 years and above who use any kind of tobacco"),
+    "alcohol_men": ("Men 15+: drink alcohol", "Risk factors", r"(?<!wo)men age 15 years and above who consume alcohol"),
+    "alcohol_women": ("Women 15+: drink alcohol", "Risk factors", r"^women age 15 years and above who consume alcohol"),
+    "clean_fuel": ("Households cooking with clean fuel", "Household", r"clean fuel for cooking"),
+    "sanitation": ("Population with improved sanitation", "Household", r"improved sanitation facility"),
+    "water": ("Population with an improved drinking-water source", "Household", r"improved drinking.water source"),
 }
+# unit, which direction is better ("lower" | "higher" | "" when neither), and the medicines the indicator moves —
+# the reason a pharma company looks at it
+INDICATOR_META: dict[str, dict[str, str]] = {
+    "sugar_women": {"drives": "metformin, sulfonylureas, gliptins, SGLT2 inhibitors, insulin"},
+    "sugar_men": {"drives": "metformin, sulfonylureas, gliptins, SGLT2 inhibitors, insulin"},
+    "sugarvh_women": {"drives": "insulin, combination oral therapy"}, "sugarvh_men": {"drives": "insulin, combination oral therapy"},
+    "bp_women": {"drives": "ARBs (telmisartan), amlodipine, beta-blockers, diuretics"},
+    "bp_men": {"drives": "ARBs (telmisartan), amlodipine, beta-blockers, diuretics"},
+    "bpsev_women": {"drives": "two- and three-drug antihypertensive combinations"}, "bpsev_men": {"drives": "two- and three-drug antihypertensive combinations"},
+    "obese_women": {"drives": "statins, antidiabetics, antihypertensives"}, "obese_men": {"drives": "statins, antidiabetics, antihypertensives"},
+    "waist_women": {"drives": "cardiometabolic medicines"}, "overweight_children": {"drives": ""},
+    "anaemia_women": {"drives": "iron-folic acid, iron sucrose, vitamin B12"}, "anaemia_children": {"drives": "iron syrup, albendazole (deworming)"},
+    "anaemia_pregnant": {"drives": "IFA tablets, IV iron (iron sucrose, ferric carboxymaltose)"}, "anaemia_teen": {"drives": "weekly IFA (Anaemia Mukt Bharat), albendazole"},
+    "ifa_100": {"better": "higher", "drives": "iron-folic acid tablets"}, "ifa_180": {"better": "higher", "drives": "iron-folic acid tablets"},
+    "stunted": {"drives": "micronutrients, deworming"}, "wasted": {"drives": "therapeutic foods, antibiotics for SAM"},
+    "wasted_severe": {"drives": "therapeutic foods, amoxicillin for SAM"}, "underweight": {"drives": "micronutrients"},
+    "thin_women": {"drives": "nutrition supplements"},
+    "diarrhoea_children": {"drives": "ORS, zinc, antibiotics"}, "ari_children": {"drives": "amoxicillin, azithromycin, paracetamol, salbutamol"},
+    "ors_given": {"better": "higher", "drives": "ORS"}, "zinc_given": {"better": "higher", "drives": "zinc dispersible tablets"},
+    "careseek_ari": {"better": "higher", "drives": "antibiotics, antipyretics"},
+    "vacc_full": {"better": "higher", "drives": "childhood vaccines"}, "vacc_rota": {"better": "higher", "drives": "rotavirus vaccine"},
+    "vacc_hepb": {"better": "higher", "drives": "pentavalent / hepatitis B vaccine"}, "vacc_mcv2": {"better": "higher", "drives": "measles-rubella vaccine"},
+    "vit_a": {"better": "higher", "drives": "vitamin A solution"},
+    "csection": {"better": "", "drives": "anaesthetics, antibiotics, oxytocics, analgesics"},
+    "csection_private": {"better": "", "drives": "anaesthetics, antibiotics, oxytocics, analgesics"},
+    "inst_births": {"better": "higher", "drives": "oxytocin, misoprostol, magnesium sulphate"}, "anc4": {"better": "higher", "drives": "IFA, calcium, TT vaccine"},
+    "fp_modern": {"better": "higher", "drives": "contraceptives"}, "fp_pill": {"better": "", "drives": "oral contraceptive pills"},
+    "fp_injectable": {"better": "", "drives": "injectable contraceptives (DMPA)"}, "fp_condom": {"better": "", "drives": "condoms"},
+    "fp_unmet": {"drives": "contraceptives (unserved demand)"},
+    "insurance": {"better": "higher", "drives": "ability to pay for treatment"}, "oop_delivery": {"unit": "Rs.", "drives": "what families pay themselves"},
+    "screen_cervical": {"better": "higher", "drives": "HPV testing, oncology referrals"}, "screen_breast": {"better": "higher", "drives": "oncology referrals"},
+    "screen_oral": {"better": "higher", "drives": "oncology referrals"},
+    "tobacco_men": {"drives": "cessation aids; oral, lung and cardiac disease later"}, "tobacco_women": {"drives": "cessation aids; oral, lung and cardiac disease later"},
+    "alcohol_men": {"drives": "liver disease, de-addiction medicines"}, "alcohol_women": {"drives": "liver disease, de-addiction medicines"},
+    "clean_fuel": {"better": "higher", "drives": "respiratory disease (lower when higher)"},
+    "sanitation": {"better": "higher", "drives": "diarrhoeal disease (lower when higher)"},
+    "water": {"better": "higher", "drives": "diarrhoeal disease (lower when higher)"},
+}
+
+
+def indicator_catalog() -> dict[str, dict[str, str]]:
+    return {k: {"label": v[0], "group": v[1], "unit": INDICATOR_META.get(k, {}).get("unit", "%"),
+                "better": INDICATOR_META.get(k, {}).get("better", "lower"), "drives": INDICATOR_META.get(k, {}).get("drives", "")}
+            for k, v in INDICATORS.items()}
 _ROUND = re.compile(r"nfhs[\s_-]*([456])", re.I)
 
 
@@ -112,13 +201,14 @@ def canon_state(name: Any) -> Optional[str]:
 
 # The fact sheets list women's rows before men's under section headings, so the row text often lacks
 # "women" / "men": the n-th occurrence of these indicators within one geography is women (1st) or men (2nd).
-_PAIRED = {"sugar": r"blood sugar.*(taking medicine|or taking)", "bp": r"elevated blood pressure.*(taking medicine|or taking)"}
+_PAIRED = {"sugar": r"blood sugar.*(taking medicine|or taking)", "bp": r"^(\d+\.\s*)?elevated blood pressure.*(taking medicine|or taking)",
+           "sugarvh": r"blood sugar level.{0,5}very high", "bpsev": r"moderately or severely elevated blood pressure"}
 
 
 def _key_in_context(text: str, seen: dict[str, int]) -> Optional[str]:
     t = re.sub(r"\s+", " ", (text or "").lower())
     key = _indicator_key(t)
-    if key and not key.startswith(("sugar", "bp")):
+    if key and not key.startswith(("sugar", "bp")):  # sugar*/bp*/sugarvh*/bpsev* are paired women/men rows
         return key
     for base, rx in _PAIRED.items():
         if re.search(rx, t):
@@ -252,7 +342,7 @@ def run_nfhs(ctx: Ctx) -> int:
             uniq.append(r)
     rounds = sorted({r["round"] for r in uniq})
     ctx.log(f"  {len(uniq):,} values · rounds {rounds} · {len({(r.get('state'), r.get('district')) for r in uniq if r['level'] == 'district'}):,} districts")
-    write_normalized(ctx, NFHS, uniq, len(uniq), extra={"indicators": {k: {"label": v[0], "group": v[1]} for k, v in INDICATORS.items()},
+    write_normalized(ctx, NFHS, uniq, len(uniq), extra={"indicators": indicator_catalog(),
                                                           "rounds": rounds})
     return len(uniq)
 

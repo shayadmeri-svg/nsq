@@ -20,12 +20,21 @@ export function shade(v: number, max: number, stops = STOPS) {
 }
 const HEAT = ["#fff7ed", "#fed7aa", "#fdba74", "#fb923c", "#ea580c", "#9a3412"];
 
-export function Legend({ max, label, stops = STOPS }: { max: number; label: string; stops?: string[] }) {
+// linear shade between min and max (percentages); `invert` makes the LOW end dark (when higher is better)
+export function shadeLinear(v: number | null | undefined, min: number, max: number, invert = false, stops = STOPS) {
+  if (v == null || !Number.isFinite(v)) return "#f1f5f9";
+  let t = max > min ? (v - min) / (max - min) : 1;
+  if (invert) t = 1 - t;
+  const i = Math.min(stops.length - 2, Math.max(0, Math.floor(t * (stops.length - 1))));
+  return stops[i + 1];
+}
+
+export function Legend({ max, label, stops = STOPS, min = 0, note }: { max: number; label: string; stops?: string[]; min?: number; note?: string }) {
   return (
     <div className="flex items-center gap-2 text-[11px] text-ink-muted">
       <span>{label}</span>
       <span className="flex h-2.5 w-32 overflow-hidden rounded-full">{stops.slice(1).map((c) => <span key={c} className="flex-1" style={{ background: c }} />)}</span>
-      <span>0 – {max.toLocaleString("en-IN")}</span>
+      <span>{min.toLocaleString("en-IN")} – {max.toLocaleString("en-IN")}{note ? ` · ${note}` : ""}</span>
     </div>
   );
 }
@@ -38,9 +47,10 @@ const STATE_ALIASES: Record<string, string> = {
 };
 const normState = (s: string) => (STATE_ALIASES[s] ?? s).toLowerCase().replace(/&/g, "and").replace(/[^a-z]/g, "");
 
-export function IndiaMap({ geo, values, selected, onPick, height = 460, metricLabel = "alerts" }: {
+export function IndiaMap({ geo, values, selected, onPick, height = 460, metricLabel = "alerts", scale = "log", invert = false }: {
   geo: FeatureCollection<Geometry, { name: string }>; values: { name: string; count: number; [k: string]: any }[];
   selected?: string[]; onPick?: (state: string) => void; height?: number; metricLabel?: string;
+  scale?: "log" | "linear"; invert?: boolean;  // linear min–max for rates / percentages; invert = low values dark
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(520);
@@ -53,7 +63,9 @@ export function IndiaMap({ geo, values, selected, onPick, height = 460, metricLa
     return () => ro.disconnect();
   }, []);
   const byName = useMemo(() => Object.fromEntries(values.map((v) => [normState(v.name), v])), [values]);
-  const max = Math.max(1, ...values.filter((v) => v.name !== "Unknown").map((v) => v.count));
+  const counts = values.filter((v) => v.name !== "Unknown").map((v) => v.count);
+  const max = scale === "linear" ? Math.max(...counts, 0) : Math.max(1, ...counts);
+  const min = scale === "linear" && counts.length ? Math.min(...counts) : 0;
   const path = useMemo(() => geoPath(geoMercator().fitSize([w, height], geo as any)), [w, height, geo]);
   const unmapped = values.filter((v) => v.name !== "Unknown" && !geo.features.some((f) => normState(f.properties.name) === normState(v.name)));
   const raf = useRef<number>();
@@ -77,7 +89,7 @@ export function IndiaMap({ geo, values, selected, onPick, height = 460, metricLa
           const sel = selected?.some((s) => normState(s) === normState(f.properties.name));
           return (
             <motion.path key={f.properties.name + i} data-name={f.properties.name} d={path(f as any) ?? ""} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.01 }}
-              fill={shade(row?.count ?? 0, max)} stroke={sel ? "#0f172a" : "#fff"} strokeWidth={sel ? 1.6 : 0.6}
+              fill={scale === "linear" ? shadeLinear(row?.count, min, max, invert) : shade(row?.count ?? 0, max)} stroke={sel ? "#0f172a" : "#fff"} strokeWidth={sel ? 1.6 : 0.6}
               className={cn("transition-[fill]", onPick && row && "cursor-pointer hover:brightness-95")}
               onClick={() => row && onPick?.(row.name)} />
           );
@@ -89,7 +101,7 @@ export function IndiaMap({ geo, values, selected, onPick, height = 460, metricLa
           {hover.row ? <div>{hover.row.count.toLocaleString("en-IN")} {metricLabel}{hover.row.manufacturers != null && ` · ${hover.row.manufacturers} makers`}{hover.row.dissolution_pct != null && ` · ${hover.row.dissolution_pct}% dissolution`}</div> : <div className="text-slate-400">no alerts</div>}
         </div>
       )}
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><Legend max={max} label={metricLabel} />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><Legend max={max} min={min} label={metricLabel} note={scale === "linear" ? (invert ? "darker = lower" : "darker = higher") : undefined} />
         {unmapped.length > 0 && <span className="text-[10.5px] text-ink-faint">Not on map: {unmapped.map((u) => `${u.name} (${u.count})`).join(", ")}</span>}</div>
     </div>
   );

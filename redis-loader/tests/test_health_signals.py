@@ -87,6 +87,7 @@ def test_nfhs_factsheet_extract_layout(tmp_path):
     rows = hs.parse_nfhs(f)
     got = {(r["district"], r["ind"], r["round"]): r["value"] for r in rows}
     assert got == {("Pune", "anaemia_women", "NFHS-5"): 51.9, ("Pune", "anaemia_women", "NFHS-4"): 50.0,
+                   ("Pune", "anaemia_teen", "NFHS-5"): 55.1, ("Pune", "anaemia_teen", "NFHS-4"): 54.0,
                    ("Pune", "sugar_women", "NFHS-5"): 12.3, ("Pune", "sugar_men", "NFHS-5"): 15.1,
                    ("New Delhi", "sugar_women", "NFHS-5"): 20.0}
     assert {r["state"] for r in rows} == {"Maharashtra", "Delhi"}
@@ -129,3 +130,19 @@ def test_idsp_links_from_ncdc_page(tmp_path, monkeypatch):
     links = hs.idsp_pdf_links(Ctx(name="idsp"))
     assert [lab for _u, lab in links] == ["2026-W31", "2026-W01", "2025-W52"]
     assert links[0][0] == "https://ncdc.mohfw.gov.in/uploads/weekly_outbreaks/2026/week31_1790077762.pdf"
+
+
+def test_nfhs_extended_indicators():
+    k = hs._indicator_key
+    assert k("49. Children age 12-23 months fully vaccinated based on information from either vaccination card or mother's recall11 (%)") == "vacc_full"
+    assert k("39. Average out-of-pocket expenditure per delivery in a public health facility (Rs.)") == "oop_delivery"
+    assert k("83. Pregnant women age 15-49 years who are anaemic (<11.0 g/dl)22 (%)") == "anaemia_pregnant"
+    assert k("75. Children under 5 years who are severely wasted (weight-for-height)19 (%)") == "wasted_severe"
+    assert k("74. Children under 5 years who are wasted (weight-for-height)18 (%)") == "wasted"
+    assert k("42. Institutional births (%)") == "inst_births" and k("43. Institutional births in public facility (%)") is None
+    # paired women / men rows with no sex in the text: 1st = women, 2nd = men, per geography
+    seen: dict = {}
+    t = "90. Blood sugar level - very high (>160 mg/dl)23 (%)"
+    assert hs._key_in_context(t, seen) == "sugarvh_women" and hs._key_in_context(t, seen) == "sugarvh_men"
+    cat = hs.indicator_catalog()
+    assert cat["oop_delivery"]["unit"] == "Rs." and cat["vacc_full"]["better"] == "higher" and cat["sugar_women"]["drives"]

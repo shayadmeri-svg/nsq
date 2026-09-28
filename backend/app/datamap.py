@@ -79,7 +79,7 @@ NODES: list[dict[str, Any]] = [
        "Reactions from patents and papers (Parquet on Hugging Face). Scanned for reactions that make tracked molecules: temperatures, pressure, solvents, catalysts, hazardous reagents.",
        keys=["huggingface.co/datasets/open-reaction-database/ord-data"]),
     _n("ext_health", "origin", "external", "Health signals", "NFHS fact sheets · IDSP outbreaks",
-       "NFHS district / state indicators (high blood sugar, raised blood pressure, obesity, anaemia, child diarrhoea / ARI) across survey rounds, and IDSP weekly outbreak reports (PDF tables).",
+       "54 NFHS district / state indicators across survey rounds (diabetes, blood pressure, obesity, anaemia, child nutrition, vaccination, maternity, contraception, insurance / out-of-pocket spend, cancer screening, risk factors), and IDSP weekly outbreak reports (PDF tables).",
        keys=["data.gov.in NFHS-5 districts factsheet", "nfhsiips.in NFHS-6 compendiums", "idsp.mohfw.gov.in weekly outbreaks"]),
     _n("ext_cdsco_wc", "origin", "external", "CDSCO Written Confirmations", "International Cell · API exports to the EU",
        "Every Written Confirmation CDSCO has issued since 2013 (EU Directive 2011/62/EU): WC number, company, products, release date and the letter as a PDF. Refuses cloud servers — fetched on a laptop.",

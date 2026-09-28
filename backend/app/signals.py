@@ -70,16 +70,24 @@ def nfhs(ind: str = "sugar_women", rnd: str = "", state: str = "") -> dict[str, 
     dist = [{"state": st, "district": di, "value": v, "prev": prev_d.get((st, di)),
              "change": round(v - prev_d[(st, di)], 1) if (st, di) in prev_d else None}
             for (st, di), v in cur_d.items() if not state or st == state]
-    dist.sort(key=lambda x: -x["value"])
+    better = (inds.get(ind) or {}).get("better", "lower")
+    dist.sort(key=lambda x: x["value"] if better == "higher" else -x["value"])  # worst first
     states = [{"name": st, "count": v, "prev": prev_s.get((st, "")), "change": round(v - prev_s[(st, "")], 1) if (st, "") in prev_s else None,
                "from_districts": st in derived} for (st, _), v in cur_s.items()]
     states.sort(key=lambda x: -x["count"])
-    risers = sorted([x for x in dist if x["change"] is not None], key=lambda x: -x["change"])[:10]
+    meta = inds.get(ind, {})
+    # "worsening" follows the indicator's direction: a rise in diabetes is bad, a rise in vaccination is good
+    sign = -1 if better == "higher" else 1
+    moved = [x for x in dist if x["change"] is not None]
+    risers = (sorted([x for x in moved if sign * x["change"] > 0], key=lambda x: -sign * x["change"])[:10] if better
+              else sorted(moved, key=lambda x: -abs(x["change"]))[:10])
     return {"available": True, "indicator": ind, "round": rnd, "previous_round": prev, "rounds": rounds,
-            "indicators": [{"key": k, **inds.get(k, {"label": k, "group": ""}), "values": have.get(k, 0)} for k in inds if have.get(k)],
+            "unit": meta.get("unit", "%"), "better": better, "drives": meta.get("drives", ""),
+            "indicators": [{"key": k, **{"label": k, "group": "", "unit": "%", "better": "lower", "drives": ""}, **inds.get(k, {}), "values": have.get(k, 0)}
+                           for k in inds if have.get(k)],
             "india": india, "states": states, "districts": dist[:300], "districts_total": len(dist), "risers": risers,
             "meta": _meta(d),
-            "note": "NFHS fact-sheet percentages (survey estimates). Values in brackets in the fact sheets rest on 25–49 cases; "
+            "note": "NFHS fact-sheet values (survey estimates). Values in brackets in the fact sheets rest on 25–49 cases; "
                     "state values marked 'from districts' are unweighted district means where no state row was loaded."}
 
 

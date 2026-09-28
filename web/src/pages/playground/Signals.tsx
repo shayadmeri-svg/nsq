@@ -19,13 +19,16 @@ function Missing({ what, how }: { what: string; how: string }) {
   );
 }
 
-function Change({ v, invert = false }: { v: number | null | undefined; invert?: boolean }) {
+function Change({ v, invert = false, rupees = false }: { v: number | null | undefined; invert?: boolean; rupees?: boolean }) {
   if (v == null) return <span className="text-ink-faint">—</span>;
   const bad = invert ? v < 0 : v > 0;
-  return <span className={cn("tabular-nums", v === 0 ? "text-ink-muted" : bad ? "text-rose-700" : "text-emerald-700")}>{v > 0 ? "+" : ""}{v.toFixed(1)}</span>;
+  return <span className={cn("tabular-nums", v === 0 ? "text-ink-muted" : bad ? "text-rose-700" : "text-emerald-700")}>{v > 0 ? "+" : v < 0 ? "−" : ""}{rupees ? `₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}` : Math.abs(v).toFixed(1)}</span>;
 }
 
 // ------------------------------------------------------------------------------------ NFHS
+
+// value with the indicator's unit: "13.5%" or "₹2,916"
+const fmtVal = (d: any, v: number | null | undefined) => v == null ? "—" : d?.unit === "Rs." ? `₹${Math.round(v).toLocaleString("en-IN")}` : `${v}%`;
 
 function DistrictTable({ d, rows }: { d: any; rows: any[] }) {
   return (
@@ -33,7 +36,7 @@ function DistrictTable({ d, rows }: { d: any; rows: any[] }) {
       <thead className="sticky top-0 bg-white"><tr className="text-left text-ink-muted"><th className="py-1.5 font-medium">District</th><th className="font-medium">State</th><th className="text-right font-medium">{d.round}</th>{d.previous_round && <th className="text-right font-medium">vs {d.previous_round}</th>}</tr></thead>
       <tbody>{rows.map((r: any) => (
         <tr key={r.state + r.district} className="border-t border-line"><td className="py-1.5">{r.district}</td><td className="text-ink-muted">{r.state}</td>
-          <td className="text-right font-semibold tabular-nums">{r.value}%</td>{d.previous_round && <td className="text-right"><Change v={r.change} /></td>}</tr>
+          <td className="text-right font-semibold tabular-nums">{fmtVal(d, r.value)}</td>{d.previous_round && <td className="text-right">{d.better ? <Change v={r.change} invert={d.better === "higher"} rupees={d.unit === "Rs."} /> : <span className="tabular-nums text-ink-muted">{r.change == null ? "—" : `${r.change > 0 ? "+" : ""}${r.change.toFixed(1)}`}</span>}</td>}</tr>
       ))}</tbody>
     </table>
   );
@@ -59,30 +62,33 @@ function Burden({ geo }: { geo: any }) {
     <ExpandedProvider sections={burdenSections} active={openAll} onActive={setOpenAll} title="Disease burden">
     <Card>
       <CardHeader icon={<HeartPulse size={16} />} title="Disease burden by district — NFHS"
-        subtitle={d?.available ? `${label} · ${d.round}${d.previous_round ? ` vs ${d.previous_round}` : ""}${d.india != null ? ` · India ${d.india}%` : ""}` : "National Family Health Survey fact sheets"} />
+        subtitle={d?.available ? `${label} · ${d.round}${d.previous_round ? ` vs ${d.previous_round}` : ""}${d.india != null ? ` · India ${fmtVal(d, d.india)}` : ""}` : "National Family Health Survey fact sheets"} />
       {q.error && <div className="p-5"><ErrorNote error={q.error} /></div>}
       {!d ? <div className="p-5"><Skeleton className="h-72" /></div> : !d.available ? (
         <Missing what="NFHS" how="Run `just fetch-nfhs` (NFHS-5 fact sheets with NFHS-4 alongside; add NFHS-6 with `just fetch-nfhs <file>`), then `just push-signals`." />
       ) : (
         <div className="p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <select className="input h-9 w-80" value={d.indicator} onChange={(e) => { setInd(e.target.value); setState(""); }}>
+            <select className="input h-9 w-96 max-w-full" value={d.indicator} onChange={(e) => { setInd(e.target.value); setState(""); }}>
               {Object.entries(groups).map(([g, items]) => <optgroup key={g} label={g}>{items.map((i: any) => <option key={i.key} value={i.key}>{i.label}</option>)}</optgroup>)}
             </select>
             {d.rounds.length > 1 && <Segmented value={d.round} onChange={(v: string) => setRnd(v)} options={d.rounds.map((r: string) => ({ value: r, label: r }))} />}
             {state && <button className="text-xs text-brand-700 hover:underline" onClick={() => setState("")}>{state} × — all India</button>}
+            <span className="ml-auto text-[11px] text-ink-faint">{d.indicators.length} indicators</span>
           </div>
+          {d.drives && <div className="-mt-2 mb-4 text-xs text-ink-muted"><span className="font-semibold text-ink-soft">Pharma link:</span> {d.drives}
+            {d.better === "higher" && <span className="ml-2 text-ink-faint">· higher is better — worst districts listed first</span>}</div>}
           <div className="grid gap-5 xl:grid-cols-[1.1fr_1fr]">
             <div>
-              {geo ? <IndiaMap geo={geo} values={d.states} metricLabel="%" selected={state ? [state] : []} onPick={(s) => setState(s)} height={420} /> : <Skeleton className="h-96" />}
+              {geo ? <IndiaMap geo={geo} values={d.states} metricLabel={d.unit === "Rs." ? "Rs." : "%"} scale="linear" invert={d.better === "higher"} selected={state ? [state] : []} onPick={(s) => setState(s)} height={420} /> : <Skeleton className="h-96" />}
               {d.states.some((s: any) => s.from_districts) && <p className="mt-1 text-[11px] text-ink-faint">Some state values are unweighted means of their districts (no state row loaded).</p>}
             </div>
             <div>
-              <div className="label mb-1.5">Highest districts{state ? ` in ${state}` : ""} <span className="font-normal normal-case text-ink-faint">· {nf(d.districts_total)} districts</span></div>
+              <div className="label mb-1.5">{d.better === "higher" ? "Lowest" : "Highest"} districts{state ? ` in ${state}` : ""} <span className="font-normal normal-case text-ink-faint">· {nf(d.districts_total)} districts</span></div>
               <DistrictTable d={d} rows={d.districts.slice(0, 12)} />
               {d.districts_total > 12 && <button onClick={() => setOpenAll("districts")} className="mt-2 text-xs font-medium text-brand-700 hover:underline">All {nf(d.districts_total)} districts{state ? ` in ${state}` : ""} ↗</button>}
-              {d.risers?.length > 0 && <div className="mt-3"><div className="label mb-1">Biggest rises since {d.previous_round}</div>
-                <div className="flex flex-wrap gap-1">{d.risers.map((r: any) => <Badge key={r.state + r.district} tone="rose">{r.district} +{r.change}</Badge>)}</div></div>}
+              {d.risers?.length > 0 && <div className="mt-3"><div className="label mb-1">{d.better === "higher" ? "Biggest falls" : d.better ? "Biggest rises" : "Biggest changes"} since {d.previous_round}</div>
+                <div className="flex flex-wrap gap-1">{d.risers.map((r: any) => <Badge key={r.state + r.district} tone={d.better ? "rose" : "slate"}>{r.district} {r.change > 0 ? "+" : ""}{d.unit === "Rs." ? `₹${Math.round(r.change).toLocaleString("en-IN")}` : r.change}</Badge>)}</div></div>}
             </div>
           </div>
           <p className="mt-3 text-[11px] text-ink-faint">{d.note}</p>
