@@ -1,12 +1,12 @@
 // "Update everything": the one refresh button. Draws the DAG the server derives from the data map (who reads what the
 // others write), colours each task from the latest run's log, and highlights a task's upstream and downstream on click.
-import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, CheckCircle2, Info, CircleDashed, Database, Loader2, Lock, Map as MapIcon, Play, RotateCw, TerminalSquare, TriangleAlert, XCircle } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, CheckCircle2, Info, CircleDashed, Database, Loader2, Lock, Map as MapIcon, Play, RotateCw, Square, TerminalSquare, TriangleAlert, XCircle } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Button, Card } from "../../components/ui";
 import { ManualFileButton, STATUS, type Manual } from "../../components/jobs";
-import { api } from "../../lib/api";
+import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtDateTime, timeAgo } from "../../lib/format";
 
@@ -87,6 +87,7 @@ export function FullRefresh({ onRun, onLog, onRunSource }: { onRun: (job: any) =
             {!p.allowed && <span className="flex items-center gap-1 text-[11px] text-rose-300"><Lock size={11} /> super admin</span>}
             {p.others_running.length > 0 && !live && <span className="text-[11px] text-amber-300">waiting for {p.others_running.join(", ")} to finish</span>}
             {run && <button onClick={() => onLog(run.id)} className="flex items-center gap-1 text-[11.5px] text-slate-300 hover:text-white"><TerminalSquare size={12} /> log of run #{run.id}</button>}
+            {live && p.allowed && <StopButton runId={run?.id} />}
           </div>
         </div>
         {run && (
@@ -97,6 +98,11 @@ export function FullRefresh({ onRun, onLog, onRunSource }: { onRun: (job: any) =
               <span className="ml-auto flex flex-wrap gap-2">{Object.entries(counts).map(([k, n]) => <span key={k} className="flex items-center gap-1">{ST[k]?.icon}{n} {ST[k]?.label}</span>)}</span>
             </div>
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${(100 * doneN) / Math.max(1, runnable.length)}%` }} /></div>
+            {live && run.tail?.length > 0 && (
+              <div className="mt-2 rounded-lg bg-black/30 px-3 py-1.5 font-mono text-[11px] leading-relaxed text-slate-300" title="Latest log lines — refreshes every few seconds">
+                {run.tail.map((l: string, i: number) => <div key={i} className="truncate">{l}</div>)}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -182,6 +188,24 @@ export function FullRefresh({ onRun, onLog, onRunSource }: { onRun: (job: any) =
         </div>
       </div>
     </Card>
+  );
+}
+
+function StopButton({ runId }: { runId?: number }) {
+  const [busy, setBusy] = useState(false);
+  const [asked, setAsked] = useState(false);
+  const qc = useQueryClient();
+  if (!runId) return null;
+  const stop = async () => {
+    setBusy(true);
+    try { await post(`/api/jobs/runs/${runId}/cancel`); } finally { setBusy(false); setAsked(false); qc.invalidateQueries({ queryKey: ["full-refresh-plan"] }); }
+  };
+  return asked ? (
+    <span className="flex items-center gap-2 text-[11.5px] text-slate-200">Stop now? Finished tasks keep their results.
+      <button onClick={stop} disabled={busy} className="rounded-md bg-rose-600 px-2 py-0.5 font-semibold text-white hover:bg-rose-500">{busy ? "Stopping…" : "Stop"}</button>
+      <button onClick={() => setAsked(false)} className="text-slate-400 hover:text-white">cancel</button></span>
+  ) : (
+    <button onClick={() => setAsked(true)} className="flex items-center gap-1 text-[11.5px] text-rose-300 hover:text-rose-200"><Square size={11} /> Stop</button>
   );
 }
 

@@ -47,6 +47,7 @@ class Step:
     ok_codes: set[int] = field(default_factory=set)  # extra exit codes that count as success
     stop_on: dict[int, str] = field(default_factory=dict)  # exit code -> stop here, successfully
     fn: Optional[Callable[[], str]] = None  # run in-process instead of a subprocess (cmd is then ignored)
+    timeout: Optional[int] = None  # seconds; the subprocess is stopped after this (exit 124)
 
 
 def _as_step(s) -> Step:
@@ -446,6 +447,7 @@ REGISTRY: dict[str, Job] = {j.key: j for j in [
         "Pipelines", lambda p: [], role="super_admin", destructive=lambda p: True, dag=True,
         params=[Param("force", "Re-download sources even if unchanged", default=False),
                 Param("include_ord", "Include the Open Reaction Database (1.3 GB, ~1 h)", default=False),
+                Param("include_slow", "Include slow sources (EudraGMDP scrape, hours)", default=False),
                 Param("backup", "Back up to Upstash at the end", default=False)]),
 ]}
 
@@ -555,9 +557,27 @@ def start(job: Job, params: dict[str, Any], run: JobRun) -> None:
     threading.Thread(target=_execute, args=(job, params, run.id), daemon=True, name=f"job-{job.key}-{run.id}").start()
 
 
-def _run_step(st: Step, emit: Callable[[str], None], base_env: dict[str, str]) -> int:
-    """One step: an in-process function or a subprocess in redis-loader/. Returns the exit code."""
+_procs: dict[int, subprocess.Popen] = {}  # run id -> the subprocess it is waiting on
+_cancelled: set[int] = set()
+
+
+def cancel(run_id: int) -> bool:
+    """Ask a running job to stop: the current subprocess is terminated and no further step starts."""
+    if not any(v == run_id for v in _running.values()):
+        return False
+    _cancelled.add(run_id)
+    proc = _procs.get(run_id)
+    if proc and proc.poll() is None:
+        proc.terminate()
+    return True
+
+
+def _run_step(st: Step, emit: Callable[[str], None], base_env: dict[str, str], run_id: Optional[int] = None) -> int:
+    """One step: an in-process function or a subprocess in redis-loader/. Returns the exit code
+    (124 when the step's time budget ran out, 130 when the run was stopped)."""
     t0 = time.time()
+    if run_id is not None and run_id in _cancelled:
+        return 130
     if st.fn is not None:
         try:
             emit(f"  {st.fn()}\n")
@@ -568,15 +588,36 @@ def _run_step(st: Step, emit: Callable[[str], None], base_env: dict[str, str]) -
     else:
         proc = subprocess.Popen(st.cmd, cwd=str(settings.loader_dir), env={**base_env, **st.env},
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        if run_id is not None:
+            _procs[run_id] = proc
+        timed_out = threading.Event()
+        timer = None
+        if st.timeout:
+            def _expire() -> None:
+                timed_out.set()
+                proc.terminate()
+            timer = threading.Timer(st.timeout, _expire)
+            timer.start()
         assert proc.stdout is not None
-        for line in proc.stdout:
-            emit(line)
-        code = proc.wait()
+        try:
+            for line in proc.stdout:
+                emit(line)
+            code = proc.wait()
+        finally:
+            if timer:
+                timer.cancel()
+            if run_id is not None:
+                _procs.pop(run_id, None)
+        if timed_out.is_set():
+            emit(f"  ⏱ stopped after {st.timeout // 60} min (time budget for this step)\n")
+            code = 124
+        elif run_id is not None and run_id in _cancelled:
+            code = 130
     emit(f"  exit {code} · {time.time() - t0:.1f}s\n")
     return code
 
 
-def _execute_dag(params: dict[str, Any], emit: Callable[[str], None]) -> tuple[str, int]:
+def _execute_dag(params: dict[str, Any], emit: Callable[[str], None], run_id: Optional[int] = None) -> tuple[str, int]:
     """Run pipeline.tasks() in topological order. A soft task's failure is a warning; a hard failure skips the tasks
     downstream of it. Progress lines `◆ <task> → <state>` let the Data jobs page colour the graph."""
     from . import pipeline
@@ -589,6 +630,9 @@ def _execute_dag(params: dict[str, Any], emit: Callable[[str], None]) -> tuple[s
     emit(f"Update everything · {len(g['order'])} tasks in {len(g['layers'])} layers\n")
     for tid in g["order"]:
         t = by[tid]
+        if run_id in _cancelled:
+            emit(f"\n◆ {tid} → skipped · run stopped\n")
+            continue
         if t.skip:
             emit(f"\n◆ {tid} → skipped · {t.skip}\n")
             continue
@@ -600,7 +644,11 @@ def _execute_dag(params: dict[str, Any], emit: Callable[[str], None]) -> tuple[s
         steps = [_as_step(x) for x in t.steps(params)]
         for i, st in enumerate(steps, 1):
             emit(f"▶ [{t.title} {i}/{len(steps)}] {st.label}\n")
-            code = _run_step(st, emit, base_env)
+            code = _run_step(st, emit, base_env, run_id)
+            if code == 130:
+                state = "failed"
+                emit("  ↳ stopped by an admin\n")
+                break
             if code == 0 or code in st.ok_codes:
                 continue
             if code in st.stop_on:
@@ -622,6 +670,9 @@ def _execute_dag(params: dict[str, Any], emit: Callable[[str], None]) -> tuple[s
         elif state == "warn":
             warned.append(t.title)
         emit(f"◆ {tid} → {state}\n")
+    if run_id in _cancelled:
+        emit("\n■ Stopped by an admin — tasks not yet run were skipped; finished tasks keep their results.\n")
+        return "failed", 130
     if failed:
         emit("\n✖ Failed: " + ", ".join(failed) + (f" · {len(blocked)} downstream task(s) skipped" if blocked else "") + "\n")
     if warned:
@@ -644,7 +695,7 @@ def _execute(job: Job, params: dict[str, Any], run_id: int) -> None:
         db.commit()
     try:
         if job.dag:
-            status, code = _execute_dag(params, emit)
+            status, code = _execute_dag(params, emit, run_id)
             return
         if job.before:
             emit(f"▶ {job.before()}\n")
@@ -653,7 +704,11 @@ def _execute(job: Job, params: dict[str, Any], run_id: int) -> None:
         warnings: list[str] = []
         for i, st in enumerate(steps, 1):
             emit(f"\n▶ [{i}/{len(steps)}] {st.label}\n")
-            code = _run_step(st, emit, base_env)
+            code = _run_step(st, emit, base_env, run_id)
+            if code == 130:
+                emit("\n■ Stopped by an admin.\n")
+                status = "failed"
+                break
             if code in st.stop_on:
                 emit(f"\n■ {st.stop_on[code]}\n")
                 code = 0
@@ -690,5 +745,6 @@ def _execute(job: Job, params: dict[str, Any], run_id: int) -> None:
             db.commit()
         with _running_lock:
             _running.pop(job.key, None)
+        _cancelled.discard(run_id)
         # keep the buffer briefly for late SSE readers
         threading.Timer(120, lambda: _live_logs.pop(run_id, None)).start()

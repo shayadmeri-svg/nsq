@@ -93,6 +93,14 @@ def _jobs():
     return jobs
 
 
+# Time budget per source fetch inside Update everything (seconds). A source that runs out keeps its last file, so one
+# slow or hanging publisher can never hold the whole refresh hostage.
+SOURCE_BUDGET = 15 * 60
+_BUDGET = {"comtrade": 30 * 60, "clinical_trials": 20 * 60, "pubchem": 20 * 60, "ord": 3 * 3600, "eudragmdp": 3 * 3600}
+# Scrapes that take hours from a server; off unless asked for (their last pushed file is used)
+_SLOW = {"eudragmdp": "EudraGMDP opens every certificate one page at a time — hours from a server"}
+
+
 def _source_task(k: str, p: dict[str, Any]) -> Task:
     J = _jobs()
     reads = {"gen:candidates"} if k in ("clinical_trials", "pubchem") else set()
@@ -103,16 +111,22 @@ def _source_task(k: str, p: dict[str, Any]) -> Task:
         skip = "laptop only: ~2.7 GB of PDFs, CDSCO refuses cloud servers — `just fetch-cdsco-wc` then `just push-wc`"
     elif k == "ord" and not p.get("include_ord"):
         skip = "off: 1.3 GB download and ~1 h scan — tick 'Include the Open Reaction Database'"
+    elif k in _SLOW and not p.get("include_slow"):
+        skip = (f"off: {_SLOW[k]}; the last pushed file is used — `just fetch-eudragmdp` + `just push-plant-registry` "
+                "on a laptop, or tick 'Include slow sources'")
+    budget = _BUDGET.get(k, SOURCE_BUDGET)
 
     def steps(pp: dict[str, Any], k=k):
         s = J._source_steps([k], pp)
         if k in J._NICE:
             s[0].cmd = ["nice", "-n", "15", *s[0].cmd]
+        for st in s:
+            st.timeout = budget
         return s
 
-    note = ""
+    note = f"time budget {budget // 60} min; past it the last file is kept"
     if k in J.LAPTOP and not skip:
-        note = f"often refused from a server ({J.LAPTOP[k]['why']}); the last pushed file stays in use"
+        note = f"often refused from a server ({J.LAPTOP[k]['why']}); the last pushed file stays in use · " + note
     return Task(f"src-{k.replace('_', '-')}", J.SOURCE_TITLES[k], "sources" if k not in ("clinical_trials", "pubchem", "ord") else "molecules",
                 reads, {f"src:{k}"}, steps, soft=True, skip=skip, note=note, source=k)
 

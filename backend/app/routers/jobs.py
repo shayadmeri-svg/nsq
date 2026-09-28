@@ -67,7 +67,8 @@ def full_refresh_plan(user: User = Depends(require_platform), db: Session = Depe
     run = None
     if last:
         log = jobs.live_log(last.id) if last.status in ("queued", "running") and jobs.live_log(last.id) is not None else (last.log or "")
-        run = {**_run_row(last), "states": pipeline.states_from_log(log)}
+        tail = [ln for ln in log[-4000:].splitlines() if ln.strip()][-4:]
+        run = {**_run_row(last), "states": pipeline.states_from_log(log), "tail": tail}
     g["run"] = run
     g["running"] = jobs.is_running("full-refresh")
     g["others_running"] = [k for k in jobs._running if k != "full-refresh"]
@@ -128,6 +129,20 @@ def list_runs(page: int = Query(1, ge=1), size: int = Query(25, le=100), key: st
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(stmt.order_by(JobRun.created_at.desc()).offset((page - 1) * size).limit(size))
     return {"total": total, "items": [_run_row(r) for r in rows]}
+
+
+@router.post("/runs/{run_id}/cancel")
+def cancel_run(run_id: int, request: Request, user: User = Depends(require_platform), db: Session = Depends(get_db)):
+    """Stop a running job: its current subprocess is terminated and no further step starts."""
+    if user.role != "super_admin":
+        raise HTTPException(403, "Only a super admin can stop a job.")
+    r = db.get(JobRun, run_id)
+    if r is None:
+        raise HTTPException(404, "Run not found.")
+    if not jobs.cancel(run_id):
+        raise HTTPException(409, "That run is not running.")
+    audit(db, "job.cancelled", actor=user, target_type="job", target_id=f"{r.job_key}#{run_id}", request=request)
+    return {"ok": True}
 
 
 @router.get("/runs/{run_id}")
