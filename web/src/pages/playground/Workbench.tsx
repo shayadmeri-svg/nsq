@@ -29,6 +29,17 @@ function Slider({ label, score, share, value, onChange, color }: { label: string
   );
 }
 
+// ORD writes USPTO numbers zero-padded and, before 2001, without a kind code ("US05545737", "US07425628B2", "USRE039221E1");
+// Google Patents wants "US5545737A/en", "US7425628B2/en", "USRE39221E1/en".
+function googlePatent(id: string) {
+  const m = /^US(RE)?0*(\d+)([A-Z]\d?)?$/i.exec(id.replace(/[^A-Z0-9]/gi, ""));
+  if (!m) return `https://patents.google.com/?q=${encodeURIComponent(id)}`;
+  const [, re, num, kind] = m;
+  // no kind code: a grant before 2001 ("A"), or a reissue ("E" before RE37,100 in 2001, "E1" after)
+  const k = kind || (re ? (Number(num) >= 37100 ? "E1" : "E") : "A");
+  return `https://patents.google.com/patent/US${re ? "RE" : ""}${num}${k.toUpperCase()}/en`;
+}
+
 const PART_LABEL: Record<string, string> = { form: "Makes the form", capabilities: "Capabilities the form needs", segregation: "Separate block", standing: "Regulatory standing", record: "Track record with this molecule" };
 
 function FitParts({ detail }: { detail?: any }) {
@@ -246,7 +257,7 @@ function Synthesis({ moleculeKey, bare }: { moleculeKey: string; bare?: boolean 
                 <thead><tr className="text-left text-ink-muted"><th className="py-1 font-medium">From</th><th className="font-medium">Conditions</th><th className="font-medium">Reactants → product</th><th className="font-medium">Needs</th></tr></thead>
                 <tbody>{(all ? s.examples : s.examples.slice(0, 8)).map((r: any) => (
                   <tr key={r.id} className="border-t border-line align-top">
-                    <td className="py-1.5 pr-3">{r.patent ? <a className="text-brand-700 hover:underline" href={`https://patents.google.com/patent/${r.patent.replace(/[^A-Z0-9]/gi, "")}`} target="_blank" rel="noreferrer">{r.patent}</a>
+                    <td className="py-1.5 pr-3">{r.patent ? <a className="text-brand-700 hover:underline" href={googlePatent(r.patent)} target="_blank" rel="noreferrer">{r.patent}</a>
                       : r.doi ? <a className="text-brand-700 hover:underline" href={`https://doi.org/${r.doi}`} target="_blank" rel="noreferrer">{r.doi}</a> : <span className="text-ink-muted">{r.dataset}</span>}</td>
                     <td className="pr-3 tabular-nums text-ink-soft">{[r.temp_c != null && `${r.temp_c} °C`, r.pressure_bar != null && `${r.pressure_bar} bar`, r.atmosphere && r.atmosphere.toLowerCase(), r.hours != null && `${r.hours} h`, r.yield != null && `${r.yield}% yield`].filter(Boolean).join(" · ") || "—"}{r.solvents?.length ? <div className="text-ink-muted">{r.solvents.join(", ")}</div> : null}</td>
                     <td className="max-w-md pr-3 text-ink-muted"><span className="line-clamp-2 break-all">{[...(r.reactants ?? []), ...(r.reagents ?? []), ...(r.catalysts ?? [])].slice(0, 6).join(" + ")}</span></td>

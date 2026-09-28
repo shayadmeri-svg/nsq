@@ -522,6 +522,12 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
         if rp is not None:
             reg_plant = registry_plants.as_plant_asset(rp)
     plant = reg_plant or next((x for x in plants if x.asset_id == plant_id), plants[0] if plants else None)
+    if plant is None:  # no plant profile of your own: start from the best-fitting plant in the registry
+        top = registry_plants.fit_ranking(key, limit=1)
+        rp = registry_plants.registry()["plants"].get(top["items"][0]["id"]) if top and top.get("items") else None
+        if rp is not None:
+            reg_plant = plant = registry_plants.as_plant_asset(rp)
+            plant_id = reg_plant.asset_id
     cx = derive_manufacturing_complexity(key, p, reg)
     needs = registry_plants.fit_needs(key)
     # the plant's track record with this molecule: a registry plant's own, or the registry plant a profile is linked to

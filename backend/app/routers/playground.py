@@ -8,7 +8,6 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import data, playground
@@ -70,17 +69,19 @@ def world(molecule: str = "", user: User = Depends(current_user)):
 
 
 def _visible_plants(user: User, db: Session) -> list[str]:
-    """Seeded demo plants + the user's organisation's plants (all plants for platform staff)."""
+    """Plant profiles a user can score against: their organisation's plants (every organisation's for platform staff).
+    The demo profiles in plant_assets_seed.json are left out (unless they are the user's own organisation's plants)."""
+    from .. import plants as registry_plants
+
     plants = data.cdmo()["plants"]
-    if user.role in PLATFORM_ROLES:
-        return list(plants)
+    demo = {k for k, v in registry_plants._seed_links().items() if v.get("demo")}
     mine: list[str] = []
     if user.org_id:
         org = db.get(Org, user.org_id)
         mine = list(org.plant_ids or []) if org else []
-    owned = {pid for o in db.scalars(select(Org)) for pid in (o.plant_ids or [])}
-    seeded = [p for p in plants if p not in owned]
-    return list(dict.fromkeys(mine + seeded))
+    if user.role in PLATFORM_ROLES:
+        return list(dict.fromkeys([*mine, *(p for p in plants if p not in demo)]))
+    return [p for p in dict.fromkeys(mine) if p in plants]
 
 
 @router.get("/molecule/{key}")
