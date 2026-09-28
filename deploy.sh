@@ -106,5 +106,15 @@ if command -v nginx >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
   nginx -t && systemctl reload nginx
 fi
 
+# --- clean up ----------------------------------------------------------------
+#     Every --build leaves the previous images untagged ("dangling") plus build
+#     cache; on a small disk that adds up to GBs within weeks. Remove dangling
+#     images and build cache older than 3 days (recent cache keeps rebuilds
+#     fast). Never touches volumes, so Redis data is safe.
+echo "deploy: removing dangling images and old build cache"
+docker image prune -f >/dev/null || true
+docker builder prune -f --filter "until=72h" >/dev/null || true
+docker system df 2>/dev/null | sed 's/^/deploy:   /' || true
+
 echo "deploy: stack is up. docker compose ps:"
 docker compose ps
