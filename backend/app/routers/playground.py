@@ -228,3 +228,28 @@ def investigate_alert(key: str, issue_id: str, user: User = Depends(current_user
         raise HTTPException(404, "Alert not found for this manufacturer.")
     detail["persona"] = user.persona
     return detail
+
+
+# --- Failure forensics: why products fail NSQ, reverse-engineered from the pattern of their alerts ---------------
+
+@router.get("/forensics")
+def forensics_overview(user: User = Depends(current_user)):
+    from .. import forensics
+    return forensics.overview()
+
+
+@router.get("/forensics/products")
+def forensics_list(q: str = Query("", max_length=120), archetype: str = Query("", pattern="^(|born|ages|marginal|plant|aseptic|labelling)$"),
+                   sort: str = Query("alerts", pattern="^(alerts|recent|makers)$"), page: int = Query(1, ge=1), size: int = Query(25, ge=5, le=100),
+                   user: User = Depends(current_user)):
+    from .. import forensics
+    return forensics.listing(q, archetype, sort, page, size)
+
+
+@router.get("/forensics/product")
+def forensics_detail(key: str = Query(..., min_length=3, max_length=300), user: User = Depends(current_user)):
+    from .. import forensics
+    out = forensics.detail(key)
+    if out is None:
+        raise HTTPException(404, "Not enough NSQ alerts for this product to read a pattern.")
+    return out

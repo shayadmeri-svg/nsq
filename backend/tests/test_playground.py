@@ -82,3 +82,15 @@ def test_investigate_product_to_manufacturer_to_diagnosis(root):
     d = root.get(f"/api/playground/investigate/manufacturer/{key}/alerts/{alerts['items'][0]['id']}").json()
     assert d["issue"]["id"] == alerts["items"][0]["id"] and "mitigations" in d["diagnosis"]
     assert root.get("/api/playground/investigate/product", params={"name": "no such product"}).status_code == 404
+
+
+def test_failure_forensics(root):
+    from app import forensics as F
+    assert F.failed_tests("The sample does not conform to IP with respect to test for Dissolution and Assay") == ["Dissolution", "Assay / content"]
+    o = root.get("/api/playground/forensics").json()
+    assert o["available"] and o["groups"] > 0 and {a["id"] for a in o["archetypes"]} >= {"born", "ages", "plant"}
+    lst = root.get("/api/playground/forensics/products", params={"size": 5}).json()
+    g = lst["items"][0]
+    d = root.get("/api/playground/forensics/product", params={"key": g["key"]}).json()
+    assert d["signals"]["n"] == g["n"] and d["hypotheses"] and len(d["timing"]["product"]) == len(d["timing"]["bins"])
+    assert root.get("/api/playground/forensics/product", params={"key": "nothing|Tablet"}).status_code == 404
