@@ -351,10 +351,10 @@ pull-structures HOST KEY="" DIR="/opt/nsq-platform":
 laptop-refresh HOST KEY="":
     #!/usr/bin/env bash
     failed=()
-    for r in fetch-plants fetch-eudragmdp fetch-fda-inspections fetch-cep fetch-nfhs fetch-comtrade fetch-idsp fetch-cdsco-wc; do
+    # only the sources that refuse cloud servers; ORD, NFHS, Comtrade and FDA inspections are server jobs now
+    for r in fetch-plants fetch-eudragmdp fetch-fda-sites fetch-cep fetch-idsp fetch-cdsco-wc; do
       echo "━━ $r"; just $r || failed+=("$r")
     done
-    just pull-structures {{HOST}} {{KEY}} && { echo "━━ fetch-ord"; just fetch-ord || failed+=("fetch-ord"); } || failed+=("pull-structures")
     just push-plant-registry {{HOST}} {{KEY}}
     just push-signals {{HOST}} {{KEY}}
     just push-wc {{HOST}} {{KEY}}
@@ -365,10 +365,11 @@ push-signals HOST KEY="" DIR="/opt/nsq-platform":
     #!/usr/bin/env bash
     set -euo pipefail
     k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
-    files=$(ls data/sources/nfhs.json data/sources/idsp.json data/sources/comtrade.json data/sources/ord.json 2>/dev/null || true)
-    [ -n "$files" ] || { echo "No signal files — run just fetch-nfhs / fetch-idsp / fetch-comtrade first"; exit 1; }
+    # IDSP only: NFHS, Comtrade and ORD are fetched on the server, and an older laptop copy must not overwrite them
+    files=$(ls data/sources/idsp.json 2>/dev/null || true)
+    [ -n "$files" ] || { echo "No IDSP file — run just fetch-idsp first"; exit 1; }
     scp $k $files {{HOST}}:~/
-    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in nfhs.json idsp.json comtrade.json ord.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done'
+    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && for f in idsp.json; do if [ -f ~/$f ]; then sudo mv ~/$f {{DIR}}/data/sources/ && sudo chmod 644 {{DIR}}/data/sources/$f; fi; done'
     echo "Signal files copied."
 
 # CDSCO + EU (the app merges them into one registry); add FDA with just fetch-fda-inspections
