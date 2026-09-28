@@ -492,7 +492,14 @@ def _comtrade_call(params: dict[str, Any], key: str) -> list[dict[str, Any]]:
         url, headers = COMTRADE["url"], {"Ocp-Apim-Subscription-Key": key}
     else:
         url, headers = "https://comtradeapi.un.org/public/v1/preview/C/A/HS", {}
-    raw = http_get(url, params=params, accept="application/json", timeout=90, headers=headers)
+    for wait in (30, 90, 180, None):  # the public preview answers 403 / 429 when it throttles: back off and try again
+        try:
+            raw = http_get(url, params=params, accept="application/json", timeout=90, headers=headers)
+            break
+        except Unreachable as exc:
+            if wait is None or not re.search(r"HTTP (403|429)", str(exc)):
+                raise
+            time.sleep(wait)
     res = json.loads(raw.decode("utf-8"))
     if res.get("error"):
         raise Unreachable(f"Comtrade: {res['error']}")
@@ -526,20 +533,31 @@ def run_comtrade(ctx: Ctx) -> int:
         last = date.today().year - 1
         years = list(range(last - 5, last + 1))
         rows = []
+        missing: list[tuple[str, str, int]] = []  # (hs, flow, year) Comtrade would not give this run
+        calls = 0
         for hs in HS:
             for flow in ("X", "M"):
-                if key:  # full API: all years in one call
-                    got = _comtrade_call({"reporterCode": INDIA, "period": ",".join(map(str, years)), "cmdCode": hs, "flowCode": flow,
-                                          "includeDesc": "true"}, key)
-                else:  # preview: ≤ 500 rows, so one year per call
-                    got = []
-                    for y in years:
-                        got += _comtrade_call({"reporterCode": INDIA, "period": y, "cmdCode": hs, "flowCode": flow, "includeDesc": "true"}, "")
-                        time.sleep(1.1)
+                got = []
+                for period in ([",".join(map(str, years))] if key else years):  # full API: all years in one call; preview: ≤ 500 rows, one year
+                    calls += 1
+                    try:
+                        got += _comtrade_call({"reporterCode": INDIA, "period": period, "cmdCode": hs, "flowCode": flow, "includeDesc": "true"}, key)
+                    except Unreachable as exc:
+                        ctx.log(f"  skipped HS {hs} {flow} {period}: {exc}")
+                        missing += [(hs, flow, int(y)) for y in str(period).split(",")]
+                    time.sleep(0.4 if key else 1.1)
                 n = normalise_comtrade(got)
                 ctx.log(f"  HS {hs} {'exports' if flow == 'X' else 'imports'}: {len(n):,} partner-years")
                 rows += n
-                time.sleep(0.4 if key else 1.1)
+        if missing:
+            # a throttled call must not throw the whole run away: keep the previous file's rows for what is missing
+            fl = {"X": "export", "M": "import"}
+            gap = {(h, fl[f], y) for h, f, y in missing}
+            kept = [r for r in (prev.get("data") or []) if (r["hs"], r["flow"], r["year"]) in gap]
+            rows += kept
+            ctx.log(f"  {len(missing)} of {calls} requests refused (throttled); kept {len(kept):,} rows for them from the previous file")
+            if len(missing) > calls // 2 and not kept:
+                raise Unreachable(f"Comtrade refused {len(missing)} of {calls} requests — keeping the previous file")
     if not rows:
         if prev.get("data"):
             raise Unreachable("Comtrade returned nothing — keeping the previous file")

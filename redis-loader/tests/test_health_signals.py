@@ -88,3 +88,27 @@ def test_nfhs_factsheet_extract_layout(tmp_path):
                    ("Pune", "sugar_women", "NFHS-5"): 12.3, ("Pune", "sugar_men", "NFHS-5"): 15.1,
                    ("New Delhi", "sugar_women", "NFHS-5"): 20.0}
     assert {r["state"] for r in rows} == {"Maharashtra", "Delhi"}
+
+
+def test_comtrade_throttled_call_keeps_previous_rows(tmp_path, monkeypatch):
+    import json
+    from sources.common import Ctx, Unreachable
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("COMTRADE_KEY", raising=False)
+    monkeypatch.setattr(hs.time, "sleep", lambda s: None)
+    monkeypatch.setattr(hs, "HS", {"3004": ("Medicaments", "finished"), "2942": ("Other organic", "api")})
+    last = hs.date.today().year - 1
+    prev = [{"year": last, "flow": "import", "hs": "2942", "partner_code": 156, "partner": "China", "partner_iso": "CHN", "value_usd": 5.0, "net_kg": None}]
+    (tmp_path / "sources").mkdir()
+    (tmp_path / "sources" / "comtrade.json").write_text(json.dumps({"data": prev}))
+
+    def call(params, key):
+        if params["cmdCode"] == "2942" and params["flowCode"] == "M" and params["period"] == last:
+            raise Unreachable("HTTP 403 from comtrade")
+        return [{"reporterCode": 699, "period": params["period"], "flowCode": params["flowCode"], "cmdCode": params["cmdCode"],
+                 "partnerCode": 842, "partnerDesc": "USA", "partnerISO": "USA", "primaryValue": 1.0}]
+    monkeypatch.setattr(hs, "_comtrade_call", call)
+    assert hs.run_comtrade(Ctx(name="comtrade")) > 0
+    out = json.loads((tmp_path / "sources" / "comtrade.json").read_text())["data"]
+    assert any(r["partner"] == "China" and r["hs"] == "2942" and r["year"] == last for r in out)  # kept from before
+    assert not any(r["hs"] == "2942" and r["flow"] == "import" and r["year"] == last and r["partner"] == "USA" for r in out)
