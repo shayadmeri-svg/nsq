@@ -36,8 +36,23 @@ export function LogViewer({ runId, onClose }: { runId?: number; onClose: () => v
       qc.invalidateQueries({ queryKey: ["pipelines"] });
       qc.invalidateQueries({ queryKey: ["universe"] });
     });
-    es.onerror = () => es.close();
-    return () => es.close();
+    // If the stream drops (proxy timeout, network blip), fall back to polling the run until it finishes.
+    let poll: ReturnType<typeof setInterval> | undefined;
+    es.onerror = () => {
+      es.close();
+      if (poll) return;
+      poll = setInterval(async () => {
+        try {
+          const r = await api<any>(`/api/jobs/runs/${runId}`);
+          setLog(r.run.log || "");
+          if (!["queued", "running"].includes(r.run.status)) {
+            setStatus(r.run.status);
+            clearInterval(poll);
+          }
+        } catch { /* keep trying */ }
+      }, 2000);
+    };
+    return () => { es.close(); if (poll) clearInterval(poll); };
   }, [runId, qc]);
   useEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [log]);
   return (

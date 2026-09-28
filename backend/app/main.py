@@ -111,7 +111,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="NSQ Platform API", version="2.0.0", lifespan=lifespan,
               dependencies=[Depends(csrf_guard)], docs_url="/api/docs", openapi_url="/api/openapi.json")
 
-app.add_middleware(GZipMiddleware, minimum_size=2048)
+class _GZipExceptStreams:
+    """GZip every response except server-sent event streams: Starlette's GZipMiddleware (0.38) buffers a streaming
+    response until its compressor flushes, so a job's live log would arrive only when the job ends."""
+
+    def __init__(self, app, minimum_size: int = 2048):
+        self.app = app
+        self.gzip = GZipMiddleware(app, minimum_size=minimum_size)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path", "").endswith("/stream"):
+            await self.app(scope, receive, send)
+        else:
+            await self.gzip(scope, receive, send)
+
+
+app.add_middleware(_GZipExceptStreams, minimum_size=2048)
 
 if settings.cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
