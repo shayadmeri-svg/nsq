@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .. import data, playground
@@ -253,3 +254,27 @@ def forensics_detail(key: str = Query(..., min_length=3, max_length=300), user: 
     if out is None:
         raise HTTPException(404, "Not enough NSQ alerts for this product to read a pattern.")
     return out
+
+
+class PortfolioIn(BaseModel):
+    lines: list[str] = Field(default_factory=list, max_length=150)
+
+
+@router.post("/forensics/portfolio")
+def forensics_portfolio(body: PortfolioIn, user: User = Depends(current_user)):
+    """Risk of each product in a maker's list, read from how the whole market fails it."""
+    from .. import gaps
+    return gaps.portfolio([str(x)[:200] for x in body.lines])
+
+
+@router.get("/forensics/portfolio/maker")
+def forensics_portfolio_maker(key: str = Query(..., min_length=2, max_length=200), user: User = Depends(current_user)):
+    from .. import gaps
+    return {"products": gaps.maker_products(key)}
+
+
+@router.get("/forensics/needed")
+def forensics_needed(user: User = Depends(current_user)):
+    """Needed and badly made: quality-gap products crossed with NFHS burden and IDSP outbreaks."""
+    from .. import gaps
+    return gaps.needed()

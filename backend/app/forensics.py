@@ -93,6 +93,7 @@ def _frame() -> pd.DataFrame:
         d["_frac"] = ((d["Parsed_Date"] - mfg).dt.days / life).where((life > 60) & (d["Parsed_Date"] >= mfg))
         d["_age_m"] = ((d["Parsed_Date"] - mfg).dt.days / 30.44).where(d["Parsed_Date"] >= mfg)
         _cache.pop("groups", None)
+        _cache.pop("vocab", None)
         _cache.update(key=key, df=d, base=_baseline(d))
         return d
 

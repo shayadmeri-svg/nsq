@@ -94,3 +94,15 @@ def test_failure_forensics(root):
     d = root.get("/api/playground/forensics/product", params={"key": g["key"]}).json()
     assert d["signals"]["n"] == g["n"] and d["hypotheses"] and len(d["timing"]["product"]) == len(d["timing"]["bins"])
     assert root.get("/api/playground/forensics/product", params={"key": "nothing|Tablet"}).status_code == 404
+
+
+def test_portfolio_and_needed(root):
+    p = root.post("/api/playground/forensics/portfolio", json={"lines": ["Telmisartan 40 mg tablets", "", "telmisartan 40 mg tablets", "zzqx brand"]}, headers=H).json()
+    assert p.get("available"), p
+    assert len(p["rows"]) == 2  # blank and duplicate lines dropped
+    tel = next(r for r in p["rows"] if r["input"].startswith("Telmisartan"))
+    assert tel["form"] == "Tablet" and tel["alerts"] > 0 and tel["risk"] in ("high", "watch", "low")
+    assert next(r for r in p["rows"] if r["input"] == "zzqx brand")["risk"] == "unknown"
+    n = root.get("/api/playground/forensics/needed").json()
+    assert n["available"] and {c["key"] for c in n["conditions"]} >= {"diabetes", "hypertension", "anaemia"}
+    assert all(r["conditions"] for r in n["ranked"])

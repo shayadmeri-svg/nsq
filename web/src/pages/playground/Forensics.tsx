@@ -10,6 +10,7 @@ import { ExpandedProvider, Figure, Tile, useExpanded, type Section } from "../..
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { fmtMonth } from "../../lib/format";
+import { Needed, Portfolio } from "./ForensicsTools";
 
 const ARCH: Record<string, { label: string; tone: any; icon: ReactNode; color: string }> = {
   born: { label: "Released that way", tone: "rose", icon: <Beaker size={12} />, color: "#e11d48" },
@@ -189,6 +190,8 @@ function Tiles({ o, onFilter }: { o: any; onFilter: (id: string) => void }) {
   );
 }
 
+type View = "patterns" | "portfolio" | "needed";
+
 export function Forensics() {
   const { data: o, error, isLoading } = useQuery({ queryKey: ["forensics-overview"], queryFn: () => api<any>("/api/playground/forensics") });
   const [active, setActive] = useState<string | null>(null);
@@ -205,7 +208,17 @@ export function Forensics() {
     return list.map((g: any) => ({ id: `g:${g.key}`, title: g.label, subtitle: g.headline, icon: <span className="block h-2.5 w-2.5 rounded-full" style={{ background: (ARCH[g.archetype] ?? ARCH.marginal).color }} />,
       render: () => <Detail k={g.key} /> }));
   }, [keys, extra]);
-  const openKey = (k: string, g?: any) => { if (g) setExtra(g); setActive(`g:${k}`); };
+  const openKey = (k: string, g?: any) => { setExtra(g ?? { key: k, label: k.split("|")[0].split("+").join(" + ") + " · " + k.split("|")[1], headline: "", archetype: "marginal" }); setActive(`g:${k}`); };
+  const [view, setViewState] = useState<View>(() => {
+    const v = new URLSearchParams(window.location.search).get("view");
+    return v === "portfolio" || v === "needed" ? v : "patterns";
+  });
+  const setView = (v: View) => {
+    setViewState(v);
+    const u = new URL(window.location.href);
+    if (v === "patterns") u.searchParams.delete("view"); else u.searchParams.set("view", v);
+    window.history.replaceState(null, "", u);
+  };
 
   if (error) return <ErrorNote error={error} />;
   if (isLoading) return <Skeleton className="h-96" />;
@@ -217,6 +230,10 @@ export function Forensics() {
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-brand-400"><Sparkles size={13} /> Reverse-engineering NSQ failures</div>
           <div className="mt-1 max-w-3xl font-display text-xl font-bold leading-snug">Before you make a product, see how everyone else failed it — which test, how early in its shelf life, whether it's the formula or a few plants — and what to check so your batches don't.</div>
         </div>
+        <Segmented value={view} onChange={setView} options={[{ value: "patterns", label: "Failure patterns" }, { value: "portfolio", label: "Check my portfolio" }, { value: "needed", label: "Needed & badly made" }]} />
+        {view === "portfolio" && <Portfolio onOpen={openKey} />}
+        {view === "needed" && <Needed onOpen={openKey} />}
+        {view === "patterns" && <>
         <Tiles o={o} onFilter={setFilter} />
         <div className="grid gap-4 xl:grid-cols-2">
           <List title="Quality gaps" icon={<Gem size={15} className="text-brand-600" />} onOpen={(k) => openKey(k)}
@@ -232,6 +249,7 @@ export function Forensics() {
           <div className="label mb-2 flex items-center gap-1.5"><FlaskConical size={12} /> Every product with at least 8 alerts{filter && <button className="ml-2 normal-case text-brand-700 hover:underline" onClick={() => setFilter("")}>clear filter</button>}</div>
           <AllProductsWithFilter key={filter} initial={filter} onOpen={(k, g) => openKey(k, g)} />
         </div>
+        </>}
       </div>
     </ExpandedProvider>
   );
