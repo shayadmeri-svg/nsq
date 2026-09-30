@@ -210,3 +210,17 @@ class Medicine(Base):
     updated_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())
+
+
+class OrgFeatures(Base):
+    """Which Playground features an organisation has (set by platform admins), and which of them each
+    member persona sees (set by the org admin). Feature ids come from app.features.REGISTRY."""
+
+    __tablename__ = "org_features"
+
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), primary_key=True)
+    entitled: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # {persona: [feature ids]} for members; a persona that is absent sees every entitled feature.
+    visibility: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())
+    updated_by: Mapped[str] = mapped_column(String(254), default="")

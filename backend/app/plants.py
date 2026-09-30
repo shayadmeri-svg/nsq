@@ -629,8 +629,9 @@ def _matches(p: dict[str, Any], q: str, state: str, capability: str, segregated:
 
 
 def search(q: str = "", state: str = "", capability: str = "", segregated: str = "", cert: str = "", nsq: str = "",
-           sort: str = "nsq", page: int = 1, size: int = 25) -> dict[str, Any]:
-    rows = [p for p in registry()["plants"].values() if _matches(p, q, state, capability, segregated, cert, nsq)]
+           sort: str = "nsq", page: int = 1, size: int = 25, only: Optional[Any] = None) -> dict[str, Any]:
+    rows = [p for p in registry()["plants"].values() if _matches(p, q, state, capability, segregated, cert, nsq)
+            and (only is None or p["id"] in only)]
     if sort == "name":
         rows.sort(key=lambda p: p["name"].lower())
     elif sort == "forms":
@@ -1023,7 +1024,8 @@ def fit_records(key: str) -> dict[str, dict[str, Any]]:
     return rec
 
 
-def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: str = "", band: str = "") -> Optional[dict[str, Any]]:
+def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: str = "", band: str = "",
+                only: Optional[Any] = None) -> Optional[dict[str, Any]]:
     """Plant fit of every registry plant for a molecule, best first (form, capabilities, segregation, standing)."""
     import plant_fit
     from intelligence_scorer import plant_available_capabilities
@@ -1053,7 +1055,7 @@ def fit_ranking(key: str, limit: int = 25, state: str = "", cert: str = "", q: s
             _fit_cache.clear()
         _fit_cache[ck] = rows
     plants = reg["plants"]
-    sel = [r for r in rows if _matches(plants[r["id"]], q, state, "", "", cert, "")]
+    sel = [r for r in rows if _matches(plants[r["id"]], q, state, "", "", cert, "") and (only is None or r["id"] in only)]
     def _band(s: float) -> str:
         return "80+" if s >= 80 else "60–79" if s >= 60 else "40–59" if s >= 40 else "<40"
     dist = Counter(_band(r["score"]) for r in sel)  # bands of what the other filters leave, so a band's count is what clicking it shows

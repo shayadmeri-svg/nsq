@@ -129,7 +129,7 @@ function MfrView({ mkey, product, onProduct, setProduct, onAlert }: { mkey: stri
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Tile title="NSQ alerts" clickable={false}><Figure value={k.alerts} label={`${k.last_12m} in the last 12 months`} tone="#e11d48" /></Tile>
         <Tile title="Products affected" clickable={false}><Figure value={k.products} label={`${k.batches} distinct batches`} /></Tile>
-        <Tile title="All-India rank" clickable={false}><Figure value={k.national_rank ? `#${k.national_rank}` : "—"} label={`of ${k.manufacturers_ranked.toLocaleString("en-IN")} manufacturers · ${k.national_share_pct}% of alerts`} /></Tile>
+        <Tile title="Alert rank (1 = most alerts)" clickable={false}><Figure value={k.national_rank ? `#${k.national_rank}` : "—"} label={`of ${k.manufacturers_ranked.toLocaleString("en-IN")} manufacturers · more alerts than ${k.more_alerts_than_pct ?? 0}% · ${k.national_share_pct}% of all alerts`} /></Tile>
         <Tile title="Top failure" clickable={false}><Figure value={k.top_category} label={k.spurious ? `${k.spurious} spurious (not ranked)` : "most common reason"} /></Tile>
       </div>
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">

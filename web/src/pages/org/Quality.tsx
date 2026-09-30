@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Activity, ChevronLeft, ChevronRight, FileWarning, Layers, Search, Trophy } from "lucide-react";
+import { Activity, ChevronLeft, ChevronRight, FileWarning, Layers, Search, AlertTriangle } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -55,7 +55,7 @@ export function Quality() {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="Alerts" value={k.alerts} icon={<Activity size={18} />} tone="rose" hint={`${k.last_12m} in the last 12 months`} />
         <Stat label="Products affected" value={k.products} icon={<Layers size={18} />} tone="amber" delay={0.05} hint={`${k.batches} distinct batches`} />
-        <Stat label="Share of all-India alerts" value={k.national_share_pct} decimals={2} suffix="%" icon={<Trophy size={18} />} tone="indigo" delay={0.1} hint={`Rank #${k.national_rank} of ${k.manufacturers_ranked.toLocaleString("en-IN")}${k.spurious ? ` · ${k.spurious} spurious not ranked` : ""}`} />
+        <Stat label="Share of all-India alerts" value={k.national_share_pct} decimals={2} suffix="%" icon={<AlertTriangle size={18} />} tone="indigo" delay={0.1} hint={`${k.national_rank ? `Alert rank #${k.national_rank} of ${k.manufacturers_ranked.toLocaleString("en-IN")} (1 = most alerts)` : "Not ranked"}${k.spurious ? ` · ${k.spurious} spurious not ranked` : ""}`} />
         <Stat label="Top failure" value={k.top_category} tone="brand" delay={0.15} hint="most common reason in your alerts" />
       </div>
 

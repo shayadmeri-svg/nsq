@@ -25,6 +25,7 @@ def test_playground_views(root):
 
 def test_playground_open_to_members_but_plants_scoped(client, root):
     org = _org(root)
+    assert root.put(f"/api/admin/orgs/{org['slug']}/features", json={"features": ["explore", "molecule"]}, headers=H).status_code == 200
     email, pw = _user(root, org["slug"])
     client.post("/api/auth/logout", headers=H)
     login(client, email, pw)

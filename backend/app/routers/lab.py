@@ -10,7 +10,10 @@ from .. import lab
 from ..models import User
 from ..security import current_user
 
-router = APIRouter(prefix="/api/lab", tags=["lab"])
+from .. import features
+from ..tenant import TenantRoute
+
+router = APIRouter(route_class=TenantRoute, dependencies=[Depends(features.gate)], prefix="/api/lab", tags=["lab"])
 
 
 def _run(fn, *args):

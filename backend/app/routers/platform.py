@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .. import data, datamap, insights
 from ..db import get_db
 from ..models import User
+from .. import features
 from ..security import current_user, require_platform
 
 router = APIRouter(prefix="/api", tags=["platform"])
@@ -72,12 +73,12 @@ def taxonomy(user: User = Depends(current_user)):
 
 # --- process simulator (was the host-only :8010 API) ----------------------------
 
-@router.get("/process/routes")
+@router.get("/process/routes", dependencies=[Depends(features.gate)])
 def process_routes(user: User = Depends(current_user)):
     return route_metadata()
 
 
-@router.post("/process/{route_id}")
+@router.post("/process/{route_id}", dependencies=[Depends(features.gate)])
 def process_simulate(route_id: str, payload: dict[str, Any] = Body(default_factory=dict), user: User = Depends(current_user)):
     mod = ROUTES.get(route_id)
     if mod is None:

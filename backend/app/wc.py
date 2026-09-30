@@ -62,9 +62,13 @@ def _row(r: dict[str, Any], q: str = "") -> dict[str, Any]:
     return out
 
 
-def listing(q: str = "", kind: str = "wc", year: str = "", latest: bool = False, page: int = 1, size: int = 25) -> dict[str, Any]:
+def listing(q: str = "", kind: str = "wc", year: str = "", latest: bool = False, page: int = 1, size: int = 25,
+            only: Optional[Any] = None) -> dict[str, Any]:
+    """`only(company) -> bool` limits letters to one organisation's (notices, which name no company, stay)."""
     d = _load()
     rows = d.get("data") or []
+    if only is not None:
+        rows = [r for r in rows if r.get("kind") != "wc" or only(r.get("company"))]
     if not rows:
         return {"available": False}
     q = q.strip().lower()

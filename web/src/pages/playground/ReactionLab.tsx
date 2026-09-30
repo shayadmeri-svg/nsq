@@ -215,7 +215,9 @@ export function ReactionLab() {
   const T = tpls.data?.templates?.find((x: any) => x.id === tpl);
   useEffect(() => { if (T) { setRx(T.rxns.map((r: any) => ({ k: r.k, ea: r.ea, dh: r.dh, ...(r.keq ? { keq: r.keq } : {}) }))); setC0(T.c0); } }, [T?.id]); // eslint-disable-line
 
+  const [route, setRoute] = useState<any | null>(null);
   const pickRoute = async (r: any) => {
+    setRoute(r);
     setAnchor(r.anchor ? { temp_c: r.temp_c, hours: r.hours, yield_pct: r.yield_pct, id: r.id, patent: r.patent } : null);
     setTpl(r.suggested_template);
     setCond((c: any) => ({ ...c, temp_c: r.temp_c ?? c.temp_c, hours: r.hours ?? c.hours }));
@@ -227,6 +229,15 @@ export function ReactionLab() {
       } catch { /* unknown solvent: keep what is entered */ }
     }
   };
+
+  // a new molecule starts from its best published step (calibrated when one has T, time and yield), not from the last molecule's settings
+  useEffect(() => {
+    const rs = routes.data?.routes;
+    if (!routes.data) return;
+    const best = rs?.find((r: any) => r.anchor) ?? rs?.find((r: any) => r.synthesis);
+    if (best) pickRoute(best);
+    else { setRoute(null); setAnchor(null); setSolventName(null); setTpl("consecutive"); setCond((c: any) => ({ ...c, temp_c: 80, hours: 6 })); }
+  }, [routes.data, mol]); // eslint-disable-line
 
   const body = useMemo(() => ({
     template: tpl, rxns: rx, c0, anchor, targets: { min_yield_pct: targets.min_yield_pct === "" ? undefined : +targets.min_yield_pct, max_impurity_pct: targets.max_impurity_pct === "" ? undefined : +targets.max_impurity_pct },
@@ -257,16 +268,19 @@ export function ReactionLab() {
         <div className="space-y-4">
           <Card className="p-4">
             <div className="label mb-2">1 · Molecule and published route</div>
-            <select className="input h-9 w-full" value={mol} onChange={(e) => { setMol(e.target.value); setAnchor(null); }}>
+            <select className="input h-9 w-full" value={mol} onChange={(e) => { setMol(e.target.value); setAnchor(null); setRoute(null); }}>
               {(mols.data?.molecules ?? []).map((m: any) => <option key={m.key} value={m.key}>{m.name} — {m.routes} routes, {m.anchors} with T·time·yield</option>)}
             </select>
             <div className="mt-2 max-h-72 space-y-1.5 overflow-y-auto pr-1">
               {routes.data?.routes?.map((r: any) => (
-                <button key={r.id} onClick={() => pickRoute(r)} className={cn("w-full rounded-lg p-2 text-left text-[11.5px] ring-1 ring-inset transition hover:bg-slate-50",
-                  anchor?.id === r.id ? "bg-emerald-50 ring-emerald-300" : "ring-line")}>
+                <button key={r.id} onClick={() => r.synthesis && pickRoute(r)} disabled={!r.synthesis}
+                  title={r.synthesis ? undefined : "This record lists the molecule itself as an ingredient — a formulation or mixture, not a step that makes it — so it can't calibrate a synthesis model."}
+                  className={cn("w-full rounded-lg p-2 text-left text-[11.5px] ring-1 ring-inset transition",
+                  !r.synthesis ? "cursor-not-allowed opacity-60 ring-line" : route?.id === r.id ? "bg-emerald-50 ring-emerald-300" : "ring-line hover:bg-slate-50")}>
                   <div className="flex items-center gap-1.5 font-semibold">
                     {r.anchor ? <Target size={11} className="text-emerald-600" /> : <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />}
                     {r.temp_c != null ? `${r.temp_c} °C` : "T —"} · {r.hours != null ? `${r.hours} h` : "time —"} · {r.yield_pct != null ? `${r.yield_pct}%` : "yield —"}
+                    {!r.synthesis && <span className="rounded bg-slate-100 px-1 text-[10px] font-medium text-ink-muted">formulation, not a synthesis</span>}
                     <span className="ml-auto font-normal text-ink-faint">{r.patent ?? r.doi ?? r.dataset}</span>
                   </div>
                   <div className="mt-0.5 line-clamp-2 text-ink-muted">{r.reactants.slice(0, 3).join(" + ") || "reactants not named"}{r.solvent ? ` · in ${r.solvent}` : ""}{r.catalysts.length ? ` · ${r.catalysts.join(", ")}` : ""}</div>
@@ -283,6 +297,14 @@ export function ReactionLab() {
               {tpls.data.templates.map((t: any) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
             <p className="mt-1 text-[11px] text-ink-muted">{T?.hint}</p>
+            {route?.synthesis && (
+              <div className="mt-2 rounded-lg bg-brand-50 p-2 text-[11px] text-brand-800 ring-1 ring-inset ring-brand-200">
+                <span className="font-semibold">In this route:</span>{" "}
+                {Object.keys(T?.rxns?.[0]?.r ?? {}).map((sp: string, i: number) => `${sp} = ${route.reactants[i] ?? "reactant " + (i + 1)}`).join(" · ")}
+                {" · "}{T?.target} = {routes.data?.name}
+                <div className="mt-0.5 text-brand-700/80">Picked from the number of named reactants; change it if the chemistry differs (e.g. a follow-on impurity).</div>
+              </div>
+            )}
             <div className="mt-2 space-y-2">
               {T?.rxns.map((r: any, i: number) => (
                 <div key={i} className="rounded-lg bg-slate-50 p-2">
@@ -331,6 +353,10 @@ export function ReactionLab() {
                 ? <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900 ring-1 ring-inset ring-emerald-200"><Target size={13} />
                     Calibrated to the published example ({anchor?.patent}): {anchor?.yield_pct}% at {anchor?.temp_c} °C, {anchor?.hours} h → main k = {cal.k_ref.toPrecision(3)} at {cal.temp_ref_c} °C. Everything away from that point is prediction.</div>
                 : null)}
+              {!cal && (
+                <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-ink-soft ring-1 ring-inset ring-line"><TriangleAlert size={13} className="mt-0.5 shrink-0 text-amber-500" />
+                  <span>Not calibrated: {routes.data?.routes?.some((r: any) => r.synthesis) ? "the selected step has no temperature + time + yield to anchor to" : `no published synthesis step for ${routes.data?.name ?? "this molecule"}`}, so these numbers come from the rate constants in step 2 and are the same for any molecule with the same mechanism. Pick a route marked <Target size={11} className="inline" /> or enter your own k and Ea.</span></div>
+              )}
               {d.notes?.map((n: string, i: number) => <div key={i} className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-inset ring-amber-200"><TriangleAlert size={13} className="mt-0.5 shrink-0" />{n}</div>)}
 
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">

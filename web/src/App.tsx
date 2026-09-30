@@ -10,6 +10,8 @@ import { Infrastructure } from "./pages/org/Infrastructure";
 import { Opportunities } from "./pages/org/Opportunities";
 import { EuExport } from "./pages/org/EuExport";
 import { Team } from "./pages/org/Team";
+import { FeatureAccess } from "./pages/org/FeatureAccess";
+import { Features } from "./pages/admin/Features";
 import { AdminOverview } from "./pages/admin/AdminOverview";
 import { Orgs } from "./pages/admin/Orgs";
 import { Users } from "./pages/admin/Users";
@@ -74,10 +76,14 @@ export default function App() {
         <Route path="/o/:slug/eu" element={<EuExport />} />
         <Route path="/o/:slug/eu/:molecule" element={<EuExport />} />
         <Route path="/o/:slug/team" element={<Team />} />
+        <Route path="/o/:slug/access" element={<FeatureAccess />} />
+        <Route path="/o/:slug/playground" element={<Playground />} />
+        <Route path="/o/:slug/playground/:tab" element={<Playground />} />
       </Route>
       <Route element={<Protected platform />}>
         <Route path="/admin" element={<AdminOverview />} />
         <Route path="/admin/orgs" element={<Orgs />} />
+        <Route path="/admin/features" element={<Features />} />
         <Route path="/admin/users" element={<Users />} />
         <Route path="/admin/jobs" element={<Jobs />} />
         <Route path="/admin/pipelines" element={<Pipelines />} />

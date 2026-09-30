@@ -15,7 +15,10 @@ from ..db import get_db
 from ..models import Medicine, User
 from ..security import current_user, require_super
 
-router = APIRouter(prefix="/api/medicines", tags=["medicines"])
+from .. import features
+from ..tenant import TenantRoute
+
+router = APIRouter(route_class=TenantRoute, dependencies=[Depends(features.gate)], prefix="/api/medicines", tags=["medicines"])
 
 
 class MedicineBody(BaseModel):

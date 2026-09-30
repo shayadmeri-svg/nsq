@@ -378,3 +378,39 @@ def plant_apply_registry(slug: str, asset_id: str, body: RegistryBody, request: 
     audit(db, "plant.registry_applied", actor=user, target_type="plant", target_id=asset_id,
           detail={"org": org.slug, "registry": reg["id"], "added": applied["added"], "upgraded": applied["upgraded"]}, request=request)
     return {**insights.plant_profile(plant), "added": applied["added"], "upgraded": applied["upgraded"]}
+
+
+# --- Playground features: what the organisation has, and what each persona sees (org admin) ----------
+
+class VisibilityBody(BaseModel):
+    # {persona: [feature ids]}; null for a persona = sees every feature the organisation has
+    visibility: dict[str, Optional[list[str]]]
+
+
+def _features_payload(db: Session, org: Org, user: User) -> dict:
+    from .. import features
+    from ..models import PERSONAS
+
+    ent, vis, configured = features.org_settings(db, org)
+    reg = {f["id"]: f for f in features.registry_payload()}
+    return {"registry": [reg[i] for i in ent], "entitled": ent, "visibility": {p: vis.get(p) for p in PERSONAS},
+            "personas": list(PERSONAS), "configured": configured, "can_manage": can_manage_org(user, org),
+            "mine": features.effective(db, user)}
+
+
+@router.get("/{slug}/features")
+def org_features(slug: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    org = org_for_user(db, slug, user)
+    return _features_payload(db, org, user)
+
+
+@router.put("/{slug}/features/visibility")
+def set_org_visibility(slug: str, body: VisibilityBody, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .. import features
+
+    org = org_for_user(db, slug, user)
+    if not can_manage_org(user, org):
+        raise HTTPException(403, "Only the organisation admin can change who sees what.")
+    features.set_visibility(db, org, body.visibility, user.email)
+    audit(db, "org.features_visibility", actor=user, target_type="org", target_id=org.slug, detail=body.model_dump(), request=request)
+    return _features_payload(db, org, user)

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, LayoutDashboard, LogOut, Map, Menu, Network, PanelLeftClose, PanelLeftOpen, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
+import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, KeyRound, LayoutDashboard, LogOut, Map, Menu, Network, PanelLeftClose, PanelLeftOpen, PlayCircle, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
 import { createContext, useContext } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -191,17 +191,26 @@ export function AppShell({ me }: { me: Me }) {
           <NavItem to={`/o/${slug}/infrastructure`} icon={<Factory size={17} />}>Infrastructure</NavItem>
           <NavItem to={`/o/${slug}/opportunities`} icon={<Sparkles size={17} />}>Patent opportunities</NavItem>
           <NavItem to={`/o/${slug}/eu`} icon={<Globe2 size={17} />}>EU export route</NavItem>
+          {!me.is_platform && me.features?.length > 0 && <NavItem to={`/o/${slug}/playground`} icon={<Compass size={17} />}>Playground</NavItem>}
           {(me.is_platform || me.role === "org_admin") && <NavItem to={`/o/${slug}/team`} icon={<Users size={17} />}>Team</NavItem>}
+          {(me.is_platform || me.role === "org_admin") && <NavItem to={`/o/${slug}/access`} icon={<KeyRound size={17} />}>Feature access</NavItem>}
         </Section>
       )}
-      <Section title="Explore">
-        <NavItem to="/playground" icon={<Compass size={17} />}>Playground</NavItem>
-      </Section>
+      {me.is_platform ? (
+        <Section title="Explore">
+          <NavItem to="/playground" icon={<Compass size={17} />}>Playground</NavItem>
+        </Section>
+      ) : !slug && me.org && me.features?.length > 0 && (
+        <Section title="Explore">
+          <NavItem to={`/o/${me.org.slug}/playground`} icon={<Compass size={17} />}>Playground</NavItem>
+        </Section>
+      )}
       {me.is_platform && (
         <Section title="Platform">
           <NavItem to="/admin" end icon={<Gauge size={17} />}>Admin overview</NavItem>
           <NavItem to="/admin/explorer" icon={<Map size={17} />}>All-India NSQ</NavItem>
           <NavItem to="/admin/orgs" icon={<Building2 size={17} />}>Organisations</NavItem>
+          <NavItem to="/admin/features" icon={<KeyRound size={17} />}>Feature access</NavItem>
           <NavItem to="/admin/users" icon={<ShieldCheck size={17} />}>Users & access</NavItem>
           <NavItem to="/admin/pipelines" icon={<Workflow size={17} />}>Data pipelines</NavItem>
           <NavItem to="/admin/data-map" icon={<Network size={17} />}>Data map</NavItem>

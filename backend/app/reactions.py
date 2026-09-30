@@ -54,20 +54,23 @@ def routes(key: str) -> dict[str, Any]:
     if not m:
         return {"available": bool(d), "found": False, "molecules": molecules_with_routes()}
     out = []
+    names = {x.lower() for x in (m.get("name"), key) if x}
     for e in m.get("examples") or []:
         y = e.get("yield")
         y = y if isinstance(y, (int, float)) and 0 < y <= 100 else None
         t, h = e.get("temp_c"), e.get("hours")
-        anchor = y is not None and t is not None and h is not None and 0 < h <= 200
-        solv = next((s for s in (e.get("solvents") or []) if s and s.lower() != "mixture"), None)
         reactants = [r for r in (e.get("reactants") or []) if r]
-        out.append({"id": e["id"], "patent": e.get("patent"), "doi": e.get("doi"), "dataset": e.get("dataset"),
+        # the molecule among its own "reactants" = a formulation or mixture record, not a step that makes it
+        synthesis = not any(r.lower() in names for r in reactants)
+        anchor = synthesis and y is not None and t is not None and h is not None and 0 < h <= 200
+        solv = next((s for s in (e.get("solvents") or []) if s and s.lower() != "mixture"), None)
+        out.append({"synthesis": synthesis, "id": e["id"], "patent": e.get("patent"), "doi": e.get("doi"), "dataset": e.get("dataset"),
                     "temp_c": t, "hours": h, "yield_pct": y, "anchor": anchor, "solvent": solv,
                     "solvents": sorted(set(e.get("solvents") or [])), "catalysts": e.get("catalysts") or [],
                     "reagents": e.get("reagents") or [], "reactants": reactants,
                     "needs": e.get("needs") or [], "hazards": e.get("hazards") or [],
                     "suggested_template": "second" if len(reactants) >= 2 else "first"})
-    out.sort(key=lambda r: (not r["anchor"], -(r["yield_pct"] or 0)))
+    out.sort(key=lambda r: (not r["anchor"], not r["synthesis"], -(r["yield_pct"] or 0)))
     return {"available": True, "found": True, "key": key, "name": m.get("name"), "smiles": m.get("smiles"),
             "routes": out, "anchors": sum(r["anchor"] for r in out), "licence": d.get("licence"),
             "molecules": molecules_with_routes()}
@@ -78,9 +81,12 @@ def molecules_with_routes() -> list[dict[str, Any]]:
     rows = []
     for k, m in (d.get("data") or {}).items():
         ex = m.get("examples") or []
+        own = {x.lower() for x in (m.get("name"), k) if x}
+        ex = [e for e in ex if not any((r or "").lower() in own for r in e.get("reactants") or [])]  # synthesis steps only
         anchors = sum(1 for e in ex if isinstance(e.get("yield"), (int, float)) and 0 < e["yield"] <= 100
                       and e.get("temp_c") is not None and e.get("hours"))
-        rows.append({"key": k, "name": m.get("name") or k, "routes": len(ex), "anchors": anchors})
+        if ex:  # molecules whose only records are formulations have nothing to simulate
+            rows.append({"key": k, "name": m.get("name") or k, "routes": len(ex), "anchors": anchors})
     rows.sort(key=lambda r: (-r["anchors"], -r["routes"], r["name"]))
     return rows
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -15,8 +15,12 @@ from .. import data, playground
 from ..db import get_db
 from ..models import PLATFORM_ROLES, Org, User
 from ..security import current_user
+from ..tenant import keep_own_plants, own_company, own_key, tenant_of
 
-router = APIRouter(prefix="/api/playground", tags=["playground"])
+from .. import features
+from ..tenant import TenantRoute
+
+router = APIRouter(route_class=TenantRoute, dependencies=[Depends(features.gate)], prefix="/api/playground", tags=["playground"])
 
 
 def _filters(focus: str = "all", drug_type: list[str] = Query(default=[]), form: list[str] = Query(default=[]),
@@ -27,26 +31,34 @@ def _filters(focus: str = "all", drug_type: list[str] = Query(default=[]), form:
             "since": since, "until": until, "q": q, "top_mfr": top_mfr, "authenticity": authenticity}
 
 
+def _scoped(request: Request, f: dict[str, Any], own_rows: bool = False) -> dict[str, Any]:
+    """An organisation's users search products only, and row-level views (ledger) hold only their own alerts."""
+    t = tenant_of(request)
+    if t is None:
+        return f
+    return {**f, "_products_only": True, **({"_keys": t.keys} if own_rows else {})}
+
+
 @router.get("/facets")
 def facets(user: User = Depends(current_user)):
     return playground.facets()
 
 
 @router.get("/cube")
-def cube(f: dict = Depends(_filters), user: User = Depends(current_user)):
-    return playground.cube(f)
+def cube(request: Request, f: dict = Depends(_filters), user: User = Depends(current_user)):
+    return playground.cube(_scoped(request, f))
 
 
 @router.get("/ledger")
 def ledger(f: dict = Depends(_filters), cols: list[str] = Query(default=[]), sort: str = "month", desc: bool = True,
-           page: int = Query(1, ge=1), size: int = Query(50, ge=10, le=250), user: User = Depends(current_user)):
-    return playground.ledger(f, cols, sort, desc, page, size)
+           page: int = Query(1, ge=1), size: int = Query(50, ge=10, le=250), user: User = Depends(current_user), request: Request = None):
+    return playground.ledger(_scoped(request, f, own_rows=True), cols, sort, desc, page, size)
 
 
 @router.get("/ledger.csv")
 def ledger_csv(f: dict = Depends(_filters), cols: list[str] = Query(default=[]), sort: str = "month", desc: bool = True,
-               user: User = Depends(current_user)):
-    return Response(playground.ledger_csv(f, cols, sort, desc), media_type="text/csv",
+               user: User = Depends(current_user), request: Request = None):
+    return Response(playground.ledger_csv(_scoped(request, f, own_rows=True), cols, sort, desc), media_type="text/csv",
                     headers={"Content-Disposition": 'attachment; filename="nsq-alerts.csv"'})
 
 
@@ -104,11 +116,12 @@ def molecule(key: str, plant_id: str = "", w_patent: Optional[float] = None, w_r
 @router.get("/molecule/{key}/plant-fit")
 def molecule_plant_fit(key: str, limit: int = Query(25, ge=1, le=100), state: str = "", q: str = "",
                        cert: str = Query("", pattern="^(|who_gmp|eu_gmp|us_fda|sugam|schedule_c|loan)$"),
-                       band: str = Query("", pattern="^(|80\\+|60–79|40–59|<40)$"), user: User = Depends(current_user)):
-    """Plant fit of every plant in the registry for this molecule, best first."""
+                       band: str = Query("", pattern="^(|80\\+|60–79|40–59|<40)$"), user: User = Depends(current_user), request: Request = None):
+    """Plant fit of every plant in the registry for this molecule, best first (an organisation's users: their own plants)."""
     from .. import plants as registry_plants
 
-    out = registry_plants.fit_ranking(key, limit=limit, state=state, cert=cert, q=q, band=band)
+    t = tenant_of(request)
+    out = registry_plants.fit_ranking(key, limit=limit, state=state, cert=cert, q=q, band=band, only=t.plants if t else None)
     if out is None:
         raise HTTPException(404, "Molecule not tracked.")
     return out
@@ -116,8 +129,8 @@ def molecule_plant_fit(key: str, limit: int = Query(25, ge=1, le=100), state: st
 
 @router.get("/survival")
 def survival(group: str = Query("form", pattern="^(form|category|drug_type|source|state)$"), measure: str = Query("months", pattern="^(months|shelf)$"),
-             f: dict = Depends(_filters), user: User = Depends(current_user)):
-    return playground.survival(group, measure, f)
+             f: dict = Depends(_filters), user: User = Depends(current_user), request: Request = None):
+    return playground.survival(group, measure, _scoped(request, f))
 
 
 # --- Health & trade signals (NFHS, IDSP, UN Comtrade) -------------------------------------------
@@ -163,17 +176,22 @@ def molecule_synthesis(key: str, user: User = Depends(current_user)):
 
 @router.get("/wc")
 def wc_list(q: str = Query("", max_length=120), kind: str = Query("wc", pattern="^(wc|notice|all)$"), year: str = Query("", pattern=r"^(|\d{4})$"),
-            latest: bool = False, page: int = Query(1, ge=1), size: int = Query(25, ge=5, le=100), user: User = Depends(current_user)):
+            latest: bool = False, page: int = Query(1, ge=1), size: int = Query(25, ge=5, le=100), user: User = Depends(current_user),
+            request: Request = None):
     from .. import wc
-    return wc.listing(q, kind, year, latest, page, size)
+    t = tenant_of(request)
+    return wc.listing(q, kind, year, latest, page, size, only=(lambda c: own_company(t, c)) if t else None)
 
 
 @router.get("/wc/{rid}.pdf")
-def wc_pdf(rid: str, user: User = Depends(current_user)):
+def wc_pdf(rid: str, request: Request, user: User = Depends(current_user)):
     """The letter itself, shown inline (the page embeds it; CDSCO's own site refuses to be framed)."""
     from fastapi.responses import FileResponse
 
     from .. import wc
+    rec = wc.record(rid.removesuffix(".pdf")) or {}
+    if rec.get("kind") == "wc" and not own_company(tenant_of(request), rec.get("company")):
+        raise HTTPException(404, "Not found in your organisation's records.")
     p = wc.pdf_path(rid)
     if p is None:
         raise HTTPException(404, "This PDF is not on the server yet — run just fetch-cdsco-wc and just push-wc.")
@@ -186,9 +204,13 @@ def wc_pdf(rid: str, user: User = Depends(current_user)):
 # --- Investigate: any product or manufacturer, nationally (replaces the Streamlit investigation tab) ----------
 
 @router.get("/investigate/search")
-def investigate_search(q: str = Query("", max_length=120), user: User = Depends(current_user)):
+def investigate_search(request: Request, q: str = Query("", max_length=120), user: User = Depends(current_user)):
     from .. import insights
-    return {"products": insights.product_search(q, 10), "manufacturers": insights.manufacturer_search(q, 10)}
+    t = tenant_of(request)
+    makers = insights.manufacturer_search(q, 50 if t else 10)
+    if t is not None:
+        makers = [m for m in makers if m.get("key") in t.keys][:10]
+    return {"products": insights.product_search(q, 10), "manufacturers": makers}
 
 
 @router.get("/investigate/product")
@@ -201,8 +223,9 @@ def investigate_product(name: str = Query(..., min_length=1, max_length=300), us
 
 
 @router.get("/investigate/manufacturer/{key}")
-def investigate_manufacturer(key: str, user: User = Depends(current_user)):
+def investigate_manufacturer(key: str, request: Request, user: User = Depends(current_user)):
     from .. import insights
+    own_key(tenant_of(request), key)
     out = insights.org_quality([key])
     if out.get("empty"):
         raise HTTPException(404, "No NSQ alert for this manufacturer.")
@@ -212,8 +235,10 @@ def investigate_manufacturer(key: str, user: User = Depends(current_user)):
 
 @router.get("/investigate/manufacturer/{key}/alerts")
 def investigate_manufacturer_alerts(key: str, q: str = "", category: str = "", form: str = "", product: str = "",
-                                    page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200), user: User = Depends(current_user)):
+                                    page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200), user: User = Depends(current_user),
+                                    request: Request = None):
     from .. import insights
+    own_key(tenant_of(request), key)
     df = data.org_frame([key])
     if product:
         df = df[df["Product_Name_Canonical"].fillna(df["Name of Product"]).astype(str) == product]
@@ -221,9 +246,10 @@ def investigate_manufacturer_alerts(key: str, q: str = "", category: str = "", f
 
 
 @router.get("/investigate/manufacturer/{key}/alerts/{issue_id}")
-def investigate_alert(key: str, issue_id: str, user: User = Depends(current_user)):
+def investigate_alert(key: str, issue_id: str, request: Request, user: User = Depends(current_user)):
     """One alert with its diagnosis: GMP & testing standards, probable causes, mitigation plan."""
     from .. import insights
+    own_key(tenant_of(request), key)
     detail = insights.org_issue_detail([key], issue_id)
     if detail is None:
         raise HTTPException(404, "Alert not found for this manufacturer.")
@@ -263,11 +289,14 @@ class PortfolioIn(BaseModel):
 
 
 @router.post("/forensics/portfolio")
-def forensics_portfolio(body: PortfolioIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def forensics_portfolio(body: PortfolioIn, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Risk of each product in a list, read from how the whole market fails it — plus one company's own NSQ record:
     the maker chosen on the page, or, for an organisation's users, their own organisation's manufacturer keys."""
     from .. import gaps
     compare = None
+    t = tenant_of(request)
+    if t is not None:  # an organisation's users compare only with their own record
+        body.compare_keys = [k for k in body.compare_keys if k in t.keys]
     if body.compare_keys:
         compare = {"keys": [k[:200] for k in body.compare_keys], "name": body.compare_name, "source": "chosen"}
     elif user.org_id:
@@ -278,8 +307,9 @@ def forensics_portfolio(body: PortfolioIn, user: User = Depends(current_user), d
 
 
 @router.get("/forensics/portfolio/maker")
-def forensics_portfolio_maker(key: str = Query(..., min_length=2, max_length=200), user: User = Depends(current_user)):
+def forensics_portfolio_maker(request: Request, key: str = Query(..., min_length=2, max_length=200), user: User = Depends(current_user)):
     from .. import gaps
+    own_key(tenant_of(request), key)
     return {"products": gaps.maker_products(key)}
 
 

@@ -385,6 +385,9 @@ def org_quality(ontology_keys: list[str]) -> dict[str, Any]:
     # Ranks count only alerts attributable to the maker (spurious fakes excluded).
     rank_series = data.attributable(national)["Mfg_Ontology_Key"].value_counts()
     ranks = [int(rank_series.index.get_loc(k)) + 1 for k in ontology_keys if k in rank_series.index]
+    # Rank 1 = the MOST alerts (worst record). Also say it as a share: how many ranked makers have fewer alerts.
+    own_max = max((int(rank_series[k]) for k in ontology_keys if k in rank_series.index), default=0)
+    more_than_pct = round(100 * float((rank_series < own_max).sum()) / max(len(rank_series), 1), 1) if own_max else None
     cat_org = df["Failure_Category_Primary"].value_counts(normalize=True)
     cat_nat = national["Failure_Category_Primary"].value_counts(normalize=True)
     compare = [
@@ -409,6 +412,8 @@ def org_quality(ontology_keys: list[str]) -> dict[str, Any]:
             "national_share_pct": round(100 * len(df) / n_all, 2),
             "national_rank": min(ranks) if ranks else None,
             "manufacturers_ranked": int(len(rank_series)),
+            "rank_basis": "most_alerts_first",
+            "more_alerts_than_pct": more_than_pct,
             "top_category": str(df["Failure_Category_Primary"].value_counts().index[0]),
             "spurious": int(df["_spurious"].sum()) if "_spurious" in df.columns else 0,
         },

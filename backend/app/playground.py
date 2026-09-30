@@ -71,6 +71,8 @@ def apply_filters(df: pd.DataFrame, f: dict[str, Any]) -> pd.DataFrame:
         vals = [v for v in (f.get(key) or []) if v]
         if vals:
             m &= df[col].isin(vals)
+    if f.get("_keys") is not None:  # an organisation's user: only its own manufacturer records
+        m &= df["Mfg_Ontology_Key"].isin(list(f["_keys"]))
     auth = f.get("authenticity") or ""
     if auth and "_spurious" in df.columns:
         m &= df["_spurious"] if auth == "spurious" else ~df["_spurious"]
@@ -80,8 +82,11 @@ def apply_filters(df: pd.DataFrame, f: dict[str, Any]) -> pd.DataFrame:
         m &= df["_month"] <= f["until"]
     q = (f.get("q") or "").strip().lower()
     if q:
-        hay = (df["Name of Product"].astype(str) + " " + df["Manufactured By"].astype(str) + " "
-               + df["Product_Name_Canonical"].astype(str) + " " + df["Mfg_Company_Canonical"].astype(str)).str.lower()
+        if f.get("_products_only"):  # searching by another company's name would reveal its record through the counts
+            hay = (df["Name of Product"].astype(str) + " " + df["Product_Name_Canonical"].astype(str)).str.lower()
+        else:
+            hay = (df["Name of Product"].astype(str) + " " + df["Manufactured By"].astype(str) + " "
+                   + df["Product_Name_Canonical"].astype(str) + " " + df["Mfg_Company_Canonical"].astype(str)).str.lower()
         m &= hay.str.contains(re.escape(q), regex=True)
     return df[m]
 

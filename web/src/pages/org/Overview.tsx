@@ -1,4 +1,4 @@
-import { Activity, ArrowUpRight, Factory, Globe2, Sparkles, Trophy } from "lucide-react";
+import { Activity, ArrowUpRight, Factory, Globe2, Sparkles, AlertTriangle } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 import { Legendary, RankBars, TrendBars } from "../../components/charts";
@@ -28,7 +28,8 @@ export function OrgOverview() {
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="NSQ alerts" value={k.alerts ?? 0} icon={<Activity size={18} />} tone="rose" hint={k.alerts ? `${k.last_12m} in the last 12 months · ${fmtMonth(q.period?.first)} – ${fmtMonth(q.period?.last)}` : "No alerts linked to this organisation"} />
-        <Stat label="National rank" value={k.national_rank ? `#${k.national_rank}` : "—"} icon={<Trophy size={18} />} tone="amber" delay={0.05} hint={k.national_rank ? `by alert count among ${k.manufacturers_ranked?.toLocaleString("en-IN")} manufacturers` : "Not ranked"} />
+        <Stat label="Alert rank (1 = most alerts)" value={k.national_rank ? `#${k.national_rank}` : "—"} icon={<AlertTriangle size={18} />} tone="rose" delay={0.05}
+          hint={k.national_rank ? `of ${k.manufacturers_ranked?.toLocaleString("en-IN")} manufacturers with an NSQ alert — more alerts than ${k.more_alerts_than_pct}% of them. A lower number is worse.` : "No attributable alerts — not ranked"} />
         <Stat label="Molecules within reach" value={good} icon={<Sparkles size={18} />} tone="brand" delay={0.1} hint={`strategic or core fit · ${opp.ready_within_5y} available within 5 years`} />
         <Stat label="EU-ready or close" value={(eu.verdicts.ready ?? 0) + (eu.verdicts.close ?? 0)} icon={<Globe2 size={18} />} tone="indigo" delay={0.15} hint={eu.eu_gmp_sites.length ? `EU GMP site: ${eu.eu_gmp_sites.join(", ")}` : "No EU GMP certified site"} />
       </div>

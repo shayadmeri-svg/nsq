@@ -1,7 +1,9 @@
 import { Compass, Cpu, Factory, FlaskRound, FileCheck2, Microscope, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useMe } from "../../lib/session";
+import { Empty } from "../../components/ui";
 import { cn } from "../../lib/cn";
 import { EMPTY, Explorer, FilterBar, Ledger, type Filters } from "./Explorer";
 import { Forensics } from "./Forensics";
@@ -16,7 +18,7 @@ import { Signals } from "./Signals";
 import { Workbench } from "./Workbench";
 import { WrittenConfirmations } from "./WrittenConfirmations";
 
-const TABS = [
+export const TABS = [
   { id: "explore", label: "NSQ explorer", icon: Map, hint: "All-India alerts: map, heatmaps, flows" },
   { id: "ledger", label: "Ledger", icon: Table2, hint: "Every alert — sort, pick columns, export" },
   { id: "insights", label: "Insights", icon: Lightbulb, hint: "Patterns the raw alerts don't show" },
@@ -32,11 +34,20 @@ const TABS = [
   { id: "reactions", label: "Reaction lab", icon: FlaskRound, hint: "Run a synthesis step: kinetics, yield map, operating window and thermal safety — anchored to published routes" },
 ] as const;
 
-export function Playground() {
-  const { tab = "explore" } = useParams();
+// `base`: where the tabs live — /playground for platform staff, /o/<slug>/playground inside an organisation.
+// Only the features the server says this user has are shown (the API enforces the same list).
+export function Playground({ base }: { base?: string }) {
+  const { tab: want, slug } = useParams();
   const nav = useNavigate();
+  const loc = useLocation();
+  const { data: me } = useMe();
   const [f, setF] = useState<Filters>(EMPTY);
-  const cur = TABS.find((t) => t.id === tab) ?? TABS[0];
+  const root = base ?? (slug ? `/o/${slug}/playground` : "/playground");
+  if (me && !me.is_platform && !slug) return <Navigate to={me.org ? `/o/${me.org.slug}/playground${want ? "/" + want : ""}${loc.search}` : "/account"} replace />;
+  const tabs = TABS.filter((t) => me?.is_platform || me?.features?.includes(t.id));
+  if (!tabs.length) return <Empty title="No Playground tools yet">Your organisation doesn't have any Playground features, or your admin hasn't shared them with your role. Ask your organisation admin.</Empty>;
+  const cur = tabs.find((t) => t.id === want) ?? tabs[0];
+  const tab = cur.id;
   return (
     <>
       <div className="mb-5 space-y-3">
@@ -46,10 +57,10 @@ export function Playground() {
           <p className="truncate text-xs text-ink-muted">{cur.hint}</p>
         </div>
         <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl bg-white p-1.5 ring-1 ring-inset ring-line">
-          {TABS.map((t) => {
+          {tabs.map((t) => {
             const on = tab === t.id;
             return (
-              <button key={t.id} onClick={() => nav(`/playground/${t.id}`)} title={`${t.label} — ${t.hint}`} aria-label={t.label}
+              <button key={t.id} onClick={() => nav(`${root}/${t.id}`)} title={`${t.label} — ${t.hint}`} aria-label={t.label}
                 className={cn("group relative flex h-10 items-center justify-center gap-2 rounded-xl text-[13px] font-medium transition", on ? "px-3.5 text-white" : "w-10 text-ink-soft hover:bg-slate-50 hover:text-ink")}>
                 {on && <motion.span layoutId="pg-tab" className="absolute inset-0 rounded-xl bg-night-900" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
                 <t.icon size={17} className="relative" />

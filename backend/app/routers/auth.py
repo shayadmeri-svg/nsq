@@ -74,7 +74,17 @@ def user_payload(user: User) -> dict[str, Any]:
             "platform_analytics": user.role in PLATFORM_ROLES,
         },
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+        # Playground features this user may open (the API enforces the same list)
+        "features": _features(user),
     }
+
+
+def _features(user: User) -> list[str]:
+    from sqlalchemy.orm import object_session
+
+    from .. import features
+    db = object_session(user)
+    return features.effective(db, user) if db is not None else []
 
 
 @router.post("/login")

@@ -7,6 +7,7 @@ export type Me = {
   must_change_password: boolean; is_platform: boolean;
   permissions: { admin: boolean; manage_users: boolean; run_jobs: boolean; run_destructive_jobs: boolean; edit_molecules: boolean; platform_analytics: boolean };
   last_login_at: string | null;
+  features: string[];  // Playground features this user may open
 };
 
 export function useMe() {

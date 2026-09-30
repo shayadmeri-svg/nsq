@@ -405,3 +405,35 @@ def admin_overview(actor: User = Depends(require_platform), db: Session = Depend
             for j in jobs
         ],
     }
+
+
+# --- Playground feature entitlements per organisation (platform admins) ---------------------------
+
+class EntitleBody(BaseModel):
+    features: list[str]
+
+
+@router.get("/features")
+def feature_matrix(actor: User = Depends(require_platform), db: Session = Depends(get_db)):
+    from .. import features
+
+    orgs = db.scalars(select(Org).order_by(Org.name)).all()
+    rows = []
+    for o in orgs:
+        ent, vis, configured = features.org_settings(db, o)
+        rows.append({"slug": o.slug, "name": o.name, "is_active": o.is_active, "entitled": ent, "configured": configured,
+                     "restricted_personas": sorted(p for p, v in vis.items() if v is not None)})
+    return {"registry": features.registry_payload(), "base": list(features.BASE_IDS), "orgs": rows}
+
+
+@router.put("/orgs/{slug}/features")
+def set_org_features(slug: str, body: EntitleBody, request: Request, actor: User = Depends(require_platform), db: Session = Depends(get_db)):
+    from .. import features
+
+    org = _org_by_slug(db, slug)
+    unknown = sorted(set(body.features) - set(features.ALL_IDS))
+    if unknown:
+        raise HTTPException(400, f"Unknown features: {', '.join(unknown)}")
+    row = features.set_entitled(db, org, body.features, actor.email)
+    audit(db, "org.features", actor=actor, target_type="org", target_id=org.slug, detail={"features": row.entitled}, request=request)
+    return {"slug": org.slug, "entitled": row.entitled}
