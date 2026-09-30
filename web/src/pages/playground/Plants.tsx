@@ -4,6 +4,7 @@
 // can make X, and how many of them had NSQ alerts.
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { AlertTriangle, BadgeCheck, ChevronLeft, ChevronRight, ExternalLink, Factory, FlaskConical, KeyRound, MapPin, Search, ShieldAlert, Syringe } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -187,7 +188,7 @@ function PlantAlerts({ id }: { id: string }) {
   if (!d.total && !category) return null;
   const keys = [...new Set<string>(d.items.map((it: any) => it.mfr_key).filter(Boolean))];
   return (
-    <div className={cn("mt-3", r.isFetching && "opacity-70")}>
+    <div className={cn("relative mt-3", r.isFetching && "opacity-70")}><LoadingEdge active={r.isFetching} />
       <div className="mb-2 flex flex-wrap items-center gap-1">
         <button onClick={() => setCategory("")} className={cn("rounded-full px-2 py-0.5 text-[11px] ring-1 ring-inset", !category ? "bg-night-900 text-white ring-night-900" : "text-ink-soft ring-line hover:bg-slate-50")}>All {category ? "" : d.total}</button>
         {d.categories.map((c: any) => (

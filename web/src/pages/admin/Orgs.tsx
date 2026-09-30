@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { Building2, Check, ExternalLink, Pencil, Plus, Search, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -18,7 +19,7 @@ function ManufacturerPicker({ value, onChange }: { value: string[]; onChange: (v
     <div>
       {value.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{value.map((k) => <button key={k} onClick={() => toggle(k)} className="flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-1 text-xs font-semibold text-white">{k}<X size={12} /></button>)}</div>}
       <div className="relative"><Search size={15} className="absolute left-3 top-3 text-ink-faint" /><input className="input pl-9" placeholder="Search CDSCO manufacturer names…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-      <div className={cn("mt-2 max-h-72 overflow-y-auto rounded-xl border border-line scrollbar-thin", isFetching && "opacity-60")}>
+      <div className={cn("relative mt-2 max-h-72 overflow-y-auto rounded-xl border border-line scrollbar-thin", isFetching && "opacity-60")}><LoadingEdge active={isFetching} />
         {data?.manufacturers.map((m: any) => {
           const on = value.includes(m.key);
           return (

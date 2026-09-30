@@ -1,4 +1,5 @@
 import { animate, AnimatePresence, motion, useInView, useMotionValue, useTransform } from "motion/react";
+import { LoadingEdge } from "./Loading";
 import { X } from "lucide-react";
 import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
@@ -32,15 +33,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
 );
 
 // --- Card ----------------------------------------------------------------------
-export function Card({ className, children, delay = 0, ...rest }: { className?: string; children: ReactNode; delay?: number } & React.HTMLAttributes<HTMLDivElement>) {
+export function Card({ className, children, delay = 0, loading, ...rest }: { className?: string; children: ReactNode; delay?: number; loading?: boolean } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={cn("card", className)}
+      className={cn("card", loading !== undefined && "relative", className)}
       {...(rest as any)}
     >
+      {loading !== undefined && <LoadingEdge active={loading} />}
       {children}
     </motion.div>
   );

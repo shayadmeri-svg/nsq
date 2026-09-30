@@ -2,6 +2,7 @@
 // and open any alert for its diagnosis — GMP & testing standards, probable causes, mitigation plan.
 // (Replaces the legacy Streamlit dashboard's "Product → Manufacturer investigation" tab.)
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { ArrowLeft, Building2, ChevronLeft, ChevronRight, Package, Search, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -36,7 +37,7 @@ function Finder({ onProduct, onMfr }: { onProduct: (p: string) => void; onMfr: (
         <p className="mt-2 text-[11.5px] text-ink-muted">Every CDSCO NSQ alert since 2021, all of India. {dq ? "" : "Showing the most-flagged products and manufacturers."}</p>
       </Card>
       {r.error && <ErrorNote error={r.error} />}
-      <div className={cn("grid gap-4 lg:grid-cols-2", r.isFetching && "opacity-70")}>
+      <div className={cn("relative grid gap-4 lg:grid-cols-2", r.isFetching && "opacity-70")}><LoadingEdge active={r.isFetching} />
         <Card className="overflow-hidden">
           <CardHeader title={<span className="flex items-center gap-2"><Package size={15} /> Products</span>} subtitle="Alerts · manufacturers that had them" />
           <div className="mt-2">{!r.data ? <div className="p-4"><Skeleton className="h-40" /></div> : r.data.products.length === 0 ? <div className="p-5 text-sm text-ink-muted">No product matches.</div> :

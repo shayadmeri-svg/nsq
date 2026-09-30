@@ -17,7 +17,7 @@ export function Audit() {
       <PageHeader eyebrow="Platform" title="Audit log" subtitle="Sign-ins, access changes, organisation edits, plant edits and data jobs — who did what, when, from where." actions={
         <Segmented value={action} onChange={(v) => { setAction(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "auth", label: "Sign-ins" }, { value: "user", label: "Users" }, { value: "org", label: "Orgs" }, { value: "job", label: "Jobs" }]} />
       } />
-      <Card className={isFetching ? "opacity-70 transition" : "transition"}>
+      <Card loading={isFetching} className={isFetching ? "opacity-70 transition" : "transition"}>
         <table className="w-full text-sm">
           <thead><tr className="border-b border-line bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-muted"><th className="px-5 py-2.5">When</th><th className="px-3 py-2.5">Who</th><th className="px-3 py-2.5">Action</th><th className="px-3 py-2.5">Target</th><th className="px-5 py-2.5">Detail</th></tr></thead>
           <tbody>

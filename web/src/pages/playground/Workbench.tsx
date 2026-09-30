@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { ExternalLink, Factory, FlaskConical, Gauge, Globe2, Maximize2, ScrollText, ShieldAlert, TrendingUp, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
@@ -588,7 +589,7 @@ export function Workbench({ initial }: { initial?: string }) {
       </Card>
       {q.error && <ErrorNote error={q.error} />}
       {!d ? <Skeleton className="h-96" /> : (
-        <div className={cn("space-y-4 transition-opacity", q.isFetching && "opacity-70")}>
+        <div className={cn("relative space-y-4 transition-opacity", q.isFetching && "opacity-70")}><LoadingEdge active={q.isFetching} className="-top-2" />
           <Identity d={d} />
           {d.selected_plant && <ThisPlant sp={d.selected_plant} onWhy={() => open("score")} onRanking={() => open("fit")} />}
           <div className="grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">

@@ -2,6 +2,7 @@
 // Database), with the yield map over temperature × time, an acceptable operating range, activation-energy sensitivity,
 // heat release and Stoessel thermal-safety class. Built-in SciPy engine, cross-checked against PharmaPy's BatchReactor.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { BadgeCheck, ChevronDown, FlaskRound, Flame, Info, Target, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -325,7 +326,7 @@ export function ReactionLab() {
         <div className="min-w-0 space-y-4">
           {run.error && <ErrorNote error={run.error} />}
           {!d ? <Skeleton className="h-96" /> : (
-            <div className={cn("space-y-4 transition-opacity", run.isFetching && "opacity-70")}>
+            <div className={cn("relative space-y-4 transition-opacity", run.isFetching && "opacity-70")}><LoadingEdge active={run.isFetching} className="-top-2" />
               {cal && (cal.ok
                 ? <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900 ring-1 ring-inset ring-emerald-200"><Target size={13} />
                     Calibrated to the published example ({anchor?.patent}): {anchor?.yield_pct}% at {anchor?.temp_c} °C, {anchor?.hours} h → main k = {cal.k_ref.toPrecision(3)} at {cal.temp_ref_c} °C. Everything away from that point is prediction.</div>

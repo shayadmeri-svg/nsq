@@ -1,6 +1,7 @@
 // Failure forensics: why products fail NSQ, reverse-engineered from the pattern of their alerts —
 // which test, when in the shelf life, how many independent makers, which laboratory, and the molecule's chemistry.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { Beaker, Building2, ChevronLeft, ChevronRight, Clock, Factory, FlaskConical, Gem, Microscope, Search, ShieldAlert, Sparkles, TestTube } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -274,7 +275,7 @@ function AllProductsWithFilter({ initial, onOpen }: { initial: string; onOpen: (
           <option value="">Every pattern</option>{Object.entries(ARCH).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <Segmented value={sort} onChange={setSort} options={[{ value: "alerts", label: "Most alerts" }, { value: "recent", label: "Recent" }, { value: "makers", label: "Most makers" }]} />
       </div>
-      <div className={cn(r.isFetching && "opacity-70")}>{r.data?.items.map((g: any) => <GroupRow key={g.key} g={g} onOpen={(k) => onOpen(k, g)} />)}</div>
+      <div className={cn("relative", r.isFetching && "opacity-70")}><LoadingEdge active={r.isFetching} />{r.data?.items.map((g: any) => <GroupRow key={g.key} g={g} onOpen={(k) => onOpen(k, g)} />)}</div>
       {r.data && <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-xs text-ink-muted"><span>{r.data.total} products · page {r.data.page} of {r.data.pages}</span>
         <div className="flex gap-1.5"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={14} /></Button>
           <Button size="sm" variant="secondary" disabled={page >= r.data.pages} onClick={() => setPage(page + 1)}><ChevronRight size={14} /></Button></div></div>}

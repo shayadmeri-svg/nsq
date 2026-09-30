@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { ChevronLeft, ChevronRight, Columns3, Download, Factory, FlaskConical, Grid3x3, Package, Pill, Search, ShieldAlert, SlidersHorizontal, Stethoscope, Waypoints, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Legendary, RankBars, TrendArea } from "../../components/charts";
@@ -119,7 +120,7 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
 
   return (
     <ExpandedProvider sections={sections} active={active} onActive={setActive} title="NSQ explorer" subtitle={`${k.alerts.toLocaleString("en-IN")} alerts in view`}>
-    <div className={cn("space-y-5 transition-opacity", cube.isFetching && "opacity-70")}>
+    <div className={cn("relative space-y-5 transition-opacity", cube.isFetching && "opacity-70")}><LoadingEdge active={cube.isFetching} className="-top-2" />
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <Stat label="Alerts" value={k.alerts} hint={`${fmtMonth(d.period.first)} – ${fmtMonth(d.period.last)}`} />
         <Stat label="Manufacturers" value={k.manufacturers} tone="indigo" delay={0.03} hint={`${k.products.toLocaleString("en-IN")} products${k.spurious ? ` · ${k.spurious} spurious not attributed` : ""}`} />

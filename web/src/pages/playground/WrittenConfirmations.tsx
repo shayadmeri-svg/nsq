@@ -1,5 +1,6 @@
 // CDSCO International Cell: every Written Confirmation for API exports to the EU, each letter viewable as a PDF.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { LoadingEdge } from "../../components/ui/Loading";
 import { ChevronLeft, ChevronRight, Download, ExternalLink, FileCheck2, FileText, Info, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, ErrorNote, Segmented, Skeleton } from "../../components/ui";
@@ -189,7 +190,7 @@ export function WrittenConfirmations() {
             <input type="checkbox" checked={latest} onChange={(e) => setLatest(e.target.checked)} /> Latest per WC
           </label>
         </div>
-        <div className={cn("overflow-x-auto", isFetching && "opacity-60")}>
+        <div className={cn("relative overflow-x-auto", isFetching && "opacity-60")}><LoadingEdge active={isFetching} />
           <Rows items={items} q={q} />
           {items.length === 0 && <div className="p-8 text-center text-sm text-ink-muted">Nothing matches.</div>}
         </div>

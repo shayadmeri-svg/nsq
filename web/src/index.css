@@ -19,3 +19,10 @@
 
 .recharts-cartesian-axis-tick-value { font-size: 11px; fill: #94a3b8; }
 .recharts-tooltip-wrapper { outline: none; }
+
+/* loading feedback (components/ui/Loading.tsx) */
+@keyframes nsq-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+@keyframes nsq-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.nsq-sweep { animation: nsq-sweep 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+.nsq-pulse { animation: nsq-pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .nsq-sweep { animation-duration: 3s; } .nsq-pulse { animation: none; } }
