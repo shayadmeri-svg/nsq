@@ -274,6 +274,22 @@ def experimental_for(cid: int) -> dict[str, Any]:
     return experimental(docs)
 
 
+def _exp_note(exp: Optional[dict[str, Any]]) -> str:
+    """What the log shows of the measured values found (so a run can be checked without opening the Lab)."""
+    if not exp:
+        return ""
+    bits = []
+    sol = exp.get("solubility_water_mg_ml")
+    if sol and sol.get("value") is not None:
+        bits.append(f"water sol. {sol['value']:.3g} mg/mL")
+    if exp.get("pka"):
+        bits.append("pKa " + ", ".join(f"{p['value']:g}" for p in exp["pka"][:3] if p.get("value") is not None))
+    lp = exp.get("logp")
+    if lp and lp.get("value") is not None:
+        bits.append(f"log P {lp['value']:g}")
+    return (" · measured: " + "; ".join(bits)) if bits else " · no measured solubility / pKa / log P published"
+
+
 def lookup(names: list[str]) -> dict[str, Any]:
     for n in names:
         p = properties(n)
@@ -342,7 +358,7 @@ def run(ctx: Ctx) -> int:
             r = lookup(t["names"])
             data[t["key"]] = r
             done += 1
-            ctx.log(f"  [{i}/{len(todo)}] {t['key']}: " + (f"CID {r['cid']}, {r['formula']}, mp {r['mp_c']} °C" if r["found"] else "not in PubChem (biologic or unknown name)"))
+            ctx.log(f"  [{i}/{len(todo)}] {t['key']}: " + (f"CID {r['cid']}, {r['formula']}, mp {r['mp_c']} °C" + _exp_note(r.get("exp")) if r["found"] else "not in PubChem (biologic or unknown name)"))
         except Unreachable:
             if done == 0:
                 raise
