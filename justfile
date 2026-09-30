@@ -374,6 +374,22 @@ pull-structures HOST KEY="" DIR="/opt/nsq-platform":
     ssh {{ if KEY != "" { "-i " + KEY } else { "" } }} {{HOST}} 'sudo cat {{DIR}}/data/sources/pubchem.json' > data/sources/pubchem.json.tmp && mv data/sources/pubchem.json.tmp data/sources/pubchem.json
     @python3 -c "import json;d=json.load(open('data/sources/pubchem.json'))['data'];print(len(d),'molecules,',sum(1 for v in d.values() if v.get('found')),'with structures')"
 
+# The ORD scan on the laptop instead of the server (it needs ~1.3 GB of downloads and a few GB of RAM):
+# pull the server's structures, scan, and copy only ord.json back. The API re-reads it on the next request.
+#   just ord-laptop ec2-user@ec2-44-197-235-151.compute-1.amazonaws.com ~/.ssh/key.pem
+ord-laptop HOST KEY="": (pull-structures HOST KEY) fetch-ord (push-ord HOST KEY)
+
+# Copy data/sources/ord.json (only) to the server
+push-ord HOST KEY="" DIR="/opt/nsq-platform":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    k="{{ if KEY != "" { "-i " + KEY } else { "" } }}"
+    [ -f data/sources/ord.json ] || { echo "No data/sources/ord.json — run just fetch-ord first"; exit 1; }
+    python3 -c "import json;d=json.load(open('data/sources/ord.json'));print(len(d['data']),'molecules with reactions, scanned',d.get('datasets_scanned'),'datasets')"
+    scp $k data/sources/ord.json {{HOST}}:~/ord.json
+    ssh $k {{HOST}} 'sudo mkdir -p {{DIR}}/data/sources && sudo mv ~/ord.json {{DIR}}/data/sources/ord.json && sudo chmod 644 {{DIR}}/data/sources/ord.json'
+    echo "ord.json copied — the Reaction lab and Workbench pick it up on the next request."
+
 # Everything the server can't fetch itself, in one go: run on the laptop, then copy to the server.
 # A source that fails is reported and skipped; the rest still run and are pushed.
 laptop-refresh HOST KEY="":
