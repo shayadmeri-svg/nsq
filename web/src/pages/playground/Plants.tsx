@@ -518,7 +518,7 @@ function FilingsRow({ m }: { m: any }) {
   return (
     <div className="border-t border-line px-5 py-4">
       <div className="label mb-1.5">API filings <span className="font-normal normal-case text-ink-faint">· {m.dmf_total} active US DMFs ({m.dmf_in_registry} holders in the registry) · {m.cep_total} valid CEPs ({m.cep_in_registry} in the registry)</span></div>
-      {none ? <div className="text-xs text-ink-muted">FDA's DMF list and EDQM's CEP file are not fetched yet (Data jobs → FDA Drug Master Files / EDQM CEPs).</div>
+      {none ? <div className="text-xs text-ink-muted">FDA's DMF list and EDQM's CEP file are not fetched yet (Admin → Data operations → Update & sources → FDA Drug Master Files / EDQM CEPs).</div>
         : rows.length === 0 ? <div className="text-xs text-ink-muted">No active US DMF or valid CEP names this API.</div> : (
           <>
             <div className="grid gap-x-6 gap-y-1 md:grid-cols-2">{(all ? rows : rows.slice(0, 10)).map((r: any) => (

@@ -146,7 +146,7 @@ export function FullRefresh({ onRun, onLog, onRunSource }: { onRun: (job: any) =
           {!t ? (
             <div className="space-y-3 text-ink-muted">
               <div className="font-display text-[14px] font-bold text-ink">How the order is worked out</div>
-              <p>Each task declares what it <b>reads</b> and <b>writes</b> — stores and files on the <Link to="/admin/data-map" className="text-brand-700 hover:underline">data map</Link>.
+              <p>Each task declares what it <b>reads</b> and <b>writes</b> — stores and files on the <Link to="/admin/data/map" className="text-brand-700 hover:underline">data map</Link>.
                 A task runs after every task that writes something it reads; a few "runs after" links keep a write from landing before a flush.</p>
               <ul className="space-y-1">
                 <li>● A source that is down <b className="text-amber-700">keeps its last file</b>; everything downstream still runs.</li>
@@ -155,7 +155,7 @@ export function FullRefresh({ onRun, onLog, onRunSource }: { onRun: (job: any) =
                 <li>● Laptop-only sources are shown, not run — push them from a laptop.</li>
                 <li>● <Info size={11} className="inline text-brand-600" /> marks a source the server couldn't download — click it for where to get the file and how to upload it.</li>
               </ul>
-              <p>Weekly schedule available on Data pipelines (off by default).</p>
+              <p>Weekly schedule available under Data operations → Schedules (off by default).</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -216,7 +216,7 @@ function Io({ title, items, p }: { title: string; items: string[]; p: Plan }) {
       <div className="label mb-1">{title}</div>
       <div className="flex flex-wrap gap-1">{items.map((a) => {
         const art = p.artifacts[a];
-        return <Link key={a} to={`/admin/data-map?node=${art?.node ?? ""}`} title="Open on the data map"
+        return <Link key={a} to={`/admin/data/map?node=${art?.node ?? ""}`} title="Open on the data map"
           className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-ink-soft hover:bg-brand-50 hover:text-brand-700">
           {a.startsWith("src:") || a.startsWith("file:") || a.startsWith("gen:") ? <Database size={10} /> : <MapIcon size={10} />}{art?.label ?? a}</Link>;
       })}</div>

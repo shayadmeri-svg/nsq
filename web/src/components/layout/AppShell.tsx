@@ -212,11 +212,9 @@ export function AppShell({ me }: { me: Me }) {
           <NavItem to="/admin/orgs" icon={<Building2 size={17} />}>Organisations</NavItem>
           <NavItem to="/admin/features" icon={<KeyRound size={17} />}>Feature access</NavItem>
           <NavItem to="/admin/users" icon={<ShieldCheck size={17} />}>Users & access</NavItem>
-          <NavItem to="/admin/pipelines" icon={<Workflow size={17} />}>Data pipelines</NavItem>
-          <NavItem to="/admin/data-map" icon={<Network size={17} />}>Data map</NavItem>
+          <NavItem to="/admin/data" icon={<Workflow size={17} />}>Data operations</NavItem>
           <NavItem to="/admin/molecules" icon={<FlaskRound size={17} />}>Molecule universe</NavItem>
           <NavItem to="/admin/sites" icon={<Factory size={17} />}>Site directory</NavItem>
-          <NavItem to="/admin/jobs" icon={<PlayCircle size={17} />}>Data jobs</NavItem>
           <NavItem to="/admin/audit" icon={<ScrollText size={17} />}>Audit log</NavItem>
         </Section>
       )}

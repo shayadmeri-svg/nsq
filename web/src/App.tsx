@@ -15,13 +15,11 @@ import { Features } from "./pages/admin/Features";
 import { AdminOverview } from "./pages/admin/AdminOverview";
 import { Orgs } from "./pages/admin/Orgs";
 import { Users } from "./pages/admin/Users";
-import { Jobs } from "./pages/admin/Jobs";
+import { DataOps, LegacyDataRoute } from "./pages/admin/DataOps";
 import { Audit } from "./pages/admin/Audit";
 import { Explorer } from "./pages/admin/Explorer";
 import { Molecules } from "./pages/admin/Molecules";
-import { Pipelines } from "./pages/admin/Pipelines";
 import { Sites } from "./pages/admin/Sites";
-import { DataMap } from "./pages/admin/DataMap";
 import { Playground } from "./pages/playground/Playground";
 
 function Splash() {
@@ -85,12 +83,14 @@ export default function App() {
         <Route path="/admin/orgs" element={<Orgs />} />
         <Route path="/admin/features" element={<Features />} />
         <Route path="/admin/users" element={<Users />} />
-        <Route path="/admin/jobs" element={<Jobs />} />
-        <Route path="/admin/pipelines" element={<Pipelines />} />
+        <Route path="/admin/data" element={<Navigate to="/admin/data/update" replace />} />
+        <Route path="/admin/data/:tab" element={<DataOps />} />
+        <Route path="/admin/jobs" element={<LegacyDataRoute />} />
+        <Route path="/admin/pipelines" element={<LegacyDataRoute />} />
         <Route path="/admin/molecules" element={<Molecules />} />
         <Route path="/admin/sites" element={<Sites />} />
         <Route path="/admin/audit" element={<Audit />} />
-        <Route path="/admin/data-map" element={<DataMap />} />
+        <Route path="/admin/data-map" element={<LegacyDataRoute />} />
         <Route path="/admin/explorer" element={<Explorer />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

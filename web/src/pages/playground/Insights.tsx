@@ -183,7 +183,7 @@ export function InsightsTab() {
               </div>
             ))}
           </div>
-          <Takeaway>{reg.sites ? <>FDA-registered sites average <b>{reg.alerts_per_site}</b> alerts each against <b>{non.alerts_per_site}</b> for the rest. {d.fda_overlap.import_alert_companies.length} companies with Indian NSQ alerts also appear on FDA's Import Alert 66-40 red list. That's a company-name match: the listed facility may be a different plant of the same company.</> : "Fetch the FDA establishment registrations and Import Alert sources (Admin → Data pipelines) to fill this in."}</Takeaway>
+          <Takeaway>{reg.sites ? <>FDA-registered sites average <b>{reg.alerts_per_site}</b> alerts each against <b>{non.alerts_per_site}</b> for the rest. {d.fda_overlap.import_alert_companies.length} companies with Indian NSQ alerts also appear on FDA's Import Alert 66-40 red list. That's a company-name match: the listed facility may be a different plant of the same company.</> : "Fetch the FDA establishment registrations and Import Alert sources (Admin → Data operations) to fill this in."}</Takeaway>
           {d.fda_overlap.import_alert_companies.length > 0 && <div className="flex flex-wrap gap-1.5 px-5 pb-5">{d.fda_overlap.import_alert_companies.map((s: any) => <Badge key={s.company} tone="rose">{s.company} · {s.alerts} NSQ alerts · {s.sites} site{s.sites > 1 ? "s" : ""}</Badge>)}</div>}
         </div>
     ) },

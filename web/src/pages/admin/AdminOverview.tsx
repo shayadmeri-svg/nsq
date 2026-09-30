@@ -20,7 +20,7 @@ export function AdminOverview() {
 
   return (
     <>
-      <PageHeader eyebrow="Platform" title="Admin overview" subtitle="Latest CDSCO data, data-store health, organisations and usage at a glance." actions={<Link to="/admin/jobs" className="inline-flex h-10 items-center gap-2 rounded-xl bg-ink px-4 text-sm font-medium text-white"><PlayCircle size={16} /> Data jobs</Link>} />
+      <PageHeader eyebrow="Platform" title="Admin overview" subtitle="Latest CDSCO data, data-store health, organisations and usage at a glance." actions={<Link to="/admin/data/update" className="inline-flex h-10 items-center gap-2 rounded-xl bg-ink px-4 text-sm font-medium text-white"><PlayCircle size={16} /> Data operations</Link>} />
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="NSQ alerts" value={k.alerts} icon={<Activity size={18} />} hint={`${k.manufacturers.toLocaleString("en-IN")} manufacturers · latest ${fmtMonth(k.latest_month)}`} />
         <Stat label={`Alerts in ${fmtMonth(k.latest_month)}`} value={k.latest_month_alerts} tone="rose" delay={0.05} hint="most recent CDSCO notification month" />
@@ -71,7 +71,7 @@ export function AdminOverview() {
           </motion.ul>
         </Card>
         <Card delay={0.25}>
-          <CardHeader title="Recent jobs" action={<Link to="/admin/jobs" className="text-xs font-semibold text-brand-700 hover:underline">All</Link>} />
+          <CardHeader title="Recent jobs" action={<Link to="/admin/data/update" className="text-xs font-semibold text-brand-700 hover:underline">All</Link>} />
           <ul className="space-y-2 p-5 text-sm">
             {data.recent_jobs.length === 0 && <li className="text-ink-muted">No jobs run yet.</li>}
             {data.recent_jobs.map((j: any) => (

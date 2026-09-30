@@ -98,7 +98,7 @@ NODES: list[dict[str, Any]] = [
     _n("ext_upstash", "origin", "external", "Upstash Redis", "cloud backup / seed",
        "Optional hosted Redis used as a backup target and to seed a fresh install. Only jobs touch it; the API never reads it."),
     _n("act_scheduler", "origin", "actor", "Scheduler", "inside the API · IST",
-       "Checks every 30 s for due schedules (Postgres advisory lock, so one API instance fires). Defaults: fetch-nsq daily 06:30, sync-sources daily 02:30; others off until enabled on Data pipelines."),
+       "Checks every 30 s for due schedules (Postgres advisory lock, so one API instance fires). Defaults: fetch-nsq daily 06:30, sync-sources daily 02:30; others off until enabled under Data operations → Schedules."),
     _n("act_runner", "origin", "actor", "Job runner", "subprocesses in redis-loader/",
        "Runs registered jobs as subprocesses, streams logs into job_runs, and clears the API caches afterwards. Started by the scheduler, by Run buttons, or by saving a molecule."),
 
@@ -124,7 +124,7 @@ NODES: list[dict[str, Any]] = [
     _n("f_manifest", "files", "file", "Source manifest", "status of each source",
        "Last attempt, last success, status (ok / unchanged / unreachable / failed), record count and error per source.",
        keys=["data/sources/manifest.json"]),
-    _n("f_uploads", "files", "file", "Uploads", "files added on Data jobs",
+    _n("f_uploads", "files", "file", "Uploads", "files added under Data operations",
        "CSV / zip / JSON / HTML files uploaded by the super admin, used when a site blocks downloads or for a manual NSQ reload.",
        keys=["data/uploads/*"]),
     _n("f_docs", "files", "file", "Written Confirmation PDFs", "data/docs/cdsco_wc/<id>.pdf",
@@ -266,13 +266,13 @@ NODES: list[dict[str, Any]] = [
     _n("p_admin_explorer", "pages", "page", "All-India NSQ", "/admin/explorer", "", group="Platform admin", route="/admin/explorer", endpoints=["/api/nsq/summary", "/api/nsq/alerts"]),
     _n("p_admin_orgs", "pages", "page", "Organisations", "/admin/orgs", "", group="Platform admin", route="/admin/orgs", endpoints=["/api/admin/orgs", "/api/admin/manufacturers", "/api/admin/plants"]),
     _n("p_admin_users", "pages", "page", "Users & team", "/admin/users · /o/:slug/team", "", group="Platform admin", route="/admin/users", endpoints=["/api/admin/users", "/api/admin/invites"]),
-    _n("p_admin_pipelines", "pages", "page", "Data pipelines", "/admin/pipelines", "", group="Platform admin", route="/admin/pipelines", endpoints=["/api/pipelines", "PUT /api/pipelines/schedules/{job}"]),
-    _n("p_admin_jobs", "pages", "page", "Data jobs", "/admin/jobs", "", group="Platform admin", route="/admin/jobs", endpoints=["/api/jobs", "POST /api/jobs/{key}/run", "/api/jobs/uploads"]),
+    _n("p_admin_pipelines", "pages", "page", "Data operations · Schedules", "/admin/data/schedules", "", group="Platform admin", route="/admin/data/schedules", endpoints=["/api/pipelines", "PUT /api/pipelines/schedules/{job}"]),
+    _n("p_admin_jobs", "pages", "page", "Data operations · Update & sources", "/admin/data/update", "", group="Platform admin", route="/admin/data/update", endpoints=["/api/jobs", "POST /api/jobs/{key}/run", "/api/jobs/uploads"]),
     _n("p_admin_molecules", "pages", "page", "Molecule universe", "/admin/molecules", "", group="Platform admin", route="/admin/molecules",
        endpoints=["/api/pipelines/molecules", "/api/molecules/*", "/api/pipelines/watchlist"]),
     _n("p_admin_sites", "pages", "page", "Site directory", "/admin/sites", "", group="Platform admin", route="/admin/sites", endpoints=["/api/pipelines/sites*"]),
     _n("p_admin_audit", "pages", "page", "Audit log", "/admin/audit", "", group="Platform admin", route="/admin/audit", endpoints=["/api/admin/audit"]),
-    _n("p_admin_datamap", "pages", "page", "Data map", "/admin/data-map", "", group="Platform admin", route="/admin/data-map", endpoints=["/api/platform/datamap"]),
+    _n("p_admin_datamap", "pages", "page", "Data operations · Data map", "/admin/data/map", "", group="Platform admin", route="/admin/data/map", endpoints=["/api/platform/datamap"]),
 ]
 
 

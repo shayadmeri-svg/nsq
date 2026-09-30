@@ -212,8 +212,8 @@ export function Jobs() {
   const lastRun = jobs.map((j) => j.last_run).filter(Boolean).sort((a: any, b: any) => (b.created_at > a.created_at ? 1 : -1))[0];
 
   return (
-    <ExpandedProvider sections={sections} active={active} onActive={setActive} title="Data jobs" subtitle={`${jobs.length} jobs · ${sources.length} sources`}>
-      <PageHeader eyebrow="Platform" title="Data jobs" subtitle="Every public source with the data the server holds from it, and the recipes that refresh it. Click a row for details, laptop commands and logs."
+    <ExpandedProvider sections={sections} active={active} onActive={setActive} title="Update & sources" subtitle={`${jobs.length} jobs · ${sources.length} sources`}>
+      <PageHeader title="Update & sources" subtitle="Every public source with the data the server holds from it, and the recipes that refresh it. Click a row for details, laptop commands and logs."
         actions={data.is_super && <UploadButton hint="pick it in the job's file field" />} />
 
       <FullRefresh onRun={onRun} onLog={onLog} onRunSource={(src) => { const j = byKey[`src-${src.replace(/_/g, "-")}`]; if (j) onRun(j); }} />

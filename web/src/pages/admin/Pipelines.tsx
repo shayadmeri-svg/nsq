@@ -153,7 +153,7 @@ export function Pipelines() {
 
   return (
     <>
-      <PageHeader eyebrow="Platform" title="Data pipelines"
+      <PageHeader title="Schedules"
         subtitle={<>Public sources feed the molecule universe and the site directory. Schedules run inside the API ({data.scheduler.tz}); a source that is down is skipped and the rest still load.</>}
         actions={<>{data.is_super && <UploadButton label="Upload a source file" hint="pick it in the source's 'uploaded file' field" />}
           <Button disabled={!jobByKey["sync-sources"] || jobByKey["sync-sources"]?.running} onClick={() => open("sync-sources")}><RefreshCw size={15} /> Sync all sources</Button></>} />

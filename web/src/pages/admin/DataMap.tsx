@@ -302,7 +302,7 @@ export function DataMap() {
   const counts = { stores: g.nodes.filter((n) => ["redis", "postgres"].includes(n.kind)).length, writes: g.mutations.length, pages: g.nodes.filter((n) => n.kind === "page").length };
   return (
     <div>
-      <PageHeader eyebrow="Platform" title="Data map"
+      <PageHeader title="Data map"
         subtitle={<>Where every dataset comes from, where it is stored, what changes it, and which screens read it. Status dots and counts are live (checked {timeAgo(g.checked_at)}).</>}
         actions={<Segmented value={view} onChange={setView} options={[{ value: "map", label: <span className="flex items-center gap-1.5"><Workflow size={13} /> Flow map</span> }, { value: "mutations", label: `Mutations (${counts.writes})` }, { value: "stores", label: "Stores" }]} />} />
       {view === "map" && (
