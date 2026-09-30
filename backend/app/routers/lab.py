@@ -86,3 +86,47 @@ def bioequivalence(key: str, body: dict[str, Any] = Body(default={}), user: User
 @router.get("/molecule/{key}/safety")
 def safety(key: str, user: User = Depends(current_user)):
     return _run(lab.safety, key)
+
+
+# --- reaction lab -----------------------------------------------------------------------------
+
+@router.get("/reactions/templates")
+def reaction_templates(user: User = Depends(current_user)):
+    from .. import reactions
+    return reactions.templates()
+
+
+@router.get("/reactions/routes/{key}")
+def reaction_routes(key: str, user: User = Depends(current_user)):
+    from .. import reactions
+    return reactions.routes(key)
+
+
+@router.get("/reactions/molecules")
+def reaction_molecules(user: User = Depends(current_user)):
+    from .. import reactions
+    return {"molecules": reactions.molecules_with_routes()}
+
+
+@router.get("/reactions/solvent")
+def reaction_solvent(name: str, user: User = Depends(current_user)):
+    from .. import reactions
+    got = reactions.solvent_props(name)
+    if not got:
+        raise HTTPException(404, "Solvent not recognised.")
+    return got
+
+
+@router.post("/reactions/run")
+def reaction_run(body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    from .. import reactions
+    try:
+        return reactions.run(body)
+    except (KeyError, ValueError, RuntimeError) as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.get("/reactions/validation")
+def reaction_validation(user: User = Depends(current_user)):
+    from .. import reactions
+    return reactions.validation()

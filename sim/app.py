@@ -18,6 +18,12 @@ from fastapi import FastAPI, HTTPException
 app = FastAPI(title="NSQ sim (PharmaPy)")
 
 try:
+    from PharmaPy.Reactors import BatchReactor
+    from PharmaPy.Kinetics import RxnKinetics
+except Exception:  # the crystalliser can still work; /react reports it
+    BatchReactor = RxnKinetics = None
+
+try:
     from PharmaPy.Crystallizers import BatchCryst
     from PharmaPy.Interpolation import PiecewiseLagrange
     from PharmaPy.Kinetics import CrystKinetics
@@ -114,3 +120,61 @@ def _run(req: dict[str, Any]) -> dict[str, Any]:
                         "Kinetics: PharmaPy example constants (generic compound), not fitted to this molecule" if not req.get("kinetics") else "Kinetics: user-supplied",
                         "Temperature follows the programme exactly (energy balance not used)"],
     }
+
+
+# --- batch reactor --------------------------------------------------------------------------------------
+
+def _side(d: dict[str, float]) -> str:
+    return " + ".join(s if v == 1 else f"{v:g} {s}" for s, v in d.items())
+
+
+@app.post("/react")
+def react(req: dict[str, Any]) -> dict[str, Any]:
+    """The same request the API gives its built-in engine (core/chem/reaction.py): isothermal batch, elementary
+    kinetics. PharmaPy works in seconds and J/mol; the request is in hours and kJ/mol."""
+    if IMPORT_ERROR or BatchReactor is None:
+        raise HTTPException(503, IMPORT_ERROR or "PharmaPy.Reactors not importable")
+    if any("keq" in rx for rx in req["rxns"]):
+        raise HTTPException(422, "reversible reactions run in the built-in engine")
+    try:
+        return _react(req)
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(500, f"{exc.__class__.__name__}: {exc}")
+
+
+def _react(req: dict[str, Any]) -> dict[str, Any]:
+    species = list(req["species"])
+    db = {s: {**_TEMPLATE, "mw": 100.0, "rho_liq": 1000.0, "rho_solid": 1000.0} for s in species}
+    db["solvent"] = {**_TEMPLATE, "mw": 78.0, "rho_liq": 1000.0 * float(req.get("rho_kg_l", 0.9)), "rho_solid": 1000.0}
+    rxn_list = [f"{_side(rx['r'])} --> {_side(rx['p'])}" for rx in req["rxns"]]
+    k = np.array([rx["k"] / 3600.0 for rx in req["rxns"]])  # 1/h -> 1/s (L/mol/h -> L/mol/s)
+    ea = np.array([rx["ea"] * 1000.0 for rx in req["rxns"]])  # kJ/mol -> J/mol
+    temp_k = float(req["program"]["t1_c"]) + 273.15
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "compounds.json")
+        with open(path, "w") as fh:
+            json.dump(db, fh)
+        kin = RxnKinetics(path=path, rxn_list=rxn_list, k_params=k, ea_params=ea,
+                          temp_ref=float(req["temp_ref_c"]) + 273.15)
+        c0 = np.array([float(req["c0"].get(s, 0.0)) for s in species] + [0.0])
+        liq = LiquidPhase(path, temp=temp_k, mole_conc=c0, vol=float(req.get("volume_l", 1.0)) / 1000, name_solv="solvent",
+                          verbose=False)
+        rx = BatchReactor(isothermal=True)
+        rx.Utility = CoolingWater(mass_flow=0.01, temp_in=temp_k)  # results post-processing evaluates the heat balance
+        rx.Phases = liq
+        rx.Kinetics = kin
+        runtime = float(req["hours"]) * 3600.0
+        rx.solve_unit(runtime=runtime, time_grid=np.linspace(0, runtime, 121), verbose=False)
+        res = rx.result
+    t = np.asarray(res.time, float) / 3600.0
+    mc = np.atleast_2d(np.asarray(res.mole_conc, float))
+    if mc.shape[0] != len(t) and mc.shape[1] == len(t):
+        mc = mc.T
+    names = list(getattr(rx, "name_species", species + ["solvent"]))
+    conc = {}
+    for i, s in enumerate(species):
+        j = names.index(s) if s in names and len(names) == mc.shape[1] else i
+        conc[s] = [float(f"{v:.6g}") for v in mc[:, j]]
+    return {"engine": "pharmapy", "time_h": np.round(t, 4).tolist(), "conc": conc,
+            "rxn_list": rxn_list, "version": health().get("version")}

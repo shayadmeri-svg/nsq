@@ -115,3 +115,14 @@ def test_portfolio_compare(root):
     label = F._label(d["_group"].value_counts().index[0]).replace(" · ", " ")
     p = root.post("/api/playground/forensics/portfolio", json={"lines": [label], "compare_keys": [key], "compare_name": "X"}, headers=H).json()
     assert p["compare"]["name"] == "X" and p["rows"][0]["own"]["alerts"] >= 1
+
+
+def test_reaction_lab(root):
+    t = root.get("/api/lab/reactions/templates").json()
+    assert {x["id"] for x in t["templates"]} >= {"first", "second", "consecutive", "parallel", "comp_consec", "reversible"}
+    out = root.post("/api/lab/reactions/run", json={"template": "consecutive", "temp_c": 90, "hours": 6, "bp_c": 118,
+                                                    "anchor": {"temp_c": 90, "hours": 6, "yield_pct": 80}}, headers=H).json()
+    assert out["calibration"]["ok"] and abs(out["result"]["summary"]["yield_pct"] - 80) < 0.05
+    assert out["map"]["best"]["yield_pct"] >= 80 and out["ea_band"]["mid"] and out["result"]["summary"]["criticality"] in (1, 3)
+    v = root.get("/api/lab/reactions/validation").json()
+    assert v["passed"] == v["total"]

@@ -1,4 +1,4 @@
-import { Compass, Cpu, Factory, FileCheck2, Microscope, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
+import { Compass, Cpu, Factory, FlaskRound, FileCheck2, Microscope, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -10,6 +10,7 @@ import { Investigate } from "./Investigate";
 import { Lab } from "./Lab";
 import { Medicines } from "./Medicines";
 import { Plants } from "./Plants";
+import { ReactionLab } from "./ReactionLab";
 import { RegulatoryMap } from "./RegulatoryMap";
 import { Signals } from "./Signals";
 import { Workbench } from "./Workbench";
@@ -28,6 +29,7 @@ const TABS = [
   { id: "health", label: "Health & trade", icon: HeartPulse, hint: "Disease burden by district (NFHS), outbreaks (IDSP), pharma trade (UN Comtrade)" },
   { id: "medicines", label: "Medicines", icon: Pill, hint: "Add a medicine: composition from open databases, gaps" },
   { id: "process", label: "Lab", icon: Cpu, hint: "Structure-based molecule and process models" },
+  { id: "reactions", label: "Reaction lab", icon: FlaskRound, hint: "Run a synthesis step: kinetics, yield map, operating window and thermal safety — anchored to published routes" },
 ] as const;
 
 export function Playground() {
@@ -72,6 +74,7 @@ export function Playground() {
         {tab === "health" && <Signals />}
         {tab === "medicines" && <Medicines />}
         {tab === "process" && <Lab />}
+        {tab === "reactions" && <ReactionLab />}
       </motion.div>
     </>
   );

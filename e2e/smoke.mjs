@@ -19,7 +19,7 @@ if (!EMAIL || !PASSWORD) {
 }
 
 const PLAYGROUND = ["explore", "ledger", "insights", "forensics", "forensics?view=portfolio", "forensics?view=needed", "investigate",
-  "world", "molecule", "plants", "wc", "health", "medicines", "process"].map((t) => `/playground/${t}`);
+  "world", "molecule", "plants", "wc", "health", "medicines", "process", "reactions"].map((t) => `/playground/${t}`);
 const ADMIN = ["/admin", "/admin/orgs", "/admin/users", "/admin/jobs", "/admin/pipelines", "/admin/molecules", "/admin/sites",
   "/admin/audit", "/admin/data-map", "/admin/explorer"];
 const ORG = ["", "/quality", "/infrastructure", "/opportunities", "/eu", "/team"];
