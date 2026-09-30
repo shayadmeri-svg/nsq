@@ -163,6 +163,37 @@ def _ident(compound: Any) -> tuple[Optional[str], Optional[str]]:
     return smi, name
 
 
+_MOL = {"MOLE": 1.0, "MILLIMOLE": 1e-3, "MICROMOLE": 1e-6, "NANOMOLE": 1e-9}
+_ML = {"LITER": 1000.0, "MILLILITER": 1.0, "MICROLITER": 1e-3, "NANOLITER": 1e-6}
+_G = {"GRAM": 1.0, "MILLIGRAM": 1e-3, "MICROGRAM": 1e-6, "KILOGRAM": 1e3}
+
+
+def _amount(c: Any) -> dict[str, float]:
+    """The component's recorded amount: mol, g and/or mL (ORD Amount oneof)."""
+    out: dict[str, float] = {}
+    try:
+        kind = c.amount.WhichOneof("kind")
+    except Exception:
+        return out
+    if kind in ("moles", "mass", "volume"):
+        q = getattr(c.amount, kind)
+        unit = q.DESCRIPTOR.fields_by_name["units"].enum_type.values_by_number[q.units].name
+        table, key = {"moles": (_MOL, "mol"), "mass": (_G, "g"), "volume": (_ML, "ml")}[kind]
+        if unit in table and q.value > 0:
+            out[key] = q.value * table[unit]
+    return out
+
+
+def concentrations(comps: dict[str, list[dict[str, Any]]]) -> Optional[dict[str, Any]]:
+    """Starting concentrations (mol/L) of the reactants from the recorded amounts: moles over the total recorded
+    liquid volume (solvents and liquid inputs). None when either is missing."""
+    vol_ml = sum(x.get("ml", 0.0) for role in comps.values() for x in role)
+    if vol_ml <= 0:
+        return None
+    c = {x["smiles"]: round(x["mol"] / (vol_ml / 1000), 4) for x in comps.get("reactant", []) if x.get("smiles") and x.get("mol")}
+    return {"mol_l": c, "volume_ml": round(vol_ml, 3)} if c else None
+
+
 def product_smiles(rxn: Any) -> list[str]:
     out = []
     for o in rxn.outcomes:
@@ -188,7 +219,7 @@ def describe(rxn: Any, dataset: str) -> dict[str, Any]:
         for c in rxn.inputs[key].components:
             role = c.DESCRIPTOR.fields_by_name["reaction_role"].enum_type.values_by_number[c.reaction_role].name.lower()
             smi, name = _ident(c)
-            comps[role].append({"smiles": smi, "name": name})
+            comps[role].append({"smiles": smi, "name": name, **_amount(c)})
     cond = rxn.conditions
     temp = _c(cond.temperature.setpoint) if cond.HasField("temperature") and cond.temperature.HasField("setpoint") else None
     tcontrol = cond.temperature.control.DESCRIPTOR.fields_by_name["type"].enum_type.values_by_number[cond.temperature.control.type].name \
@@ -236,7 +267,11 @@ def describe(rxn: Any, dataset: str) -> dict[str, Any]:
             "atmosphere": atmos, "hours": hours, "yield": yld, "needs": sorted(needs), "hazards": hz, "solvents": solvents,
             "reagents": [x["name"] or x["smiles"] for x in comps.get("reagent", [])][:8],
             "catalysts": [x["name"] or x["smiles"] for x in comps.get("catalyst", [])][:4],
-            "reactants": [x["name"] or x["smiles"] for x in comps.get("reactant", [])][:6]}
+            "reactants": [x["name"] or x["smiles"] for x in comps.get("reactant", [])][:6],
+            # names ↔ structures ↔ recorded amounts, so a partner found by atom mapping can be named and dosed
+            "components": [{"role": r, "name": x["name"], "smiles": x["smiles"], **{k: round(x[k], 6) for k in ("mol", "g", "ml") if k in x}}
+                           for r in ("reactant", "reagent", "catalyst", "solvent") for x in comps.get(r, [])][:14],
+            "c0": concentrations(comps)}
 
 
 # ------------------------------------------------------------------------------------ scan
@@ -270,14 +305,15 @@ def scan(files: Iterable[Path], targets: dict[str, dict[str, Any]], log=print) -
     return hits
 
 
-def summarise(rows: list[dict[str, Any]], keep: int = 25) -> dict[str, Any]:
+def summarise(rows: list[dict[str, Any]], keep: int = 40) -> dict[str, Any]:
     temps = [r["temp_c"] for r in rows if r["temp_c"] is not None]
     yields = [r["yield"] for r in rows if r["yield"] is not None]
     needs = Counter(n for r in rows for n in r["needs"])
     rank = sorted(rows, key=lambda r: (-(len(r["needs"])), -(r["yield"] or 0), -(1 if r["temp_c"] is not None else 0)))
     examples, seen = [], set()
     for r in rank:
-        k = r["smiles"] or r["id"]
+        # the same reaction run at other conditions is kept: points at several temperatures are what fit an Ea
+        k = (r["smiles"] or r["id"], r["temp_c"], r["hours"], r["yield"])
         if k not in seen:
             seen.add(k)
             examples.append(r)

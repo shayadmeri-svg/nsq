@@ -19,10 +19,12 @@ Heat: q = Σ_i (−ΔH_i) r_i  [kJ/(L·h)]; the adiabatic temperature rise of wh
 MTSR = T_process + max ΔT_ad,acc  with the solvent's boiling point (MTT) and, when known, TD24
 (the temperature at which a decomposition reaches its maximum rate in 24 h).
 
-Calibration: a published outcome (the ORD/patent example's temperature, time and yield) fixes the main
-reaction's rate constant for an assumed activation energy; everything else is then prediction, and the
-yield map shows how far a different temperature or time moves it. Change Ea to see how much the
-prediction rests on it.
+Fitting: measured points — published examples of the same reaction (ORD / patents) or the user's own lab
+time-course — fix the main reaction's rate constant, and its activation energy too when the points span at
+least two temperatures (≥ 10 °C apart). Least squares on yield; 95% confidence intervals from the Jacobian
+when there are more points than parameters. With one point the fit is exact and has no uncertainty estimate.
+Everything the data does not pin (side reactions, an Ea from one temperature, the reaction enthalpy) is an
+assumption and is reported as one; ΔH has no default at all — thermal safety needs a measured value.
 """
 
 from __future__ import annotations
@@ -84,7 +86,9 @@ def build_request(p: dict[str, Any]) -> dict[str, Any]:
     for i, base in enumerate(tpl["rxns"]):
         o = over[i] if i < len(over) and isinstance(over[i], dict) else {}
         rx = {"r": dict(base["r"]), "p": dict(base["p"]),
-              "k": float(o.get("k", base["k"])), "ea": float(o.get("ea", base["ea"])), "dh": float(o.get("dh", base["dh"]))}
+              "k": float(o.get("k", base["k"])), "ea": float(o.get("ea", base["ea"])),
+              # no default reaction enthalpy: a made-up ΔH would make up the thermal-safety class
+              "dh": None if o.get("dh") in (None, "") else float(o["dh"])}
         if "keq" in base:
             rx["keq"] = float(o.get("keq", base["keq"]))
         rxns.append(rx)
@@ -147,7 +151,7 @@ def rates(req: dict[str, Any], c: np.ndarray, temp_c: float) -> np.ndarray:
 
 # --------------------------------------------------------------------------- built-in engine
 
-def builtin(req: dict[str, Any], n_out: int = 121, fast: bool = False) -> dict[str, Any]:
+def builtin(req: dict[str, Any], n_out: int = 121, fast: bool = False, raw: bool = False) -> Any:
     idx, nu, of, ob = _matrices(req)
     sp = req["species"]
     c0 = np.array([req["c0"].get(s, 0.0) for s in sp])
@@ -174,6 +178,8 @@ def builtin(req: dict[str, Any], n_out: int = 121, fast: bool = False) -> dict[s
     sol = solve_ivp(f, (0, req["hours"]), np.concatenate([c0, np.zeros(n_r)]), t_eval=t_eval, **opts)
     if not sol.success:
         raise RuntimeError(f"integration failed: {sol.message}")
+    if raw:  # unrounded concentrations at the output times (fits need smooth residuals)
+        return sol.t, sol.y[: len(sp)].T
     return _summarise(req, sol.t, sol.y[: len(sp)].T, sol.y[len(sp):].T, engine="builtin")
 
 
@@ -186,18 +192,20 @@ def _summarise(req: dict[str, Any], t: np.ndarray, conc: np.ndarray, extents: Op
     conv = 1 - conc[:, idx[lim]] / a0
     yld = conc[:, idx[tgt]] / a0
     imp = {s: conc[:, idx[s]] / a0 for s in req["impurities"] if s in idx}
-    dh = np.array([rx["dh"] for rx in req["rxns"]])
     rho_cp = req["rho_kg_l"] * req["cp_kj_kg_k"]  # kJ/(L·K)
-    if extents is None:  # PharmaPy gives concentrations only: recover extents from the stoichiometry (least squares)
-        _, nu, _, _ = _matrices(req)
-        extents = np.linalg.lstsq(nu.T, (conc - conc[0]).T, rcond=None)[0].T
-    released = -(extents * dh).sum(axis=1)  # kJ/L released so far, all reactions
-    # Stoessel: the heat still stored is that of the desired reaction on the unconverted limiting reagent
     rx0 = req["rxns"][0]
-    heat_total = float(-rx0["dh"] * a0 / rx0["r"].get(lim, 1))  # kJ/L
-    acc = heat_total * (1 - conv) / rho_cp  # K
-    q = np.gradient(released, t) if len(t) > 1 else np.zeros_like(t)  # kJ/(L·h)
-    mtsr = float(np.max(temp + acc))
+    have_dh = all(rx.get("dh") is not None for rx in req["rxns"])
+    if have_dh:
+        dh = np.array([rx["dh"] for rx in req["rxns"]])
+        if extents is None:  # PharmaPy gives concentrations only: recover extents from the stoichiometry (least squares)
+            _, nu, _, _ = _matrices(req)
+            extents = np.linalg.lstsq(nu.T, (conc - conc[0]).T, rcond=None)[0].T
+        released = -(extents * dh).sum(axis=1)  # kJ/L released so far, all reactions
+        # Stoessel: the heat still stored is that of the desired reaction on the unconverted limiting reagent
+        heat_total = float(-rx0["dh"] * a0 / rx0["r"].get(lim, 1))  # kJ/L
+        acc = heat_total * (1 - conv) / rho_cp  # K
+        q = np.gradient(released, t) if len(t) > 1 else np.zeros_like(t)  # kJ/(L·h)
+        mtsr = float(np.max(temp + acc))
     i95 = next((i for i, x in enumerate(conv) if x >= 0.95), None)
     ipk = int(np.argmax(yld))
     sel = float(yld[-1] / conv[-1]) if conv[-1] > 1e-9 else None
@@ -207,17 +215,19 @@ def _summarise(req: dict[str, Any], t: np.ndarray, conc: np.ndarray, extents: Op
         "conc": {s: [float(f"{v:.6g}") for v in conc[:, idx[s]]] for s in sp},
         "conversion": np.round(conv, 5).tolist(), "yield": np.round(yld, 5).tolist(),
         "impurities": {s: np.round(v, 5).tolist() for s, v in imp.items()},
-        "heat_kw_per_l": np.round(q / 3600, 6).tolist(),  # kJ/(L·h) → kW/L
-        "acc_k": np.round(acc, 3).tolist(),
+        "heat_kw_per_l": np.round(q / 3600, 6).tolist() if have_dh else None,  # kJ/(L·h) → kW/L
+        "acc_k": np.round(acc, 3).tolist() if have_dh else None,
         "summary": {
             "conversion_pct": round(100 * float(conv[-1]), 2), "yield_pct": round(100 * float(yld[-1]), 2),
             "selectivity_pct": round(100 * sel, 2) if sel is not None else None,
             "impurity_pct": {s: round(100 * float(v[-1]), 3) for s, v in imp.items()},
             "peak_yield_pct": round(100 * float(yld[ipk]), 2), "peak_yield_h": round(float(t[ipk]), 3),
             "t95_h": round(float(t[i95]), 3) if i95 is not None else None,
-            "dt_ad_total_k": round(heat_total / rho_cp, 1), "heat_total_kj_l": round(heat_total, 1),
-            "peak_heat_w_per_l": round(float(np.max(q)) / 3.6, 2), "mtsr_c": round(mtsr, 1),
-            **safety_class(float(temp[0]), mtsr, req.get("bp_c"), req.get("td24_c")),
+            **({"dt_ad_total_k": round(heat_total / rho_cp, 1), "heat_total_kj_l": round(heat_total, 1),
+                "peak_heat_w_per_l": round(float(np.max(q)) / 3.6, 2), "mtsr_c": round(mtsr, 1),
+                **safety_class(float(temp[0]), mtsr, req.get("bp_c"), req.get("td24_c"))} if have_dh else
+               {"dt_ad_total_k": None, "heat_total_kj_l": None, "peak_heat_w_per_l": None, "mtsr_c": None, "criticality": None,
+                "criticality_note": "needs the reaction enthalpy ΔH (reaction calorimetry, e.g. RC1, or DSC) — not estimated here"}),
         },
     }
 
@@ -244,10 +254,15 @@ def safety_class(t_process: float, mtsr: float, mtt: Optional[float], td24: Opti
 
 # --------------------------------------------------------------------------- calibration, maps, uncertainty
 
-def yield_at(req: dict[str, Any], temp_c: float, hours: float) -> float:
+def yield_at(req: dict[str, Any], temp_c: float, hours: float, measure: str = "yield") -> float:
     r = {**req, "program": {"t0_c": temp_c, "t1_c": temp_c, "ramp_h": 0.0}, "hours": hours}
-    out = builtin(r, n_out=2, fast=True)
-    return out["summary"]["yield_pct"]
+    _, conc = builtin(r, n_out=2, fast=True, raw=True)
+    idx = {s: i for i, s in enumerate(req["species"])}
+    a0 = req["c0"][req["limiting"]]
+    last = conc[-1]
+    if measure == "conversion":
+        return 100 * (1 - last[idx[req["limiting"]]] / a0)
+    return 100 * last[idx[req["target"]]] / a0
 
 
 def calibrate(req: dict[str, Any], temp_c: float, hours: float, yield_pct: float) -> dict[str, Any]:
@@ -283,6 +298,79 @@ def calibrate(req: dict[str, Any], temp_c: float, hours: float, yield_pct: float
     rxns = [{**rx, "k": float(k * rel[j])} for j, rx in enumerate(req["rxns"])]
     return {"ok": True, "k_ref": float(k), "temp_ref_c": temp_c, "rxns": rxns,
             "check_yield_pct": round(model(logk), 3)}
+
+
+def fit(req: dict[str, Any], points: list[dict[str, Any]], fit_ea: Optional[bool] = None) -> dict[str, Any]:
+    """Least-squares fit of the main reaction's k_ref (and Ea when the points span ≥ 10 °C) to measured points
+    [{temp_c, hours, value_pct, measure: yield|conversion}]. Side reactions keep their rate relative to the main one.
+    Returns the fitted parameters, 95% confidence intervals (when n > parameters), residuals and RMSE."""
+    from scipy import stats
+    from scipy.optimize import least_squares
+
+    pts = [p for p in points if p.get("temp_c") is not None and p.get("hours") and p.get("value_pct") is not None]
+    if not pts:
+        return {"ok": False, "reason": "no usable points (need temperature, time and a yield or conversion)"}
+    temps = [float(p["temp_c"]) for p in pts]
+    span = max(temps) - min(temps)
+    if fit_ea is None:
+        fit_ea = span >= 10
+    if fit_ea and span < 10:
+        return {"ok": False, "reason": "Ea needs points at two or more temperatures at least 10 °C apart"}
+    tref = round(sum(temps) / len(temps), 1)
+    rel = [rx["k"] / req["rxns"][0]["k"] for rx in req["rxns"]]
+    base = {**req, "temp_ref_c": tref}
+
+    def with_params(logk: float, ea: float) -> dict[str, Any]:
+        rx = [{**r, "k": float(10 ** logk * rel[i]), **({"ea": float(ea)} if i == 0 else {})} for i, r in enumerate(req["rxns"])]
+        return {**base, "rxns": rx}
+
+    def resid(theta: np.ndarray) -> np.ndarray:
+        logk, ea = (theta[0], theta[1]) if fit_ea else (theta[0], req["rxns"][0]["ea"])
+        r = with_params(logk, ea)
+        return np.array([yield_at(r, float(p["temp_c"]), float(p["hours"]), p.get("measure", "yield")) - float(p["value_pct"]) for p in pts])
+
+    # start on the rising branch at the point nearest the reference temperature
+    p0 = min(pts, key=lambda p: abs(float(p["temp_c"]) - tref))
+    c0 = calibrate({**base, "rxns": [{**r, "k": req["rxns"][0]["k"] * rel[i]} for i, r in enumerate(req["rxns"])]},
+                   float(p0["temp_c"]), float(p0["hours"]), float(p0["value_pct"]))
+    if c0.get("ok"):
+        # calibrate() referenced k at the point's own temperature: move it to tref with the current Ea
+        k_at_ref = float(k_of({"k": c0["k_ref"], "ea": req["rxns"][0]["ea"]}, tref, float(p0["temp_c"])))
+        x0 = [math.log10(k_at_ref)]
+    else:
+        x0 = [math.log10(req["rxns"][0]["k"])]
+    if fit_ea:
+        x0.append(req["rxns"][0]["ea"])
+    lb, ub = ([-6.0, 5.0], [4.0, 250.0]) if fit_ea else ([-6.0], [4.0])
+    sol = least_squares(resid, np.array(x0), bounds=(lb, ub), x_scale="jac", diff_step=1e-4)
+    r = sol.fun
+    n, npar = len(pts), len(sol.x)
+    dof = n - npar
+    logk = float(sol.x[0])
+    ea = float(sol.x[1]) if fit_ea else float(req["rxns"][0]["ea"])
+    out: dict[str, Any] = {
+        "ok": True, "k_ref": 10 ** logk, "ea": ea, "temp_ref_c": tref, "fitted": ["k", "ea"] if fit_ea else ["k"],
+        "n": n, "dof": dof, "rmse_pct": round(float(np.sqrt(np.mean(r ** 2))), 2),
+        "residuals": [{**{k: p.get(k) for k in ("temp_c", "hours", "value_pct", "measure", "id", "patent")},
+                       "model_pct": round(float(p["value_pct"]) + float(e), 2)} for p, e in zip(pts, r)],
+        "rxns": with_params(logk, ea)["rxns"],
+    }
+    if dof > 0:
+        jtj = sol.jac.T @ sol.jac
+        try:
+            cov = float(np.sum(r ** 2) / dof) * np.linalg.inv(jtj)
+            se = np.sqrt(np.clip(np.diag(cov), 0, None))
+            tq = float(stats.t.ppf(0.975, dof))
+            out["ci95"] = {"k_ref": [10 ** (logk - tq * se[0]), 10 ** (logk + tq * se[0])]}
+            if fit_ea:
+                out["ci95"]["ea"] = [ea - tq * se[1], ea + tq * se[1]]
+        except np.linalg.LinAlgError:
+            out["ci95"] = None
+            out["note"] = "parameters not separately identifiable from these points"
+    else:
+        out["ci95"] = None
+        out["note"] = "as many parameters as points: the fit is exact and has no uncertainty estimate"
+    return out
 
 
 def yield_map(req: dict[str, Any], temps_c: list[float], hours: list[float]) -> dict[str, Any]:
@@ -336,7 +424,7 @@ def ea_band(req: dict[str, Any], temps_c: list[float], hours: float, delta: floa
     out = {}
     for tag, d in (("low", -delta), ("mid", 0.0), ("high", delta)):
         rx = [{**r, "ea": max(5.0, r["ea"] + d)} for r in req["rxns"]]
-        out[tag] = [yield_at({**req, "rxns": rx}, t, hours) for t in temps_c]
+        out[tag] = [round(yield_at({**req, "rxns": rx}, t, hours), 2) for t in temps_c]
     return {"temps_c": temps_c, "hours": hours, "delta_kj": delta, **out}
 
 
@@ -399,4 +487,12 @@ def validate() -> list[dict[str, Any]]:
     exp_dt = 100 * 2.0 / (0.9 * 1.9)
     add("Adiabatic temperature rise", "ΔT_ad = (−ΔH)·c₀/(ρ·c_p)", np.array([out["summary"]["dt_ad_total_k"]]), np.array([round(exp_dt, 1)]))
     cases[-1]["pass"] = cases[-1]["max_rel_error"] < 1e-3  # reported to 0.1 K
+    # 7. the fit recovers known parameters from synthetic data (k = 0.4 1/h at 60 °C, Ea = 72 kJ/mol)
+    truth = build_request({"template": "first", "rxns": [{"k": 0.4, "ea": 72.0}], "temp_c": 60, "hours": 6})
+    pts = [{"temp_c": tc, "hours": h, "value_pct": yield_at(truth, tc, h)} for tc in (40.0, 60.0, 80.0) for h in (0.5, 2.0, 5.0)]
+    start = build_request({"template": "first", "rxns": [{"k": 2.0, "ea": 50.0}], "temp_c": 60, "hours": 6})
+    f = fit(start, pts)
+    k60 = float(k_of({"k": f["k_ref"], "ea": f["ea"]}, 60.0, f["temp_ref_c"]))
+    add("Fit recovers k and Ea", "synthetic yields at 40/60/80 °C → k(60 °C) = 0.4 1/h, Ea = 72", np.array([k60, f["ea"]]), np.array([0.4, 72.0]))
+    cases[-1]["pass"] = cases[-1]["max_rel_error"] < 1e-3
     return cases

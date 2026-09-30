@@ -121,9 +121,23 @@ def test_portfolio_compare(root):
 def test_reaction_lab(root):
     t = root.get("/api/lab/reactions/templates").json()
     assert {x["id"] for x in t["templates"]} >= {"first", "second", "consecutive", "parallel", "comp_consec", "reversible"}
-    out = root.post("/api/lab/reactions/run", json={"template": "consecutive", "temp_c": 90, "hours": 6, "bp_c": 118,
-                                                    "anchor": {"temp_c": 90, "hours": 6, "yield_pct": 80}}, headers=H).json()
-    assert out["calibration"]["ok"] and abs(out["result"]["summary"]["yield_pct"] - 80) < 0.05
-    assert out["map"]["best"]["yield_pct"] >= 80 and out["ea_band"]["mid"] and out["result"]["summary"]["criticality"] in (1, 3)
+    # no data: everything is marked assumed, and no thermal-safety class without a measured ΔH
+    out = root.post("/api/lab/reactions/run", json={"template": "consecutive", "temp_c": 90, "hours": 6, "bp_c": 118}, headers=H).json()
+    assert out["fit"] is None and out["basis"]["operating"]["kind"] == "assumed" and out["basis"]["k"]["kind"] == "assumed"
+    assert out["result"]["summary"]["criticality"] is None and out["basis"]["dh"]["kind"] == "missing"
+    assert out["map"]["best"] is None and out["acceptable"]["widest"] is None
+    # your own data at two temperatures: k and Ea fitted with confidence intervals, operating point marked within data
+    pts = [{"temp_c": 50, "hours": h, "value_pct": v} for h, v in ((0.5, 30), (1, 52), (2, 76), (4, 93))] + \
+          [{"temp_c": 70, "hours": h, "value_pct": v} for h, v in ((0.25, 40), (0.5, 65), (1, 88))]
+    out = root.post("/api/lab/reactions/run", json={"template": "first", "temp_c": 60, "hours": 2, "lab_points": pts, "bp_c": 118,
+                                                    "rxns": [{"dh": -80}]}, headers=H).json()
+    f = out["fit"]
+    assert f["fitted"] == ["k", "ea"] and f["ci95"]["ea"][0] < f["ea"] < f["ci95"]["ea"][1] and f["rmse_pct"] < 6
+    assert out["basis"]["operating"]["kind"] == "interpolated" and out["map"]["best"]["within_data"]
+    assert out["result"]["summary"]["criticality"] in (1, 3)  # ΔH entered → safety computed
+    # published steps: salt formations are flagged, never offered as kinetics
+    r = root.get("/api/lab/reactions/routes/tofacitinib").json()
+    if r.get("found"):
+        assert all(x["step"]["kind"] != "salt_or_isolation" or not x["anchor"] for x in r["routes"])
     v = root.get("/api/lab/reactions/validation").json()
     assert v["passed"] == v["total"]

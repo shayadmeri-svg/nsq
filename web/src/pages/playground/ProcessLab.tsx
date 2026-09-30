@@ -9,6 +9,7 @@ const SEV: Record<string, { tone: any; ring: string }> = {
   optimal: { tone: "brand", ring: "ring-emerald-300 bg-emerald-50/50" },
   warning: { tone: "amber", ring: "ring-amber-300 bg-amber-50/50" },
   critical: { tone: "rose", ring: "ring-rose-300 bg-rose-50/50" },
+  danger: { tone: "rose", ring: "ring-rose-300 bg-rose-50/50" }, // what the process models actually return
 };
 
 export function ProcessLab() {
@@ -29,7 +30,7 @@ export function ProcessLab() {
   return (
     <div className="space-y-5">
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div><div className="font-display text-[15px] font-bold">Telmisartan process simulator</div><div className="text-xs text-ink-muted">{r.description}</div></div>
+        <div><div className="font-display text-[15px] font-bold">Telmisartan process simulator</div><div className="text-xs text-ink-muted">{r.description}</div><div className="mt-1 text-[11px] font-medium text-amber-700">Illustrative hand-set rules, not a computed or validated model.</div></div>
         <Segmented value={route} onChange={setRoute} options={(routes.data ?? []).map((x) => ({ value: x.id, label: x.label.split("+")[0].trim() }))} />
       </Card>
       {res && (

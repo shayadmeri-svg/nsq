@@ -46,6 +46,44 @@ def parent_smiles(smiles: str) -> Optional[str]:
     return Chem.MolToSmiles(mol) if mol is not None else None
 
 
+# Le Bas atomic volumes at the normal boiling point (cm3/mol), as used by Hayduk-Laudie
+# (Poling, Prausnitz & O'Connell, The Properties of Gases and Liquids, 5th ed., Table 11-5).
+_LEBAS = {"C": 14.8, "H": 3.7, "O": 7.4, "N": 15.6, "F": 8.7, "Cl": 24.6, "Br": 27.0, "I": 37.0, "S": 25.6, "P": 27.0}
+_LEBAS_RING = {3: -6.0, 4: -8.5, 5: -11.5, 6: -15.0}
+
+# Ionisable groups (a flag only: with no pKa, pH-dependent solubility is not modelled).
+# `gi` = typically ionised somewhere in pH 1.2-6.8 (so it changes dissolution in buffers);
+# phenols and sulfonamide NH (pKa ~9-10) are listed but are not.
+_IONISABLE = {
+    "carboxylic acid": ("acid", True, "[CX3](=O)[OX2H1,OX1-]"),
+    "tetrazole": ("acid", True, "c1nn[nH]n1"),
+    "acyl sulfonamide / imide": ("acid", True, "[#6,#16](=O)[NH][#6,#16](=O)"),
+    "phenol": ("acid", False, "c[OX2H1]"),
+    "sulfonamide NH": ("acid", False, "[#16X4](=O)(=O)[NX3;H1,H2]"),
+    "aliphatic amine": ("base", True, "[NX3;H2,H1,H0;!$(N-[#6,#16]=[O,S,N]);!$(N-a);!$(N#*);!$(N=*);!$(N-N);!$(N-O);!$(N-S(=O))]([#6])"),
+    "amidine / guanidine": ("base", True, "[NX3;!$(N-C=O)][CX3;!$(C=O)]=[NX2;!$(N-O)]"),
+    "pyridine-like N": ("base", True, "[nX2;r6;!$(n:c=O);!$(n:n)]"),
+    "imidazole": ("base", True, "[nX2]1:[cR1]:[nX3]:[cR1]:[cR1]:1"),
+    "benzimidazole": ("base", True, "[nX2]1:c:[nX3]:c2:c:c:c:c:c:1:2"),
+}
+_IONISABLE_PAT = {k: (kind, gi, Chem.MolFromSmarts(sm)) for k, (kind, gi, sm) in _IONISABLE.items()}
+
+
+def ionisable_groups(mol: Chem.Mol) -> list[dict[str, Any]]:
+    """Ionisable functional groups found by SMARTS: name, acid/base, and whether it is
+    usually ionised within pH 1.2-6.8 (`gi`)."""
+    return [{"group": k, "kind": kind, "gi": gi} for k, (kind, gi, pat) in _IONISABLE_PAT.items()
+            if pat is not None and mol.HasSubstructMatch(pat)]
+
+
+def le_bas_volume(mol: Chem.Mol) -> float:
+    """Le Bas molar volume at the normal boiling point, cm3/mol (atomic increments + ring corrections)."""
+    molh = Chem.AddHs(mol)
+    v = sum(_LEBAS.get(a.GetSymbol(), 20.0) for a in molh.GetAtoms())
+    v += sum(_LEBAS_RING.get(len(r), -15.0) for r in mol.GetRingInfo().AtomRings())
+    return v
+
+
 def mcgowan_volume(mol: Chem.Mol) -> float:
     """McGowan characteristic volume, cm3/mol (Abraham & McGowan 1987)."""
     molh = Chem.AddHs(mol)
@@ -69,9 +107,12 @@ def gse_logs(logp: float, mp_c: float) -> float:
     return 0.5 - 0.01 * max(mp_c - 25.0, 0.0) - logp
 
 
-def descriptors(mol: Chem.Mol) -> dict[str, Any]:
+def descriptors(mol: Chem.Mol, logp: Optional[float] = None) -> dict[str, Any]:
+    """RDKit descriptors. `logp` (e.g. PubChem XLogP3) is used for the Lipinski count when given,
+    so the page uses one log P throughout; Crippen cLogP otherwise."""
     mw = Descriptors.MolWt(mol)
-    logp = Crippen.MolLogP(mol)
+    crippen = Crippen.MolLogP(mol)
+    logp = crippen if logp is None else logp
     hbd, hba = Lipinski.NumHDonors(mol), Lipinski.NumHAcceptors(mol)
     tpsa = rdMolDescriptors.CalcTPSA(mol)
     rot = rdMolDescriptors.CalcNumRotatableBonds(mol)
@@ -80,7 +121,7 @@ def descriptors(mol: Chem.Mol) -> dict[str, Any]:
         "formula": rdMolDescriptors.CalcMolFormula(mol),
         "mw": round(mw, 2),
         "exact_mass": round(Descriptors.ExactMolWt(mol), 4),
-        "clogp": round(logp, 2),
+        "clogp": round(crippen, 2),
         "tpsa": round(tpsa, 1),
         "hbd": hbd, "hba": hba,
         "rotatable_bonds": rot,
@@ -88,6 +129,7 @@ def descriptors(mol: Chem.Mol) -> dict[str, Any]:
         "heavy_atoms": mol.GetNumHeavyAtoms(),
         "fraction_csp3": round(rdMolDescriptors.CalcFractionCSP3(mol), 2),
         "mcgowan_volume": round(mcgowan_volume(mol), 1),
+        "le_bas_volume": round(le_bas_volume(mol), 1),
         "lipinski_violations": violations,
         "veber_ok": rot <= 10 and tpsa <= 140,
     }
@@ -163,30 +205,54 @@ def svg(mol: Chem.Mol, width: int = 320, height: int = 220) -> str:
     return d.GetDrawingText().replace("<?xml version='1.0' encoding='iso-8859-1'?>\n", "")
 
 
+ESTIMATE_MAX_MG_ML = 1000.0  # above this a structure-based estimate is outside any plausible range
+
+
 def solubility(mol: Chem.Mol, mp_c: Optional[float], logp: Optional[float] = None, logp_source: str = "RDKit Crippen cLogP") -> dict[str, Any]:
-    """Aqueous solubility at 25 C from structure. GSE when a melting point is known, else ESOL."""
+    """Aqueous solubility ESTIMATE at 25 C from structure (neutral form): GSE when a measured melting
+    point is known, else ESOL. Both have a typical error of about ±1 log unit on drugs, more for
+    zwitterions and ionisable molecules (pH is not modelled)."""
     mw = Descriptors.MolWt(mol)
     if logp is None:
         logp, logp_source = Crippen.MolLogP(mol), "RDKit Crippen cLogP"
     esol = esol_logs(mol)
     gse = gse_logs(logp, mp_c) if mp_c is not None else None
-    chosen, model = (gse, f"GSE (melting point + {logp_source})") if gse is not None else (esol, "ESOL (structure only)")
+    chosen, model = (gse, f"GSE, Jain & Yalkowsky 2001 (melting point + {logp_source})") if gse is not None else (esol, "ESOL, Delaney 2004 (structure only)")
     mg_ml = (10 ** chosen) * mw  # mol/L * g/mol = g/L = mg/mL
-    return {"model": model, "log_s": round(chosen, 2), "mg_per_ml": mg_ml, "logp": round(logp, 2), "logp_source": logp_source,
+    groups = ionisable_groups(mol)
+    kinds = {g["kind"] for g in groups if g["gi"]}
+    flags = []
+    if mg_ml > ESTIMATE_MAX_MG_ML:
+        flags.append(f"outside model domain: estimate {mg_ml:.2g} mg/mL is above {ESTIMATE_MAX_MG_ML:g} mg/mL")
+    if kinds == {"acid", "base"}:
+        flags.append("zwitterion / amphoteric (" + ", ".join(g["group"] for g in groups if g["gi"]) + "): neutral-form estimate can be off by orders of magnitude")
+    elif kinds:
+        flags.append("ionisable (" + ", ".join(g["group"] for g in groups if g["gi"]) + "), pKa unknown: pH-dependent solubility not modelled")
+    return {"kind": "estimate", "model": model, "log_s": round(chosen, 2), "mg_per_ml": mg_ml,
+            "display_mg_ml": float(f"{mg_ml:.1g}"), "uncertainty": "±1 log unit (×10 either way)",
+            "in_domain": mg_ml <= ESTIMATE_MAX_MG_ML, "flags": flags, "ionisable": groups,
+            "ionisable_gi": sorted(kinds),
+            "logp": round(logp, 2), "logp_source": logp_source,
             "esol_log_s": round(esol, 2), "gse_log_s": round(gse, 2) if gse is not None else None}
 
 
-def bcs(mg_per_ml: float, clogp: float, dose_mg: Optional[float]) -> dict[str, Any]:
-    """Provisional BCS class from computed solubility, the highest strength seen, and cLogP."""
+def bcs(mg_per_ml: float, logp: float, dose_mg: Optional[float], solubility_kind: str = "estimate") -> dict[str, Any]:
+    """PROVISIONAL BCS class: dose number from the given solubility and the highest oral-solid
+    strength, permeability from log P vs metoprolol (Kasim et al. 2004). A structure-only guess,
+    not a regulatory classification; the log P proxy misses transporter-absorbed and small polar
+    drugs (metoprolol itself sits on the cut-off)."""
     if not dose_mg:
-        return {"class": None, "reason": "No strength known, so the dose number can't be computed."}
+        return {"class": None, "reason": "No oral solid strength known, so the dose number can't be computed."}
     d0 = (dose_mg / BCS_VOLUME_ML) / max(mg_per_ml, 1e-12)
     high_sol = d0 <= 1.0
-    high_perm = clogp >= METOPROLOL_LOGP
+    high_perm = logp >= METOPROLOL_LOGP
     cls = {(True, True): "I", (False, True): "II", (True, False): "III", (False, False): "IV"}[(high_sol, high_perm)]
+    sol_note = "measured solubility" if solubility_kind == "measured" else "estimated solubility (±1 log unit)"
     return {"class": cls, "dose_number": round(d0, 3), "high_solubility": high_sol, "high_permeability": high_perm,
-            "reason": f"Dose number {d0:.3g} ({'≤' if high_sol else '>'} 1) for {dose_mg:g} mg in 250 mL; "
-                      f"log P {clogp:.2f} {'≥' if high_perm else '<'} metoprolol ({METOPROLOL_LOGP})."}
+            "basis": f"provisional, structure-only guess; uses {sol_note}; permeability from log P only",
+            "reason": f"Dose number {d0:.2g} ({'≤' if high_sol else '>'} 1) for {dose_mg:g} mg in 250 mL, from {sol_note}; "
+                      f"log P {logp:.2f} {'≥' if high_perm else '<'} metoprolol ({METOPROLOL_LOGP}). "
+                      "Not a regulatory classification: BCS needs solubility over pH 1.2–6.8 at 37 °C and measured permeability."}
 
 
 @lru_cache(maxsize=512)
@@ -195,14 +261,15 @@ def profile(smiles: str, mp_c: Optional[float] = None, dose_mg: Optional[float] 
     mol = parse(smiles)
     if mol is None:
         return None
-    desc = descriptors(mol)
     sol = solubility(mol, mp_c, logp, logp_source) if logp is not None else solubility(mol, mp_c)
+    desc = descriptors(mol, sol["logp"])
     return {"smiles": Chem.MolToSmiles(mol), "descriptors": desc, "solubility": sol,
             "bcs": bcs(sol["mg_per_ml"], sol["logp"], dose_mg), "svg": svg(mol)}
 
 
 def hayduk_laudie_diffusivity(molar_volume_cm3: float, temp_c: float = 37.0) -> float:
-    """Diffusion coefficient in water, cm2/s (Hayduk & Laudie 1974), viscosity of water at temp."""
+    """Diffusion coefficient in water, cm2/s (Hayduk & Laudie 1974); `molar_volume_cm3` is the Le Bas
+    volume at the normal boiling point. Typical error about ±20-30%."""
     t = temp_c + 273.15
     visc_cp = 2.414e-2 * 10 ** (247.8 / (t - 140.0))  # Vogel-type fit for water, mPa.s
     return 13.26e-5 / (visc_cp ** 1.14 * molar_volume_cm3 ** 0.589)

@@ -9,6 +9,13 @@ with standard disproportionality measures against all FAERS reports:
     ROR = (a/b) / (c/d), 95% CI = exp(ln ROR ± 1.96·sqrt(1/a + 1/b + 1/c + 1/d))
 
 A signal follows Evans et al. (2001): PRR ≥ 2, chi-squared ≥ 4 and a ≥ 3.
+
+"This drug" means reports that list it as a *suspect* drug
+(patient.drug.drugcharacterization:1), not every concomitant mention. openFDA
+can't tie the two conditions to the same drug entry of a report, so a report
+where the drug is concomitant and another drug is suspect can still match; the
+name match also includes combination products that contain the molecule.
+Deaths are reports flagged seriousnessdeath:1.
 FAERS is spontaneous reporting: counts reflect reporting, not incidence, and a
 signal is a hypothesis, not proof of causation.
 """
@@ -69,11 +76,11 @@ def signals(name: str, top: int = 25) -> dict[str, Any]:
     if hit and time.time() - hit[0] < TTL:
         return hit[1]
     term = name.upper().replace('"', "")
-    drug_q = f'patient.drug.openfda.generic_name:"{term}"'
+    drug_q = f'patient.drug.openfda.generic_name:"{term}" AND patient.drug.drugcharacterization:1'
     drug_total = _total(drug_q)
     if not drug_total:
-        out = {"name": name, "found": False, "reports": 0,
-               "note": "No FAERS reports under this generic name (common for medicines not sold in the US)."}
+        out = {"name": name, "found": False, "reports": 0, "search_term": term, "query": drug_q,
+               "note": "No FAERS reports with this generic name as a suspect drug (common for medicines not sold in the US)."}
         _cache[key] = (time.time(), out)
         return out
     all_total = _total()
@@ -84,14 +91,16 @@ def signals(name: str, top: int = 25) -> dict[str, Any]:
         rows.append({"reaction": term_r.title(), "reports": int(r["count"]), "reaction_total": rt,
                      **disproportionality(int(r["count"]), drug_total, rt, all_total)})
     serious = _total(f"{drug_q} AND serious:1")
-    outcomes = {int(x["term"]): int(x["count"]) for x in _counts(drug_q, "patient.reaction.reactionoutcome", 10)}
+    deaths = _total(f"{drug_q} AND seriousnessdeath:1")
     makers = [{"name": x["term"], "count": int(x["count"])} for x in _counts(drug_q, "patient.drug.openfda.manufacturer_name.exact", 15)]
     rows.sort(key=lambda x: (not x["signal"], -(x["prr"] or 0)))
-    out = {"name": name, "found": True, "reports": drug_total, "all_reports": all_total, "serious": serious,
+    out = {"name": name, "found": True, "search_term": term, "query": drug_q, "reports": drug_total, "all_reports": all_total, "serious": serious,
            "serious_pct": round(100 * serious / drug_total, 1) if drug_total else 0.0,
-           "fatal": outcomes.get(5, 0), "reactions": rows, "signals": sum(1 for x in rows if x["signal"]),
+           "fatal": deaths, "reactions": rows, "signals": sum(1 for x in rows if x["signal"]),
            "manufacturers": makers,
-           "method": "PRR / ROR against all FAERS reports; signal = PRR ≥ 2, χ² ≥ 4, n ≥ 3 (Evans 2001)",
-           "caveat": "Spontaneous reports: counts reflect reporting, not how often it happens, and a signal is not proof of causation."}
+           "method": "Reports with this drug as suspect; PRR / ROR against all FAERS reports; signal = PRR ≥ 2, χ² ≥ 4, n ≥ 3 (Evans 2001)",
+           "source": "FDA FAERS via openFDA", "source_url": "https://open.fda.gov/apis/drug/event/",
+           "caveat": "Spontaneous reports: counts reflect reporting, not how often it happens, and a signal is not proof of causation. "
+                     "The name match includes combination products; openFDA can't confirm the suspect flag belongs to this drug entry."}
     _cache[key] = (time.time(), out)
     return out

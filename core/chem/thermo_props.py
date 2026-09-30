@@ -1,10 +1,13 @@
 """Thermal properties and solubility-temperature curves.
 
-Melting point and enthalpy of fusion are taken, in order, from: an
-experimental value (PubChem, passed in), the `chemicals` property database
-(by CAS), or the Joback group-contribution estimate (flagged: Joback is often
-tens of kelvin off for drug-like molecules). When only the melting point is
-known, Walden's rule (entropy of fusion ~ 56.5 J/mol/K) gives the enthalpy.
+Melting point and enthalpy of fusion come, in order, from: an experimental
+value (PubChem, passed in), or the `chemicals` property database (by CAS) using
+only its data-backed sources (CRC, Common Chemistry, Open Notebook, ...).
+The `chemicals` library silently falls back to the Joback group-contribution
+estimate, which is tens to hundreds of kelvin off for drug-like molecules
+(cloxacillin comes out at 750 °C), so Joback is never used here. With a
+melting point but no measured enthalpy, Walden's rule (entropy of fusion
+~56.5 J/mol/K) gives an estimate, labelled as such.
 
 Solvent density and molar mass come from `thermo`.
 """
@@ -34,40 +37,43 @@ def _cas(name: str) -> Optional[str]:
         return None
 
 
+_ESTIMATE_METHODS = {"JOBACK"}  # group-contribution estimates, not data
+
+
+def _db_value(kind: str, cas: str) -> tuple[Optional[float], Optional[str]]:
+    """A data-backed Tm (K) or Hfus (J/mol) from `chemicals`, never its Joback fallback."""
+    try:
+        from chemicals import phase_change as pc
+        fn, methods = (pc.Tm, pc.Tm_methods) if kind == "Tm" else (pc.Hfus, pc.Hfus_methods)
+        for m in methods(cas) or []:
+            if m.upper() in _ESTIMATE_METHODS:
+                continue
+            v = fn(cas, method=m)
+            if v:
+                return float(v), f"chemicals database ({m})"
+    except Exception:
+        pass
+    return None, None
+
+
 @lru_cache(maxsize=1024)
 def fusion(name: str, smiles: str, mp_exp_c: Optional[float] = None) -> dict[str, Any]:
-    """Melting point (C) and enthalpy of fusion (J/mol) with where each came from."""
+    """Melting point (C) and enthalpy of fusion (J/mol), each with its source and kind
+    ("measured" = experimental / curated database, "estimate" = Walden's rule)."""
     tm_k, dh, src_tm, src_h = None, None, None, None
     if mp_exp_c is not None:
         tm_k, src_tm = mp_exp_c + 273.15, "experimental (PubChem)"
     cas = _cas(name) if name else None
     if cas:
-        try:
-            from chemicals import Hfus, Tm
-            if tm_k is None:
-                v = Tm(cas)
-                if v:
-                    tm_k, src_tm = float(v), "chemicals database"
-            h = Hfus(cas)
-            if h:
-                dh, src_h = float(h), "chemicals database"
-        except Exception:
-            pass
-    if tm_k is None or dh is None:
-        try:
-            from rdkit import Chem
-            from thermo.group_contribution.joback import Joback
-            est = Joback(Chem.MolFromSmiles(smiles)).estimate()
-            # Joback is often far off for drug-like molecules; keep it only when plausible.
-            if tm_k is None and est.get("Tm") and 293.15 < float(est["Tm"]) < 623.15:
-                tm_k, src_tm = float(est["Tm"]), "Joback estimate (low confidence)"
-        except Exception:
-            pass
+        if tm_k is None:
+            tm_k, src_tm = _db_value("Tm", cas)
+        dh, src_h = _db_value("Hfus", cas)
+    dh_kind = "measured" if dh else None
     if tm_k is not None and dh is None:
-        dh, src_h = WALDEN_DS * tm_k, "Walden's rule (56.5 J/mol/K × Tm)"
+        dh, src_h, dh_kind = WALDEN_DS * tm_k, "estimate: Walden's rule (56.5 J/mol/K × Tm), ±30%", "estimate"
     return {"mp_c": round(tm_k - 273.15, 1) if tm_k else None, "mp_source": src_tm,
-            "mp_measured": bool(src_tm) and "Joback" not in src_tm,
-            "dh_fus": round(dh) if dh else None, "dh_source": src_h, "cas": cas}
+            "mp_measured": tm_k is not None, "mp_kind": "measured" if tm_k is not None else None,
+            "dh_fus": round(dh) if dh else None, "dh_source": src_h, "dh_kind": dh_kind, "cas": cas}
 
 
 @lru_cache(maxsize=64)
@@ -75,14 +81,15 @@ def solvent(key: str) -> dict[str, Any]:
     from thermo import Chemical
     name = SOLVENTS.get(key, key)
     c = Chemical(name, T=298.15)
-    return {"key": key, "name": name, "mw": float(c.MW), "rho_25": float(c.rho), "bp_c": round(float(c.Tb) - 273.15, 1),
-            "cas": c.CAS}
+    return {"key": key, "name": name, "mw": float(c.MW), "rho_25": float(c.rhol or c.rho), "bp_c": round(float(c.Tb) - 273.15, 1),
+            "mp_c": round(float(c.Tm) - 273.15, 1) if c.Tm else None, "cas": c.CAS}
 
 
 def solvent_density(key: str, temp_c: float) -> float:
     from thermo import Chemical
     try:
-        return float(Chemical(SOLVENTS.get(key, key), T=temp_c + 273.15).rho)
+        c = Chemical(SOLVENTS.get(key, key), T=temp_c + 273.15)
+        return float(c.rhol or c.rho)  # liquid density, also extrapolated just past the boiling point
     except Exception:
         return solvent(key)["rho_25"]
 
@@ -94,7 +101,7 @@ def ideal_mole_fraction(temp_c: float, mp_c: float, dh_fus: float) -> float:
 
 
 def curve(api_mw: float, mp_c: float, dh_fus: float, solvent_key: str, gamma: float = 1.0,
-          aq_mg_ml_25: Optional[float] = None, t_min: float = 0.0, t_max: float = 70.0) -> dict[str, Any]:
+          aq_mg_ml_25: Optional[float] = None, t_min: float = -10.0, t_max: float = 90.0) -> dict[str, Any]:
     """Solubility (kg/m3 of solvent) vs temperature.
 
     Organic solvents: ideal solubility divided by an activity coefficient (1 = ideal,
@@ -102,7 +109,7 @@ def curve(api_mw: float, mp_c: float, dh_fus: float, solvent_key: str, gamma: fl
     Hoff using the enthalpy of fusion.
     """
     sv = solvent(solvent_key)
-    temps = np.linspace(t_min, t_max, 29)
+    temps = np.linspace(t_min, t_max, 41)
     vals = []
     for tc in temps:
         if solvent_key == "water" and aq_mg_ml_25 is not None:
@@ -113,9 +120,11 @@ def curve(api_mw: float, mp_c: float, dh_fus: float, solvent_key: str, gamma: fl
         rho = solvent_density(solvent_key, tc)
         vals.append(x / (1 - x) * api_mw / sv["mw"] * rho)  # kg API per m3 solvent
     vals = np.array(vals)
-    model = ("structure-based aqueous estimate + van 't Hoff" if solvent_key == "water" and aq_mg_ml_25 is not None
+    model = ("aqueous solubility at 25 °C + van 't Hoff (ΔHfus as ΔHsol)" if solvent_key == "water" and aq_mg_ml_25 is not None
              else f"ideal solubility / γ={gamma:g}")
-    return {"temps_c": temps.round(1).tolist(), "kg_m3": [float(f"{v:.5g}") for v in vals],
+    ideal = solvent_key != "water" and abs(gamma - 1.0) < 1e-9
+    return {"ideal": ideal,
+            "solvent_modelled": solvent_key == "water" or not ideal,"temps_c": temps.round(1).tolist(), "kg_m3": [float(f"{v:.5g}") for v in vals],
             "model": model, "solvent": sv}
 
 

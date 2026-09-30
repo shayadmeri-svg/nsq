@@ -75,7 +75,8 @@ class FailureMode(str, Enum):
 class Stage1Params:
     """Spray-solution preparation CPPs.
 
-    Ranges and optima mirror the validated bounds of the QbD prototype; they
+    Ranges and optima are the illustrative bounds of the old QbD prototype (not
+    validated against any batch data); they
     are the contract the API and UI both read (STAGE1_RANGES) so the slider
     min/max/step never drift from the model."""
 
@@ -185,8 +186,8 @@ def simulate_stage1(p: Stage1Params) -> Stage1Result:
         failure_mode=FailureMode.NONE,
         title="Batch Status: Optimal Solution",
         description=(
-            "Parameters conform to validated thresholds. Complete transition to "
-            "dissolved amorphous salt achieved."
+            "Parameters are inside the prototype's illustrative rule thresholds "
+            "(rule-based, not a computed or validated result)."
         ),
     )
 
@@ -240,8 +241,8 @@ def simulate_stage2(p: Stage2Params) -> Stage2Result:
         failure_mode=FailureMode.NONE,
         title="Batch Status: Fluidizing Optimal",
         description=(
-            "Thermodynamic mass balance achieved. Stable capillary liquid bonding; "
-            "clean granule matrix distribution."
+            "Parameters are inside the prototype's illustrative rule thresholds "
+            "(rule-based; no mass or energy balance is computed)."
         ),
     )
 
@@ -256,8 +257,8 @@ ROUTE_ID = "naoh_fluidbed"
 ROUTE_LABEL = "NaOH amorphous salt + Fluid-Bed Granulation"
 ROUTE_DESCRIPTION = (
     "Wet-granulation route: amorphous sodium-salt formation in a NaOH spray "
-    "solution, then fluid-bed granulation. The CPPs and failure modes mirror "
-    "the validated QbD prototype."
+    "solution, then fluid-bed granulation. Illustrative rules carried over from "
+    "the old QbD prototype: thresholds and formulas are hand-set, not fitted or validated."
 )
 
 STAGES = [

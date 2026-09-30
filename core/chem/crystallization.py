@@ -81,8 +81,8 @@ def builtin(req: dict[str, Any]) -> dict[str, Any]:
     cs = np.array([sol(x) for x in temps])
     return _summary(out.t, temps, c, cs, m0, m1, m2, m3, m4, c0, sol(prog["t1_c"]), rho_c, "builtin",
                     ["Method of moments (μ0–μ4), size-independent growth, no agglomeration or breakage",
-                     "Kinetics: PharmaPy example constants (generic compound), not fitted to this molecule"
-                     if not req.get("kinetics") else "Kinetics: user-supplied constants"])
+                     "Kinetics: illustrative (generic PharmaPy example kinetics), not fitted to this molecule: size, spread and "
+                     "supersaturation outputs show behaviour, not a prediction" if not req.get("kinetics") else "Kinetics: user-supplied constants"])
 
 
 def _summary(t, temps, c, cs, m0, m1, m2, m3, m4, c0, cs_end, rho_c, engine, assumptions) -> dict[str, Any]:
@@ -102,6 +102,7 @@ def _summary(t, temps, c, cs, m0, m1, m2, m3, m4, c0, cs_end, rho_c, engine, ass
         "sat_kg_m3": [float(f"{x:.5g}") for x in cs],
         "supersat": np.round(sigma, 4).tolist(),
         "l43_um": np.round(l43, 2).tolist(),
+        "kinetics_illustrative": True,
         "summary": {
             "yield_pct": round(yield_pct, 1), "max_yield_pct": round(max_yield, 1),
             "l43_um": round(float(l43[-1]), 1), "mean_um": round(float(lmean[-1]), 1), "cv": round(cv, 2) if cv else None,

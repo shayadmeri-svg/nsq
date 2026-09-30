@@ -144,8 +144,8 @@ def simulate_dc_stage1(p: DCStage1Params) -> DCStage1Result:
         failure_mode=FailureMode.NONE,
         title="Batch Status: Blend Optimal",
         description=(
-            "Blending time and alkalizer load within the validated corridor. "
-            "Uniform API/meglumine distribution; amorphous state stabilized."
+            "Blending time and alkalizer load inside the catalog corridor "
+            "(illustrative rules, not a computed or validated result)."
         ),
     )
 
@@ -230,7 +230,8 @@ ROUTE_LABEL = "Direct Compression (Meglumine alkalizer)"
 ROUTE_DESCRIPTION = (
     "The catalog's optimal_process route for telmisartan: dry blending with a "
     "meglumine alkalizer, then direct compression on a rotary press. CPPs and "
-    "alerts mirror the curated GMP corridor in gmp_knowledge.py."
+    "alerts mirror the curated GMP corridor in gmp_knowledge.py. Illustrative "
+    "hand-set rules, not fitted or validated."
 )
 
 STAGES = [

@@ -9,8 +9,9 @@ fluid_bed()    Steady-state air-side mass and energy balance with psychrometrics
                the share of the air's drying capacity the spray uses.
 
 Material parameters that can't be derived from structure (yield pressure,
-tensile constants, particle size) are inputs with editable defaults, and every
-result lists the assumptions it used.
+tensile constants, particle size) are inputs with editable, illustrative
+defaults (not measured for any product), and every result lists the
+assumptions it used.
 """
 
 from __future__ import annotations
@@ -96,9 +97,10 @@ def dissolution(dose_mg: float, cs_mg_ml: float, diff_cm2_s: float, d50_um: floa
         "spec": {"q_pct": q_pct, "q_time_min": q_time_min},
         "assumptions": [
             f"Noyes-Whitney with a Hintz-Johnson diffusion layer (h = min(r, {h_max_um:g} µm)), log-normal PSD d50 {d50_um:g} µm, GSD {gsd:g}",
-            f"Diffusivity {diff_cm2_s:.2e} cm²/s (Hayduk-Laudie from McGowan volume unless overridden)",
+            f"Diffusivity {diff_cm2_s:.2e} cm²/s (Hayduk-Laudie from the Le Bas volume, ±30%, unless overridden)",
             f"Particles released after a {lag_min:g} min disintegration lag; perfectly mixed {volume_ml:g} mL vessel",
             ion_note or "Neutral form only (no pKa given): pH has no effect",
+            f"Acceptance Q {q_pct:g}% at {q_time_min:g} min is a generic value unless you entered the monograph's",
         ],
         "solubility_mg_ml": float(f"{cs_mg_ml:.4g}"), "intrinsic_mg_ml": float(f"{intrinsic:.4g}"),
     }
@@ -107,11 +109,14 @@ def dissolution(dose_mg: float, cs_mg_ml: float, diff_cm2_s: float, d50_um: floa
 # --- compaction ------------------------------------------------------------------------------------
 
 MATERIALS = {
-    # Typical literature ranges; editable in the UI. Py: Heckel mean yield pressure.
-    "plastic": {"label": "Plastic (MCC-like)", "py_mpa": 80.0, "sigma0_mpa": 12.0, "b": 7.0},
-    "mixed": {"label": "Mixed blend", "py_mpa": 140.0, "sigma0_mpa": 9.0, "b": 7.5},
-    "brittle": {"label": "Brittle (lactose / DCP-like)", "py_mpa": 250.0, "sigma0_mpa": 7.0, "b": 8.0},
+    # Illustrative typical values (uncited, not measured for any product); edit them in the UI.
+    # Py: Heckel mean yield pressure; sigma0 / b: Ryshkewitch-Duckworth constants.
+    "plastic": {"label": "Plastic (MCC-like), illustrative", "py_mpa": 80.0, "sigma0_mpa": 12.0, "b": 7.0},
+    "mixed": {"label": "Mixed blend, illustrative", "py_mpa": 140.0, "sigma0_mpa": 9.0, "b": 7.5},
+    "brittle": {"label": "Brittle (lactose-like), illustrative", "py_mpa": 180.0, "sigma0_mpa": 7.0, "b": 8.0},
+    "very_brittle": {"label": "Very brittle (dicalcium phosphate-like), illustrative", "py_mpa": 450.0, "sigma0_mpa": 5.0, "b": 8.0},
 }
+MATERIALS_NOTE = "Material presets are illustrative typical values (uncited), not measurements of any product: replace them with your blend's Heckel and tensile data."
 TARGET_TENSILE_MPA = 1.7  # Pitt & Heasley (2013): ~1.7 MPa gives acceptable friability for most tablets
 
 
@@ -137,7 +142,8 @@ def compaction(py_mpa: float, sigma0_mpa: float, b: float, d0: float = 0.40, tar
     return {"pressure_mpa": p.round(1).tolist(), "solid_fraction": rel_density.round(4).tolist(), "porosity": porosity.round(4).tolist(),
             "tensile_mpa": tensile.round(3).tolist(), "p_for_target": p_target, "sf_at_target": round(sf_target, 3) if sf_target else None,
             "target_mpa": target_mpa, "notes": notes,
-            "assumptions": [f"Heckel: ln(1/(1−D)) = P/Py + A, Py {py_mpa:g} MPa, initial relative density {d0:g}",
+            "assumptions": [MATERIALS_NOTE,
+                            f"Heckel: ln(1/(1−D)) = P/Py + A, Py {py_mpa:g} MPa, A from the initial relative density {d0:g} (no rearrangement term)",
                             f"Ryshkewitch-Duckworth: σ = σ0·exp(−b·ε), σ0 {sigma0_mpa:g} MPa, b {b:g}",
                             f"Target tensile strength {target_mpa} MPa (friability guidance, Pitt & Heasley 2013)"]}
 
@@ -155,11 +161,14 @@ def fluid_bed(inlet_c: float, dew_point_c: float, air_m3_h: float, spray_g_min: 
     m_da = air_m3_h / 3600 * rho_moist / (1 + w_in)  # kg dry air / s
     water = spray_g_min / 60 / 1000 * (1 - solids_pct / 100)  # kg/s
     h_in = ps.GetMoistAirEnthalpy(inlet_c, w_in) / 1000  # kJ/kg dry air
-    t_wb = ps.GetTWetBulbFromHumRatio(inlet_c, w_in, pressure_pa)
-    w_wb = ps.GetSatHumRatio(t_wb, pressure_pa)
-    capacity = m_da * (w_wb - w_in)  # kg water/s the air can take up adiabatically
-    load = water / capacity if capacity > 0 else float("inf")
     loss = heat_loss_pct / 100 * m_da * 1.006 * (inlet_c - 20.0)  # kW lost through walls
+    # The wall loss is taken off before the air meets the spray, so it also shrinks the drying capacity:
+    # the air effectively enters at t_eff (same humidity) and can humidify adiabatically to its wet bulb.
+    t_eff = (h_in - loss / m_da - 2501 * w_in) / (1.006 + 1.86 * w_in)
+    t_wb = ps.GetTWetBulbFromHumRatio(max(t_eff, dew_point_c + 0.01), w_in, pressure_pa)
+    w_wb = ps.GetSatHumRatio(t_wb, pressure_pa)
+    capacity = m_da * (w_wb - w_in)  # kg water/s the air can take up after wall losses
+    load = water / capacity if capacity > 0 else float("inf")
     w_out = w_in + water / m_da
     h_out = h_in - loss / m_da
     t_out = (h_out - 2501 * w_out) / (1.006 + 1.86 * w_out)
@@ -170,15 +179,16 @@ def fluid_bed(inlet_c: float, dew_point_c: float, air_m3_h: float, spray_g_min: 
     else:
         rh_out = ps.GetRelHumFromHumRatio(t_out, w_out, pressure_pa)
     if load > 0.85 or saturated:
-        regime, msg = "overwetting", "The spray uses almost all of the air's drying capacity: wet mass builds up, granules grow uncontrolled and the bed can collapse."
+        regime, msg = "overwetting", "Rule of thumb (drying load > 85%): the spray uses almost all of the air's drying capacity, so the bed tends to over-wet."
     elif load < 0.30:
-        regime, msg = "spray-drying", "Most droplets can dry before reaching the particles: binder is lost as fines and granule growth is weak."
+        regime, msg = "spray-drying", "Rule of thumb (drying load < 30%): droplets may dry before reaching the particles, so binder can be lost as fines."
     else:
-        regime, msg = "controlled", "Evaporation balances the spray: steady wet granulation."
-    return {"outlet_c": round(t_out, 1), "outlet_rh_pct": round(100 * rh_out, 1), "wet_bulb_c": round(t_wb, 1),
+        regime, msg = "controlled", "Rule of thumb (drying load 30–85%): evaporation and spray are roughly balanced."
+    return {"outlet_c": round(t_out, 1), "outlet_rh_pct": round(100 * rh_out, 1), "wet_bulb_c": round(t_wb, 1), "regime_basis": "rule of thumb",
             "inlet_rh_pct": round(100 * ps.GetRelHumFromHumRatio(inlet_c, w_in, pressure_pa), 2),
             "drying_load_pct": round(100 * load, 1), "evaporation_capacity_g_min": round(capacity * 60000, 1),
             "water_g_min": round(water * 60000, 1), "regime": regime, "message": msg,
             "assumptions": ["Steady-state air-side mass and energy balance, psychrometrics from psychrolib (ASHRAE)",
-                            f"Heat loss {heat_loss_pct:g}% of inlet sensible heat above 20 °C; spray at room temperature",
-                            "Regimes by drying load (share of adiabatic-saturation capacity used): <30% spray-drying, 30-85% controlled, >85% overwetting (rule of thumb)"]}
+                            f"Heat loss {heat_loss_pct:g}% of inlet sensible heat above 20 °C (assumed), taken off before evaporation; spray at room temperature",
+                            "Air flow is volumetric at inlet conditions",
+                            "Regime labels are a rule of thumb (uncited thresholds on drying load: <30% spray-drying, 30–85% controlled, >85% overwetting), not a validated limit"]}

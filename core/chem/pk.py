@@ -60,16 +60,31 @@ def simulate(times_min: list[float], pct: list[float], dose_mg: float, cl_l_h: f
             "half_life_h": round(float(np.log(2) / k), 2)}
 
 
+MIN_REF_ABSORBED_PCT = 80.0  # below this the "reference" itself is not a meaningful comparator
+
+
 def compare(test: dict[str, Any], ref: dict[str, Any]) -> dict[str, Any]:
+    """Test/reference Cmax and AUC ratios, with a verdict only where it follows from the numbers.
+
+    BE is decided on the 90% CI of the geometric mean ratio from a crossover study, which a
+    single simulated profile can't give. What does follow: a point estimate outside 80-125%
+    means the CI can't be inside it either. A point estimate inside says nothing about the CI.
+    No ratio at all when the reference barely absorbs (0/0 or near-zero/near-zero)."""
+    ref_abs = float(ref.get("absorbed_pct") or 0.0)
+    if ref.get("cmax", 0) <= 0 or ref.get("auc_inf", 0) <= 0 or ref_abs < MIN_REF_ABSORBED_PCT:
+        return {"cmax_ratio": None, "auc_ratio": None, "risk": "not_assessable", "limits": [BE_LOW, BE_HIGH],
+                "message": f"Not assessable: the reference itself absorbs only {ref_abs:g}% of the dose in this model "
+                           f"(needs ≥ {MIN_REF_ABSORBED_PCT:g}%), so a ratio would compare two near-zero numbers. "
+                           "Usually this means the solubility input is wrong for this molecule (for example an ionisable drug with no pKa)."}
+
     def ratio(a: float, b: float) -> float:
-        return round(100 * a / b, 1) if b else 0.0
+        return round(100 * a / b, 1)
     cmax_r, auc_r = ratio(test["cmax"], ref["cmax"]), ratio(test["auc_inf"], ref["auc_inf"])
     inside = BE_LOW <= cmax_r <= BE_HIGH and BE_LOW <= auc_r <= BE_HIGH
-    near = all(85 <= x <= 118 for x in (cmax_r, auc_r))
-    if inside and near:
-        risk, msg = "low", "Point estimates sit well inside 80–125%: this dissolution difference is unlikely on its own to fail bioequivalence."
-    elif inside:
-        risk, msg = "moderate", "Point estimates are inside 80–125% but close to the edge; with normal subject variability the 90% confidence interval could fall outside."
+    if inside:
+        risk, msg = "inside", ("Point estimates are inside 80–125%. That alone does not show bioequivalence: the limits apply to "
+                               "the 90% confidence interval from a crossover study, which also depends on subject variability.")
     else:
-        risk, msg = "high", "A point estimate falls outside 80–125%: a product with this dissolution would very likely fail bioequivalence."
+        risk, msg = "outside", ("A point estimate is outside 80–125%, so its 90% confidence interval cannot lie inside the limits: "
+                                "under these inputs this dissolution difference would fail bioequivalence.")
     return {"cmax_ratio": cmax_r, "auc_ratio": auc_r, "risk": risk, "message": msg, "limits": [BE_LOW, BE_HIGH]}

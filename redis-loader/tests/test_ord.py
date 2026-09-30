@@ -98,6 +98,24 @@ def test_no_false_flags_from_common_words_and_acids():
     assert o.describe(h, "t")["needs"] == ["hydrogenation"]
 
 
+def test_recorded_amounts_give_starting_concentrations():
+    r = _rxn("c", "CC(=O)Nc1ccccc1", [("Nc1ccccc1", R.REACTANT, "aniline"), ("CC(=O)Cl", R.REACTANT, "acetyl chloride"),
+                                       ("ClCCl", R.SOLVENT, "dichloromethane")], temp=0, yld=90)
+    comps = [c for k in sorted(r.inputs) for c in r.inputs[k].components]
+    comps[0].amount.moles.value, comps[0].amount.moles.units = 10, rp.Moles.MILLIMOLE
+    comps[1].amount.moles.value, comps[1].amount.moles.units = 12, rp.Moles.MILLIMOLE
+    comps[2].amount.volume.value, comps[2].amount.volume.units = 50, rp.Volume.MILLILITER
+    d = o.describe(r, "t")
+    assert d["c0"]["volume_ml"] == 50 and d["c0"]["mol_l"] == {"Nc1ccccc1": 0.2, "CC(=O)Cl": 0.24}
+    assert {x["name"]: x.get("mol") for x in d["components"]}["aniline"] == 0.01
+
+
+def test_same_reaction_at_other_conditions_is_kept():
+    base = {"smiles": "A>>B", "needs": [], "hazards": [], "solvents": [], "catalysts": [], "reagents": [], "patent": None, "doi": None, "dataset": "d"}
+    rows = [{**base, "id": f"r{i}", "temp_c": t, "hours": 2, "yield": y} for i, (t, y) in enumerate(((20, 50), (60, 90), (20, 50)))]
+    assert [e["temp_c"] for e in o.summarise(rows)["examples"]] == [60, 20]  # duplicates dropped, other temperatures kept
+
+
 def test_internal_standard_is_not_a_product():
     r = _rxn("s", "CCCCc1ccccc1", [("Brc1ccccc1", R.REACTANT, None)])
     p = r.outcomes[0].products.add()

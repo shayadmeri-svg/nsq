@@ -21,10 +21,12 @@ def test_chem_core():
 def test_lab_api(root):
     m = root.get("/api/lab/molecules").json()
     assert any(x["key"] == "paracetamol" and x["has_structure"] for x in m["molecules"])
+    assert "by_bcs" not in m and all("bcs" not in x for x in m["molecules"])  # no computed class in the picker
     p = root.get("/api/lab/molecule/paracetamol").json()
     assert p["nsq"]["alerts"] > 0 and "<svg" in p["svg"]
     d = root.post("/api/lab/molecule/paracetamol/dissolution", json={"d50_um": 10}, headers=H).json()
-    assert d["pct"] and d["verdict"] in ("pass", "fail")
+    assert d["pct"] and d["verdict"] in ("pass", "fail", "withheld") and d["inputs"]["dose_mg"]["kind"] == "source"
+    assert p["provenance"]["aqueous_solubility"]["kind"] in ("source", "estimate")
     c = root.post("/api/lab/molecule/paracetamol/crystallization", json={"engine": "builtin"}, headers=H).json()
     assert c["engine"] == "builtin" and c["summary"]["yield_pct"] > 0
     assert root.post("/api/lab/fluid-bed", json={"dew_point_c": 70, "inlet_c": 60}, headers=H).status_code == 422
