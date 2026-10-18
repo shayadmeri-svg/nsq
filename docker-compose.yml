@@ -32,14 +32,14 @@ services:
   # (set DATABASE_URL to use a managed database instead; this container then sits idle).
   # Data lives in the pg-data volume: never run `docker compose down -v` on this box.
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     container_name: nsq-postgres
     environment:
       - POSTGRES_USER=nsq
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-nsq-local-only}
       - POSTGRES_DB=nsq
     volumes:
-      - pg-data:/var/lib/postgresql/data
+      - pg-data:/var/lib/postgresql
     expose: ["5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nsq -d nsq"]
