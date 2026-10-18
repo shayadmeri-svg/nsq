@@ -28,12 +28,11 @@ services:
     restart: unless-stopped
     networks: [nsq-net]
 
-  # Local Postgres — only when you don't use a managed one (Neon, RDS…).
-  # Start it with:  docker compose --profile local-db up -d
-  # and leave DATABASE_URL unset in .env.
+  # Local Postgres, always on. The api uses it whenever DATABASE_URL is unset in .env
+  # (set DATABASE_URL to use a managed database instead; this container then sits idle).
+  # Data lives in the pg-data volume: never run `docker compose down -v` on this box.
   postgres:
-    profiles: ["local-db"]
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: nsq-postgres
     environment:
       - POSTGRES_USER=nsq
@@ -89,6 +88,7 @@ services:
       - ./data:/app/data
     depends_on:
       redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
     restart: unless-stopped
     networks: [nsq-net]
 
