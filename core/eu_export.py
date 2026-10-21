@@ -228,13 +228,13 @@ def assess(
     # 10. Quality signal from CDSCO NSQ alerts.
     if nsq_alerts_for_molecule > 0:
         items.append(ChecklistItem(
-            "nsq_signal", "No open quality signals on this molecule", GAP,
-            f"{nsq_alerts_for_molecule} CDSCO NSQ alert(s) on this molecule for the organisation.",
-            "Close root-cause investigations and CAPAs before inspection; inspectors review market quality history.",
+            "nsq_signal", "Quality records reviewed for this molecule", ATTENTION,
+            f"{nsq_alerts_for_molecule} CDSCO quality notice(s) on this molecule in your records.",
+            "Have the investigation and CAPA summary for each notice ready: EU inspectors look at market quality history.",
             "EudraLex Vol. 4 Ch. 1 & 8"))
     else:
-        items.append(ChecklistItem("nsq_signal", "No open quality signals on this molecule", MET,
-                                   "No CDSCO NSQ alerts on this molecule for the organisation.",
+        items.append(ChecklistItem("nsq_signal", "Quality records reviewed for this molecule", MET,
+                                   "No CDSCO quality notices on this molecule in your records.",
                                    reference="CDSCO NSQ alerts"))
 
     applicable = [i for i in items if i.status != NA]

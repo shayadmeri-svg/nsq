@@ -1,4 +1,4 @@
-import { Activity, ArrowUpRight, Factory, Globe2, Sparkles, AlertTriangle } from "lucide-react";
+import { Activity, ArrowUpRight, Factory, Globe2, Layers, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 import { Legendary, RankBars, TrendBars } from "../../components/charts";
@@ -27,23 +27,23 @@ export function OrgOverview() {
       />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat label="NSQ alerts" value={k.alerts ?? 0} icon={<Activity size={18} />} tone="rose" hint={k.alerts ? `${k.last_12m} in the last 12 months · ${fmtMonth(q.period?.first)} – ${fmtMonth(q.period?.last)}` : "No alerts linked to this organisation"} />
-        <Stat label="Alert rank (1 = most alerts)" value={k.national_rank ? `#${k.national_rank}` : "—"} icon={<AlertTriangle size={18} />} tone="rose" delay={0.05}
-          hint={k.national_rank ? `of ${k.manufacturers_ranked?.toLocaleString("en-IN")} manufacturers with an NSQ alert — more alerts than ${k.more_alerts_than_pct}% of them. A lower number is worse.` : "No attributable alerts — not ranked"} />
+        <Stat label="CDSCO quality notices" value={k.alerts ?? 0} icon={<Activity size={18} />} tone="indigo" hint={k.alerts ? `${k.last_12m} in the last 12 months · ${fmtMonth(q.period?.first)} – ${fmtMonth(q.period?.last)}` : "None linked to this organisation"} />
+        <Stat label="Products monitored" value={k.products ?? 0} icon={<Layers size={18} />} tone="brand" delay={0.05}
+          hint="products in your CDSCO records, each with its test history and the guidance that applies" />
         <Stat label="Molecules within reach" value={good} icon={<Sparkles size={18} />} tone="brand" delay={0.1} hint={`of ${opp.molecules?.length ?? "the"} tracked molecules: strategic or core plant fit · ${opp.ready_within_5y} open within 5 years`} />
         <Stat label="EU-ready or close" value={(eu.verdicts.ready ?? 0) + (eu.verdicts.close ?? 0)} icon={<Globe2 size={18} />} tone="indigo" delay={0.15} hint={`of ${eu.checked ?? "all"} tracked molecules · ` + (eu.eu_gmp_sites.length ? `EU GMP site: ${eu.eu_gmp_sites.join(", ")}` : "no EU GMP certified site")} />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
         <Card delay={0.1}>
-          <CardHeader icon={<Activity size={16} />} title="Why batches get flagged" subtitle="Monthly CDSCO NSQ alerts by failure category" action={<Link to={`/o/${slug}/quality`} className="flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">Quality signals <ArrowUpRight size={14} /></Link>} />
+          <CardHeader icon={<Activity size={16} />} title="Quality signals by test" subtitle="CDSCO notices per month, by the test involved" action={<Link to={`/o/${slug}/quality`} className="flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">Quality signals <ArrowUpRight size={14} /></Link>} />
           <div className="px-3 pb-4 pt-3">
-            {q.trend?.months?.length ? <><TrendBars data={q.trend} height={240} /><div className="px-3 pt-2"><Legendary items={q.trend.series} /></div></> : <Empty title="No NSQ alerts">This organisation has no linked manufacturer records.</Empty>}
+            {q.trend?.months?.length ? <><TrendBars data={q.trend} height={240} /><div className="px-3 pt-2"><Legendary items={q.trend.series} /></div></> : <Empty title="No quality notices">This organisation has no linked manufacturer records.</Empty>}
           </div>
         </Card>
         <Card delay={0.15}>
-          <CardHeader title="Top failure reasons" subtitle="Share of this organisation's alerts" />
-          <div className="p-5">{q.categories?.length ? <RankBars rows={q.categories} color="#e11d48" /> : <div className="text-sm text-ink-muted">—</div>}</div>
+          <CardHeader title="Tests to focus on" subtitle="Share of your CDSCO notices by test" />
+          <div className="p-5">{q.categories?.length ? <RankBars rows={q.categories} color="#6366f1" /> : <div className="text-sm text-ink-muted">—</div>}</div>
         </Card>
       </div>
 

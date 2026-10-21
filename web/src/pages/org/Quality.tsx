@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Activity, ChevronLeft, ChevronRight, FileWarning, Layers, Search, AlertTriangle } from "lucide-react";
+import { Activity, CalendarDays, ChevronLeft, ChevronRight, FileWarning, Layers, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -42,8 +42,8 @@ export function Quality() {
   if (data.empty) {
     return (
       <>
-        <PageHeader eyebrow="Quality signals" title="CDSCO NSQ alerts" />
-        <Empty icon={<FileWarning />} title="No NSQ alerts linked">Ask a platform admin to link this organisation's manufacturer names to its profile.</Empty>
+        <PageHeader eyebrow="Quality signals" title="CDSCO quality notices" />
+        <Empty icon={<FileWarning />} title="No quality notices linked">Ask a platform admin to link this organisation's manufacturer names to its profile.</Empty>
       </>
     );
   }
@@ -51,21 +51,21 @@ export function Quality() {
 
   return (
     <>
-      <PageHeader eyebrow="Quality signals" title="Where and why your batches fail" subtitle={`Every CDSCO Not-of-Standard-Quality alert against ${org.name}, ${fmtMonth(data.period.first)} – ${fmtMonth(data.period.last)}. Open any alert for the diagnosis and CAPA.`} />
+      <PageHeader eyebrow="Quality signals" title="Quality signals" subtitle={`CDSCO Not-of-Standard-Quality notices naming ${org.name}, ${fmtMonth(data.period.first)} – ${fmtMonth(data.period.last)}. Open any notice for the evidence and what to check.`} />
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat label="Alerts" value={k.alerts} icon={<Activity size={18} />} tone="rose" hint={`${k.last_12m} in the last 12 months`} />
-        <Stat label="Products affected" value={k.products} icon={<Layers size={18} />} tone="amber" delay={0.05} hint={`${k.batches} distinct batches`} />
-        <Stat label="Share of all-India alerts" value={k.national_share_pct} decimals={2} suffix="%" icon={<AlertTriangle size={18} />} tone="indigo" delay={0.1} hint={`${k.national_rank ? `Alert rank #${k.national_rank} of ${k.manufacturers_ranked.toLocaleString("en-IN")} (1 = most alerts)` : "Not ranked"}${k.spurious ? ` · ${k.spurious} spurious not ranked` : ""}`} />
-        <Stat label="Top failure" value={k.top_category} tone="brand" delay={0.15} hint="most common reason in your alerts" />
+        <Stat label="Notices" value={k.alerts} icon={<Activity size={18} />} tone="indigo" hint={`${k.last_12m} in the last 12 months`} />
+        <Stat label="Products" value={k.products} icon={<Layers size={18} />} tone="brand" delay={0.05} hint={`${k.batches} distinct batches`} />
+        <Stat label="Last 12 months" value={k.last_12m} icon={<CalendarDays size={18} />} tone="indigo" delay={0.1} hint={k.spurious ? `${k.spurious} declared spurious — the label names you, the product isn't yours` : "notices reported in the last year"} />
+        <Stat label="Most frequent test" value={k.top_category} tone="brand" delay={0.15} hint="the test most often involved" />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.7fr_1fr]">
         <Card delay={0.1}>
-          <CardHeader title="Alerts over time" subtitle="By failure category (top 5)" />
+          <CardHeader title="Notices over time" subtitle="By test (top 5)" />
           <div className="px-3 pb-4 pt-3"><TrendBars data={data.trend} height={260} /><div className="px-3 pt-2"><Legendary items={data.trend.series} /></div></div>
         </Card>
         <Card delay={0.15}>
-          <CardHeader title="You vs all of India" subtitle="Failure mix, % of alerts" />
+          <CardHeader title="Your test mix and the national pattern" subtitle="% of notices by test" />
           <div className="px-3 pb-3 pt-2"><CompareBars rows={data.compare} height={270} /></div>
         </Card>
       </div>
@@ -73,21 +73,21 @@ export function Quality() {
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <Card delay={0.2}>
           <CardHeader title="Dosage forms" />
-          <div className="p-4"><Donut rows={data.forms} height={200} center={<div><div className="font-display text-2xl font-extrabold">{k.alerts}</div><div className="text-[11px] text-ink-muted">alerts</div></div>} /></div>
+          <div className="p-4"><Donut rows={data.forms} height={200} center={<div><div className="font-display text-2xl font-extrabold">{k.alerts}</div><div className="text-[11px] text-ink-muted">notices</div></div>} /></div>
           <div className="px-5 pb-5"><Legendary items={data.forms} /></div>
         </Card>
         <Card delay={0.25}>
-          <CardHeader title="Most-flagged products" />
+          <CardHeader title="Products to review first" />
           <div className="p-5"><RankBars rows={data.products.slice(0, 7).map((p: any) => ({ name: p.name, count: p.alerts }))} color="#f59e0b" /></div>
         </Card>
         <Card delay={0.3}>
-          <CardHeader title="Testing laboratories" subtitle="Who reported the failures" />
+          <CardHeader title="Testing laboratories" subtitle="Which laboratory reported each notice" />
           <div className="p-5"><RankBars rows={data.labs.slice(0, 7)} color="#6366f1" /></div>
         </Card>
       </div>
 
       <Card delay={0.3} className="mt-5">
-        <CardHeader title="All alerts" subtitle={`${issues.data?.total ?? "…"} matching`} action={
+        <CardHeader title="All notices" subtitle={`${issues.data?.total ?? "…"} matching`} action={
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative"><Search size={15} className="absolute left-3 top-2.5 text-ink-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product, batch, reason…" className="input h-9 w-64 pl-9" /></div>
             <select value={category} onChange={(e) => setCategory(e.target.value)} className="input h-9 w-48">
@@ -106,7 +106,7 @@ export function Quality() {
                 <motion.tr key={it.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.015 }} onClick={() => nav(`/o/${slug}/quality/${it.id}`)} className="cursor-pointer border-b border-line/70 transition hover:bg-brand-50/40">
                   <td className={`max-w-[300px] border-l-[3px] px-5 py-3 ${it.tracked?.length ? "border-brand-500" : "border-transparent"}`}><div className="truncate font-medium" title={it.product}>{it.product}</div><div className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">{it.form}{it.tracked?.length ? it.tracked.map((m: string) => <Link key={m} to={`/o/${slug}/opportunities/${m}`} onClick={(e) => e.stopPropagation()}><Badge tone="brand">Tracked · {m.split("_")[0]}</Badge></Link>) : <span className="rounded-full border border-dashed border-slate-300 px-1.5 text-[10px] text-ink-faint">untracked</span>}</div></td>
                   <td className="max-w-[340px] px-3 py-3 text-ink-soft"><div className="line-clamp-2 text-[13px]">{it.reason}</div></td>
-                  <td className="px-3 py-3"><Badge tone="rose">{it.category}</Badge>{it.spurious && <div className="mt-1" title="Declared spurious: the maker on the label may not be the real maker. Not counted in your rank."><Badge tone="indigo">Spurious</Badge></div>}</td>
+                  <td className="px-3 py-3"><Badge tone="slate">{it.category}</Badge>{it.spurious && <div className="mt-1" title="Declared spurious: the label names you, but the product was not made by you."><Badge tone="indigo">Not your product (spurious)</Badge></div>}</td>
                   <td className="px-3 py-3 font-mono text-xs">{it.batch}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right text-xs text-ink-muted">{fmtMonth(it.month)}</td>
                 </motion.tr>

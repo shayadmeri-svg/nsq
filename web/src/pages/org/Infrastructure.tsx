@@ -238,7 +238,7 @@ function SiteSuggestions({ slug }: { slug: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5">
         <div>
           <div className="flex items-center gap-2 font-display text-[15px] font-bold"><FileSearch size={16} /> Your sites in public records</div>
-          <div className="text-xs text-ink-muted">Manufacturing addresses printed on your CDSCO-alerted products, matched with FDA records. Adding one creates a plant whose capabilities are inferred from what was made there.</div>
+          <div className="text-xs text-ink-muted">Manufacturing addresses printed on your products in CDSCO records, matched with FDA records. Adding one creates a plant whose capabilities are inferred from what was made there.</div>
         </div>
       </div>
       <div className="mt-3 divide-y divide-line/70">
@@ -246,7 +246,7 @@ function SiteSuggestions({ slug }: { slug: string }) {
           <div key={s.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
             <button onClick={() => setOpen(s)} className="min-w-0 text-left">
               <div className="truncate text-sm font-semibold hover:text-brand-700">{s.company} <span className="font-normal text-ink-muted">· {s.city || s.state} {s.pincode}</span></div>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">{s.alerts} alerts · {Object.keys(s.forms).join(", ")} <FdaBadges fda={s.fda} /></div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">{s.alerts} CDSCO record{s.alerts === 1 ? "" : "s"} · {Object.keys(s.forms).join(", ")} <FdaBadges fda={s.fda} /></div>
             </button>
             {s.plant_id ? <Badge tone="brand"><Check size={11} /> added</Badge> : data.can_add && <Button size="sm" loading={busy === s.id} onClick={() => add(s.id)}><Plus size={13} /> Add as plant</Button>}
           </div>

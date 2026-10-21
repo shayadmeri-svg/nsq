@@ -20,9 +20,9 @@ function Change({ e }: { e: any }) {
         {e.implementation && <span className="text-ink-muted">applies from <b className="text-ink">{fmtDate(e.implementation)}</b> · published {e.published}</span>}
         {!e.implementation && <span className="text-ink-faint">before the 13th-Edition schedule: date stated in that supplement</span>}</div>
       <ul className="mt-1.5 space-y-1">{(e.changes ?? []).map((c: any, i: number) => (
-        <li key={i} className={cn("rounded px-1.5 py-0.5", c.you_failed_it && "bg-rose-50 ring-1 ring-inset ring-rose-200")}>
+        <li key={i} className={cn("rounded px-1.5 py-0.5", c.you_failed_it && "bg-indigo-50 ring-1 ring-inset ring-indigo-200")}>
           {c.section && <b>{c.section}: </b>}<span className="text-ink-soft">{c.text}</span>
-          {c.you_failed_it && <span className="ml-1 text-[10px] font-semibold text-rose-700">· a test you have failed</span>}</li>))}</ul>
+          {c.you_failed_it && <span className="ml-1 text-[10px] font-semibold text-indigo-700">· a test in your quality records</span>}</li>))}</ul>
     </div>
   );
 }
@@ -43,7 +43,7 @@ export function Pharmacopoeia() {
         <Stat label="Your molecules with a Ph. Eur. monograph" value={c.with_monograph} hint={`of ${c.molecules} molecules in your CDSCO alerts`} icon={<BookOpenCheck size={18} />} />
         <Stat label="Upcoming changes" value={c.upcoming} hint="published, applying on a future date" icon={<CalendarClock size={18} />} tone="rose" delay={0.05} />
         <Stat label="Under revision" value={c.under_revision} hint="drafts in Pharmeuropa, not yet adopted" icon={<Pencil size={18} />} tone="amber" delay={0.1} />
-        <Stat label="Touching tests you have failed" value={c.touching_failures} hint="the revised section is a test CDSCO failed you on" icon={<FileWarning size={18} />} tone="indigo" delay={0.15} />
+        <Stat label="Relevant to your quality records" value={c.touching_failures} hint="the revised section is a test that appears in your CDSCO records" icon={<FileWarning size={18} />} tone="indigo" delay={0.15} />
       </div>
 
       {data.upcoming?.length > 0 && (
@@ -68,7 +68,7 @@ export function Pharmacopoeia() {
         {rows.length === 0 && <Card className="p-6 text-sm text-ink-muted">No upcoming or in-progress Ph. Eur. changes for your molecules. Switch to "All your molecules" to see their monographs.</Card>}
         {rows.map((r: any) => (
           <Card key={r.key}>
-            <CardHeader title={r.name} subtitle={`${r.alerts} CDSCO alert${r.alerts === 1 ? "" : "s"}${r.your_failures.length ? ` · failed on ${r.your_failures.map((f: any) => f.name).join(", ")}` : ""}`} />
+            <CardHeader title={r.name} subtitle={`${r.alerts} CDSCO notice${r.alerts === 1 ? "" : "s"}${r.your_failures.length ? ` · tests in your records: ${r.your_failures.map((f: any) => f.name).join(", ")}` : ""}`} />
             <div className="space-y-3 px-5 pb-5">
               {!r.has_monograph && <p className="text-xs text-ink-muted">No Ph. Eur. monograph for this active substance in the EDQM Knowledge Database.</p>}
               {r.monographs.map((m: any) => (

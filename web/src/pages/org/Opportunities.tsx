@@ -153,13 +153,13 @@ function MoleculeTable({ rows, slug, limit }: { rows: any[]; slug: string; limit
     <div className="overflow-x-auto">
       <table className="w-full min-w-[960px] text-sm">
         <thead><tr className="border-y border-line bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-          <th className="px-5 py-2.5">Molecule</th><th className="whitespace-nowrap px-3 py-2.5">Your alerts</th><th className="px-3 py-2.5"><span className="inline-flex items-center gap-1">Loss of exclusivity <Estimate field="loe" /></span></th><th className="whitespace-nowrap px-3 py-2.5">Best plant</th><th className="px-3 py-2.5">Fit</th><th className="px-3 py-2.5">Missing</th><th className="px-5 py-2.5 text-right">Score</th>
+          <th className="px-5 py-2.5">Molecule</th><th className="whitespace-nowrap px-3 py-2.5">You make it</th><th className="px-3 py-2.5"><span className="inline-flex items-center gap-1">Loss of exclusivity <Estimate field="loe" /></span></th><th className="whitespace-nowrap px-3 py-2.5">Best plant</th><th className="px-3 py-2.5">Fit</th><th className="px-3 py-2.5">Missing</th><th className="px-5 py-2.5 text-right">Score</th>
         </tr></thead>
         <tbody>
           {rows.slice(0, limit ?? rows.length).map((m: any) => (
             <tr key={m.molecule_key} onClick={() => nav(`/o/${slug}/opportunities/${m.molecule_key}`)} className={`cursor-pointer border-b border-line/70 transition hover:bg-brand-50/40 ${m.alerts_in_org ? "bg-rose-50/30" : ""}`}>
-              <td className={`border-l-[3px] px-5 py-3 ${m.alerts_in_org ? "border-rose-400" : "border-brand-500"}`}><div className="flex items-center gap-2 whitespace-nowrap font-semibold">{m.api_name}{ORIGIN_BADGE[m.origin] ?? ORIGIN_BADGE.curated}</div><div className="text-xs text-ink-muted">{m.therapeutic_area} · {titleCase(m.modality)}{m.market_size_usd_bn ? ` · $${m.market_size_usd_bn} bn` : ""}</div></td>
-              <td className="px-3 py-3">{m.alerts_in_org ? <Badge tone="rose">{m.alerts_in_org} NSQ</Badge> : <span className="text-xs text-ink-faint">—</span>}</td>
+              <td className={`border-l-[3px] px-5 py-3 ${m.alerts_in_org ? "border-indigo-400" : "border-brand-500"}`}><div className="flex items-center gap-2 whitespace-nowrap font-semibold">{m.api_name}{ORIGIN_BADGE[m.origin] ?? ORIGIN_BADGE.curated}</div><div className="text-xs text-ink-muted">{m.therapeutic_area} · {titleCase(m.modality)}{m.market_size_usd_bn ? ` · $${m.market_size_usd_bn} bn` : ""}</div></td>
+              <td className="px-3 py-3">{m.alerts_in_org ? <Badge tone="indigo">{m.alerts_in_org} in records</Badge> : <span className="text-xs text-ink-faint">—</span>}</td>
               <td className="px-3 py-3"><Loe loe={m.loe} prov={Object.keys(m.prov ?? {}).length ? m.prov : undefined} /></td>
               <td className="whitespace-nowrap px-3 py-3 text-xs">{m.best_plant?.name ?? "—"}</td>
               <td className="px-3 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[m.fit_tier]}`}>{titleCase(m.fit_tier)}</span></td>
@@ -180,7 +180,7 @@ function UntrackedGrid({ items, canEdit, limit }: { items: any[]; canEdit?: bool
         <div key={u.ingredient} className="min-w-0 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-3.5">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0"><div className="truncate font-semibold capitalize text-ink-soft">{u.ingredient}</div><div className="mt-0.5 text-[11px] uppercase tracking-wider text-ink-faint">Untracked</div></div>
-            <Badge tone="rose">{u.alerts} NSQ</Badge>
+            <Badge tone="indigo">{u.alerts} in records</Badge>
           </div>
           <div className="mt-2 text-xs text-ink-muted">{u.categories.join(" · ")}{u.last ? ` · last ${u.last}` : ""}</div>
           <div className="mt-1 truncate text-[11px] text-ink-faint" title={u.products.join(" | ")}>{u.products[0]}</div>
@@ -209,7 +209,7 @@ export function Opportunities() {
     .filter((m: any) => tier === "all" || m.fit_tier === tier)
     .slice().sort((a: any, b: any) => (b.alerts_in_org > 0 ? 1 : 0) - (a.alerts_in_org > 0 ? 1 : 0) || b.alerts_in_org - a.alerts_in_org || b.fit_score - a.fit_score), [data, tier]);
   const sections: Section[] = useMemo(() => !data ? [] : [
-    { id: "table", title: "Tracked molecules", icon: <ListChecks size={16} />, subtitle: `${rows.length} molecules · highlighted rows appear in your own CDSCO alerts`, render: () => (
+    { id: "table", title: "Tracked molecules", icon: <ListChecks size={16} />, subtitle: `${rows.length} molecules · highlighted rows are molecules you already make`, render: () => (
       <div className="-m-5 md:-m-6">
         <div className="flex justify-end px-5 pt-4 md:px-6"><Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} /></div>
         <div className="mt-3 bg-white"><MoleculeTable rows={rows} slug={slug} /></div>
@@ -218,7 +218,7 @@ export function Opportunities() {
     { id: "unlocks", title: "What to add next", icon: <Rocket size={16} />, subtitle: "Every addition, with all the molecules it unlocks", render: () => (
       <div className="grid gap-3 lg:grid-cols-2">{data.unlocks.map((u: any) => <UnlockItem key={u.kind + u.token} u={u} full />)}</div>
     ) },
-    { id: "untracked", title: "Untracked ingredients in your alerts", icon: <CircleDashed size={16} />, subtitle: `${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet`, render: () => (
+    { id: "untracked", title: "Other ingredients you make", icon: <CircleDashed size={16} />, subtitle: `${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet`, render: () => (
       <UntrackedGrid items={data.untracked} canEdit={me?.permissions.edit_molecules} />
     ) },
   ], [rows, tier, slug, data, me]);
@@ -233,11 +233,11 @@ export function Opportunities() {
       {!data.has_plants && <div className="mb-5"><Empty title="No plants linked">Scores below assume no plant. Add one under Infrastructure.</Empty></div>}
       <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl bg-white px-4 py-3 text-xs text-ink-soft ring-1 ring-inset ring-line">
         <span className="flex items-center gap-2"><span className="h-3 w-1 rounded-full bg-brand-500" /><b className="text-ink">Tracked</b> — one of {total} molecules with patent, regulatory and demand profiles; scored below.</span>
-        <span className="flex items-center gap-2"><span className="h-3 w-3 rounded border border-dashed border-slate-400" /><b className="text-ink">Untracked</b> — appears in your CDSCO alerts but has no profile yet, so it cannot be scored.</span>
+        <span className="flex items-center gap-2"><span className="h-3 w-3 rounded border border-dashed border-slate-400" /><b className="text-ink">Untracked</b> — an ingredient in your products that has no profile yet, so it cannot be scored.</span>
         <span className="flex items-center gap-1.5"><Estimate field="loe" /> marks estimated values — hover for what is present and what is missing.</span>
       </div>
       <div className="grid gap-4 md:grid-cols-4">
-        <Stat label="Your alerts on tracked molecules" value={data.coverage.alerts_tracked} icon={<Crosshair size={18} />} tone="rose" hint={`of ${data.coverage.alerts} NSQ alerts · ${data.coverage.untracked_total} untracked ingredients`} />
+        <Stat label="Your products on tracked molecules" value={data.coverage.alerts_tracked} icon={<Crosshair size={18} />} tone="indigo" hint={`of ${data.coverage.alerts} CDSCO records · ${data.coverage.untracked_total} untracked ingredients`} />
         <Stat label="Strategic + core fit" value={(t.strategic ?? 0) + (t.core ?? 0)} icon={<Sparkles size={18} />} hint={`of ${total} molecules tracked`} />
         <Stat label="Available within 5 years" value={data.ready_within_5y} icon={<CalendarClock size={18} />} tone="indigo" delay={0.05} hint={<span className="inline-flex items-center gap-1">good fit and off-patent or LOE ≤ 5 y <Estimate field="loe" /></span>} />
         <Card delay={0.1} className="p-5">
@@ -267,7 +267,7 @@ export function Opportunities() {
       </div>
 
       <Card delay={0.2} className="mt-5">
-        <CardHeader title="Tracked molecules" subtitle={`${rows.length} molecules · highlighted rows appear in your own CDSCO alerts`} action={
+        <CardHeader title="Tracked molecules" subtitle={`${rows.length} molecules · highlighted rows are molecules you already make`} action={
           <div className="flex flex-wrap items-center gap-2">
             <Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} />
             {rows.length > 10 && <ExpandButton onClick={() => setActive("table")}>All {rows.length}</ExpandButton>}
@@ -277,9 +277,9 @@ export function Opportunities() {
         {rows.length > 10 && <button onClick={() => setActive("table")} className="block w-full border-t border-line py-3 text-center text-xs font-medium text-brand-700 hover:bg-brand-50/40">Open the full table · {rows.length - 10} more molecules</button>}
       </Card>
       <Card delay={0.25} className="mt-5 border-dashed bg-white/60">
-        <CardHeader icon={<CircleDashed size={16} />} title="Also in your CDSCO alerts — untracked" subtitle={`${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet. They cannot be scored until they are added to the tracked set.`}
+        <CardHeader icon={<CircleDashed size={16} />} title="Other ingredients you make — not profiled yet" subtitle={`${data.coverage.untracked_total} ingredients with no patent, regulatory or demand profile yet. They cannot be scored until they are added to the tracked set.`}
           action={data.untracked.length > 6 ? <ExpandButton onClick={() => setActive("untracked")}>All {data.untracked.length}</ExpandButton> : undefined} />
-        {data.untracked.length === 0 ? <div className="px-5 pb-5 pt-3 text-sm text-ink-muted">Every ingredient in your alerts is tracked.</div> : (
+        {data.untracked.length === 0 ? <div className="px-5 pb-5 pt-3 text-sm text-ink-muted">Every ingredient in your products is profiled.</div> : (
           <div className="p-5"><UntrackedGrid items={data.untracked} canEdit={me?.permissions.edit_molecules} limit={6} /></div>
         )}
       </Card>

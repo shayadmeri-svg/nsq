@@ -95,12 +95,12 @@ export function EuExport() {
 
   return (
     <>
-      <PageHeader eyebrow="EU export route" title="What stands between you and the EU market" subtitle="The EU generic route, checked per molecule on your best plant: patents & SPC, dossier, site GMP, falsified-medicines rules, importer release and the API written confirmation." />
+      <PageHeader eyebrow="EU export route" title="Your route to the EU market" subtitle="The EU generic route, checked per molecule on your best plant: patents & SPC, dossier, site GMP, falsified-medicines rules, importer release and the API written confirmation." />
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="Within reach" value={(v.ready ?? 0) + (v.close ?? 0)} icon={<Globe2 size={18} />} hint={`${v.ready ?? 0} ready · ${v.close ?? 0} with ≤ 2 gaps`} />
-        <Stat label="Far from ready" value={v.far ?? 0} icon={<TriangleAlert size={18} />} tone="rose" delay={0.05} hint="3 or more open gaps" />
+        <Stat label="Longer-term options" value={v.far ?? 0} icon={<TriangleAlert size={18} />} tone="amber" delay={0.05} hint="3 or more steps still to take" />
         <Stat label="EU GMP sites" value={data.eu_gmp_sites.length} icon={<ShieldCheck size={18} />} tone="indigo" delay={0.1} hint={data.eu_gmp_sites.join(", ") || `of ${data.plants} plant(s)`} />
-        <Stat label="NSQ alerts on record" value={data.org_nsq_alerts} tone="amber" delay={0.15} hint="EU inspectors review market quality history" />
+        <Stat label="Quality records to prepare" value={data.org_nsq_alerts} tone="indigo" delay={0.15} hint="EU inspectors look at market quality history: keep each investigation summary ready" />
       </div>
 
       <Card delay={0.15} className="mt-5 p-5">
@@ -110,12 +110,12 @@ export function EuExport() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1.7fr]">
         <Card delay={0.2}>
-          <CardHeader title="Close these first" subtitle="Gaps that block the most molecules" />
+          <CardHeader title="Steps that open the most molecules" subtitle="Each one moves several molecules closer to the EU" />
           <motion.ul variants={listVariants} initial="hidden" animate="show" className="space-y-3 p-5">
-            {data.blockers.length === 0 && <li className="text-sm text-ink-muted">No blocking gaps.</li>}
+            {data.blockers.length === 0 && <li className="text-sm text-ink-muted">No common steps outstanding.</li>}
             {data.blockers.map((b: any) => (
-              <motion.li variants={itemVariants} key={b.id} className="rounded-xl border border-rose-100 bg-rose-50/40 p-3.5">
-                <div className="flex items-start justify-between gap-3"><span className="text-sm font-semibold">{b.title}</span><Badge tone="rose">{b.molecules} molecules</Badge></div>
+              <motion.li variants={itemVariants} key={b.id} className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3.5">
+                <div className="flex items-start justify-between gap-3"><span className="text-sm font-semibold">{b.title}</span><Badge tone="indigo">{b.molecules} molecules</Badge></div>
                 <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">{b.how_to_close}</p>
                 <p className="mt-1 text-[11px] text-ink-faint">{b.reference}</p>
               </motion.li>

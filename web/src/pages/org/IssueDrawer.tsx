@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Beaker, BookOpenCheck, ClipboardCheck, ExternalLink, History, Microscope, ShieldAlert, TrendingUp } from "lucide-react";
+import { Beaker, BookOpenCheck, ClipboardCheck, ExternalLink, FileText, History, Microscope, ShieldAlert, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { Badge, Drawer, ErrorNote, Skeleton } from "../../components/ui";
@@ -46,12 +46,12 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
 
   const blocks: Record<string, ReactNode> = d ? {
     why: (
-      <Section key="why" i={0} icon={<AlertTriangle size={15} />} title="Why it was flagged">
+      <Section key="why" i={0} icon={<FileText size={15} />} title="What the notice says">
         <p className="text-[15px] font-medium leading-relaxed">{issue.reason}</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Badge tone="rose">{issue.category}</Badge>
+          <Badge tone="slate">{issue.category}</Badge>
           <Badge>{issue.form}</Badge>
-          {d.is_dominant_failure && <Badge tone="amber">{who ? `${who}'s most frequent failure mode` : "Your most frequent failure mode"}</Badge>}
+          {d.is_dominant_failure && <Badge tone="indigo">{who ? `the test most often involved for ${who}` : "the test most often involved in your records"}</Badge>}
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
           <div><dt className="text-ink-muted">Tested by</dt><dd className="font-medium">{issue.lab} <span className="text-ink-faint">({issue.source})</span></dd></div>
@@ -62,12 +62,12 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
       </Section>
     ),
     pattern: (
-      <Section key="pattern" i={1} icon={<TrendingUp size={15} />} title={who ? `Pattern across ${who}'s alerts` : "Pattern across your alerts"}>
-        <div className="mb-3 text-xs text-ink-muted">{d.tenant_alert_count} alerts across {d.form_span} dosage forms.</div>
+      <Section key="pattern" i={1} icon={<TrendingUp size={15} />} title={who ? `Pattern across ${who}'s notices` : "Pattern across your notices"}>
+        <div className="mb-3 text-xs text-ink-muted">{d.tenant_alert_count} notices across {d.form_span} dosage forms.</div>
         <RankBars rows={d.dominant_failures.map((f: any) => ({ name: f[0], count: f[1], sub: `${f[2]}%` }))} color="#6366f1" />
         {d.temporal_clusters?.length > 0 && (
           <div className="mt-5">
-            <div className="label mb-2">Alerts per month (last 24)</div>
+            <div className="label mb-2">Notices per month (last 24)</div>
             <div className="flex h-16 items-end gap-[3px]">
               {d.temporal_clusters.slice(-24).map(([m, n]: [string, number], i: number, arr: any[]) => {
                 const max = Math.max(...arr.map((x: any) => x[1]));
@@ -82,17 +82,17 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
       <Section key="cause" i={2} icon={<Microscope size={15} />} title={ev?.molecule ? `What the national record shows for ${ev.molecule.name}` : "What the national record shows"}>
         {ev?.nsq?.alerts ? (
           <>
-            <p className="text-sm">{ev.nsq.alerts} CDSCO alerts name single-ingredient {ev.molecule.name} products{ev.nsq.manufacturers ? `, from ${ev.nsq.manufacturers} manufacturers` : ""}; <b>{ev.nsq.this_category_pct}%</b> of them are {issue.category} failures.</p>
-            <div className="mt-3"><RankBars rows={ev.nsq.categories.map((c: any) => ({ name: c.name, count: c.count, sub: `${c.pct}%` }))} color="#e11d48" /></div>
+            <p className="text-sm">{ev.nsq.alerts} CDSCO notices name single-ingredient {ev.molecule.name} products{ev.nsq.manufacturers ? `, from ${ev.nsq.manufacturers} manufacturers` : ""}; <b>{ev.nsq.this_category_pct}%</b> of them involve {issue.category}.</p>
+            <div className="mt-3"><RankBars rows={ev.nsq.categories.map((c: any) => ({ name: c.name, count: c.count, sub: `${c.pct}%` }))} color="#6366f1" /></div>
             {ev.nsq.similar?.length > 0 && (
               <div className="mt-4">
-                <div className="label mb-1.5">Similar {issue.category} alerts, as CDSCO published them</div>
+                <div className="label mb-1.5">Similar {issue.category} notices, as CDSCO published them</div>
                 <ul className="space-y-1.5">{ev.nsq.similar.map((q: any, i: number) => <li key={i} className="rounded-lg bg-slate-50 px-3 py-2 text-xs"><span className="text-ink-soft">“{q.result}”</span> <span className="text-ink-faint">— {q.product} · {q.lab} · {fmtMonth(q.month)}</span></li>)}</ul>
               </div>
             )}
             <div className="mt-2"><Src label={ev.nsq.source.label} url={ev.nsq.source.url} /></div>
           </>
-        ) : <p className="text-sm text-ink-soft">{ev?.note ?? "No other single-ingredient alerts for this molecule."}</p>}
+        ) : <p className="text-sm text-ink-soft">{ev?.note ?? "No other single-ingredient notices for this molecule."}</p>}
         <p className="mt-3 text-xs text-ink-muted">Public records show patterns, not the root cause of this batch: that needs the batch record, the method and the retained sample.</p>
       </Section>
     ),
@@ -119,7 +119,7 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
     ) : null,
     recalls: ev?.recalls?.items?.length ? (
       <Section key="recalls" i={4} icon={<ShieldAlert size={15} />} title={`FDA recalls naming ${ev.molecule.name}`}>
-        <p className="mb-2 text-xs text-ink-muted">{ev.recalls.total} FDA enforcement reports; {ev.recalls.matching_category} for a reason like this alert's ({issue.category}).</p>
+        <p className="mb-2 text-xs text-ink-muted">{ev.recalls.total} FDA enforcement reports; {ev.recalls.matching_category} for a reason like this notice's ({issue.category}).</p>
         <ul className="divide-y divide-line text-xs">{ev.recalls.items.map((r: any) => <li key={r.recall_number} className="py-2"><div className="flex justify-between gap-3"><b>{r.reason}</b><a href={r.url} target="_blank" rel="noreferrer" className="shrink-0 text-brand-700 hover:underline">{r.recall_number}</a></div><div className="text-ink-faint">{r.firm} · {r.class} · {r.date?.slice(0, 4)}-{r.date?.slice(4, 6)}</div></li>)}</ul>
         <div className="mt-1.5"><Src label={ev.recalls.source.label} url={ev.recalls.source.url} /></div>
       </Section>
@@ -139,7 +139,7 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
               <a href={m.url} target="_blank" rel="noreferrer" className="ml-2 text-brand-700 hover:underline">EDQM</a></div>
             {m.under_revision && <div className="mt-1"><b>Under revision:</b> {m.under_revision.text}</div>}
             {m.upcoming.map((e: any) => <div key={e.issue} className="mt-1 text-rose-700"><b>Issue {e.issue} applies {e.implementation}:</b> {(e.changes ?? []).map((c: any) => c.section || c.text).join(", ")}</div>)}
-            {[...m.upcoming, ...m.recent].some((e: any) => (e.changes ?? []).some((c: any) => c.you_failed_it)) && <div className="mt-1 font-semibold text-rose-700">A Ph. Eur. revision touches the test this batch failed.</div>}
+            {[...m.upcoming, ...m.recent].some((e: any) => (e.changes ?? []).some((c: any) => c.you_failed_it)) && <div className="mt-1 font-semibold text-indigo-700">A Ph. Eur. revision covers this test: worth checking your method against it.</div>}
           </div>))}
         {ev.patents.compound?.number && <p className="mt-3 text-xs">Compound patent: <a href={ev.patents.compound.url} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">{ev.patents.compound.number} — {ev.patents.compound.title}</a></p>}
       </Section>
@@ -163,7 +163,7 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
       </Section>
     ),
     history: data.history?.length > 1 ? (
-      <Section key="history" i={6} icon={<History size={15} />} title="Same product — earlier alerts">
+      <Section key="history" i={6} icon={<History size={15} />} title="Same product — earlier notices">
         <ul className="divide-y divide-line text-sm">
           {data.history.map((h: any) => <li key={h.id} className="flex justify-between gap-3 py-2"><span className="truncate">{h.reason}</span><span className="shrink-0 text-xs text-ink-muted">{fmtMonth(h.month)} · {h.batch}</span></li>)}
         </ul>
