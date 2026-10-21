@@ -560,8 +560,15 @@ export function Lab() {
   const needsMol = ["molecule", "dissolution", "be", "safety", "crystal", "twin"].includes(tab);
   return (
     <div className="space-y-5">
-      <div className="sticky top-16 z-10 -mx-1 rounded-2xl bg-white/90 px-5 pt-3.5 shadow-card ring-1 ring-inset ring-line backdrop-blur-md">
-        <div className="flex flex-wrap items-center gap-4 pb-3">
+      <div className="sticky top-16 z-10 -mx-1 rounded-2xl bg-white/90 px-5 shadow-card ring-1 ring-inset ring-line backdrop-blur-md">
+        <div className="flex flex-wrap items-end justify-between gap-x-4 border-b border-line pt-1.5">
+          <TabBar tab={tab} setTab={setTab} />
+          <span className="hidden items-center gap-3 pb-2.5 text-[10px] text-ink-muted xl:flex">
+            {(["source", "estimate", "assumption"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[k])} />{k === "source" ? "cited" : k === "estimate" ? "published method" : "replace me"}</span>)}
+            <span className="flex items-center gap-1"><Beaker size={11} />{withStructure}/{mols.length} with structures</span>
+          </span>
+        </div>
+        <div className="flex min-h-[64px] flex-wrap items-center gap-4 py-3">
           <Atom size={20} className="shrink-0 text-gold-600" />
           {needsMol
             ? <SearchSelect className="w-64" size="sm" value={key} onChange={setKey} searchPlaceholder="Search a molecule…"
@@ -569,13 +576,6 @@ export function Lab() {
                   group: m.alerts ? "Seen in CDSCO alerts" : "Tracked molecules" }))} />
             : <span className="text-xs text-ink-muted">Generic process model: not tied to a molecule</span>}
           {needsMol && prof.data && <><div className="hidden h-9 w-px bg-line md:block" /><Identity p={prof.data} /></>}
-        </div>
-        <div className="flex flex-wrap items-end justify-between gap-x-4 border-t border-line">
-          <TabBar tab={tab} setTab={setTab} />
-          <span className="hidden items-center gap-3 pb-2.5 text-[10px] text-ink-muted xl:flex">
-            {(["source", "estimate", "assumption"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[k])} />{k === "source" ? "cited" : k === "estimate" ? "published method" : "replace me"}</span>)}
-            <span className="flex items-center gap-1"><Beaker size={11} />{withStructure}/{mols.length} with structures</span>
-          </span>
         </div>
       </div>
       {needsMol && current && !current.has_structure && (
