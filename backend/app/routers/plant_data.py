@@ -35,6 +35,7 @@ from ..security import current_user, org_for_user
 
 router = APIRouter(prefix="/api/plant-data/{slug}", tags=["plant-data"], dependencies=[Depends(features.gate)])
 ingest_router = APIRouter(prefix="/api/ingest/plant-data", tags=["plant-data"])
+LINE_ORDER = ["rmg", "fbd", "blender", "press"]  # where each machine sits on a tablet line
 DEMO_ORG = "eurveda-demo"  # the plant simulator's organisation unless PLANT_SIM_ORG says otherwise (main.py)
 LIVE = "live:"  # filename prefix of datasets fed by a connector: live:<connector id>:<machine>
 MAX_LIVE_ROWS = 3_000  # raw tail kept per live stream; older batches keep their per-batch values
@@ -459,15 +460,22 @@ def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current
         b = bd._batch_key(last.get("batch_no"))
         fields = [k for k in last if k in bd.F and bd.F[k]["kind"] in ("param", "raw", "cqa")]
         tail = [r for r in raw[-240:] if bd._batch_key(r.get("batch_no")) == b][-120:]
+        cur = [r for r in raw if bd._batch_key(r.get("batch_no")) == b]
         machines.append({"machine": d.name.removeprefix("Live · "), "dataset_id": d.id, "format": d.format,
                          "format_label": bd.FORMAT_BY_ID.get(d.format, {}).get("label", d.format), "batch_no": b,
                          "ts": last.get("timestamp"), "connector_id": int((d.filename or "live:0:").split(":")[1] or 0),
                          "latest": {k: _f(last.get(k)) for k in fields},
                          "series": {k: [_f(r.get(k)) for r in tail] for k in fields},
                          "fields": [{"id": k, "label": bd.F[k]["label"], "unit": bd.F[k]["unit"], "twin": k in bd.PARAM_IDS} for k in fields],
-                         "batch_values": (d.batches or {}).get(b, {}).get("values", {})})
+                         "batch_values": (d.batches or {}).get(b, {}).get("values", {}),
+                         "batch_started": cur[0].get("timestamp") if cur else None, "batch_readings": len(cur),
+                         "order": LINE_ORDER.index(d.format) if d.format in LINE_ORDER else 9})
+    machines.sort(key=lambda m: (m["order"], m["machine"]))
     out: dict[str, Any] = {"connectors": [_conn(c) for c in conns], "machines": machines, "forecasts": [], "specs": bd.specs_for()}
-    if not molecule or not machines:
+    if not machines:
+        return out
+    if not molecule:
+        out["recent"] = _feed(live_ds, machines, None)
         return out
     try:
         prof, mol, form, withheld, _ = lab.twin_molecule(molecule, _dose(rows))
@@ -518,6 +526,7 @@ def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current
         out["forecasts"].append({"batch_no": b, "machines": [m["machine"] for m in machines if m["batch_no"] == b],
                                  "live_params": params, "predicted": pred,
                                  "drying_in_progress": any(m["batch_no"] == b and m["format"] == "fbd" for m in machines)})
+    out["recent"] = _feed(live_ds, machines, lambda vals: _forecast(twin, mol, form, withheld, cal, bias, vals))
     out["molecule"] = {"key": molecule, "name": prof["name"], "dose_mg": mol.dose_mg}
     out["baseline"] = cal["baseline"]
     return out
@@ -541,6 +550,46 @@ def prune_live(db: Session) -> int:
             n += 1
     db.commit()
     return n
+
+
+def _forecast(twin: Any, mol: Any, form: dict[str, Any], withheld: Any, cal: dict[str, Any], bias: dict[str, Any], vals: dict[str, float]) -> list[dict[str, Any]]:
+    params = {k: v for k, v in vals.items() if k in bd.PARAM_IDS}
+    ev = twin.evaluate(mol, {**cal["baseline"], **params}, form)
+    sp = bd.specs_for()
+    by_cqa = {cqa: f for f, cqa in bd.CQA_FIELDS.items()}
+    out = []
+    for c in twin.CQAS:
+        if c["id"] in (withheld or {}):
+            continue
+        lim = sp.get(by_cqa.get(c["id"]), {})
+        v = float(ev["values"][c["id"]]) - (bias.get(c["id"], {}).get("bias", 0.0))
+        fails = (lim.get("lo") is not None and v < lim["lo"]) or (lim.get("hi") is not None and v > lim["hi"])
+        out.append({"test": c["id"], "label": c["label"], "value": round(v, 3), "fails": bool(fails)})
+    return out
+
+
+def _feed(live_ds: list[BatchDataset], machines: list[dict[str, Any]], forecast: Any, n: int = 8) -> list[dict[str, Any]]:
+    """The latest batches on the line, newest first: which machines each has been through (done), is on (running)
+    or has still to reach (pending), and — once its settings are known — the forecast of its tests."""
+    running = {m["machine"]: m["batch_no"] for m in machines}
+    stations = [m["machine"] for m in machines]
+    seen: dict[str, dict[str, Any]] = {}
+    for d in live_ds:
+        mach = d.name.removeprefix("Live · ")
+        for b, v in (d.batches or {}).items():
+            e = seen.setdefault(b, {"batch": b, "done": set(), "last": ""})
+            e["done"].add(mach)
+            e["last"] = max(e["last"], str(v.get("meta", {}).get("last_ts") or ""))
+    merged = bd.merge([{"name": d.name, "batches": d.batches} for d in live_ds])
+    out = []
+    for e in sorted(seen.values(), key=lambda e: (e["last"], e["batch"]), reverse=True)[:n]:
+        st = [{"machine": m, "status": "running" if running.get(m) == e["batch"] else "done" if m in e["done"] else "pending"} for m in stations]
+        finished = all(x["status"] == "done" for x in st)
+        vals = (merged.get(e["batch"]) or {}).get("values", {})
+        out.append({"batch": e["batch"], "stations": st, "complete": finished, "last_ts": e["last"],
+                    "settings": {k: v for k, v in vals.items() if k in bd.PARAM_IDS},
+                    "forecast": forecast(vals) if forecast else None})
+    return out
 
 
 def _f(v: Any) -> Optional[float]:

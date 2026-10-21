@@ -4,224 +4,25 @@
 // backend/app/routers/plant_data.py).
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, AlertTriangle, Beaker, CheckCircle2, ClipboardCopy, Cog, Download, FileSpreadsheet, Gauge, Layers, ListChecks,
-  CalendarClock, ChevronDown, Clock, Microscope, SlidersHorizontal, PlayCircle, Plug, Radio, Ruler, Trash2, UploadCloud, Wind,
+  Activity, AlertTriangle, Beaker, CalendarClock, CheckCircle2, ChevronDown, ClipboardCopy, Clock, Cog, Download, FileSpreadsheet, Gauge, Layers, ListChecks, Microscope, Pause, Play, PlayCircle, Plug, Radio, Ruler, Settings2, SlidersHorizontal, Trash2, UploadCloud, Wind,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
-import { Badge, Button, Card, CardHeader, Empty, ErrorNote, PageSkeleton, SearchSelect, Segmented, Skeleton, Stat } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, Modal, PageSkeleton, SearchSelect, Segmented, Skeleton, Stat } from "../../components/ui";
 import { useToast } from "../../components/ui/toast";
 import { api, del, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { plural } from "../../lib/format";
 import { useMe } from "../../lib/session";
 import { ProcessTwin } from "./ProcessTwin";
-import { SimEngine } from "./SimEngine";
+import { SignalDialog, SimEngine, useSimConfig } from "./SimEngine";
 
 const ICON: Record<string, any> = { batch_summary: ListChecks, rmg: Cog, fbd: Wind, blender: Layers, press: Gauge, ipqc: Ruler, dissolution: Beaker, qc_release: Microscope, api_coa: FileSpreadsheet };
 const fmt = (v: number | null | undefined, d = 3) => (v == null || Number.isNaN(v) ? "—" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-IN") : String(Number(v.toPrecision(d))));
 const QC_COLS = ["assay_pct", "av", "dissolution_pct", "disintegration_min", "lod_pct", "tensile_mpa", "friability_pct"];
 const TWIN_PARAMS = ["api_potency_pct", "api_d50_um", "weighing_error_pct", "granulation_liquid_pct", "inlet_c", "dew_point_c", "air_m3_h", "drying_min", "blend_min", "pressure_mpa", "weight_rsd_pct"];
-
-// --- formats: what each apparatus file looks like, with a sample to download -----------------------------------
-function Formats({ slug, formats, picked, onPick }: { slug: string; formats: any[]; picked: string | null; onPick: (id: string | null) => void }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const toast = useToast();
-  const copy = async (f: any) => {
-    try { await navigator.clipboard.writeText(f.columns.map((c: any) => c.id).join(",")); toast("Header row copied: paste it into the first row of your sheet"); }
-    catch { toast("Couldn't reach the clipboard", "error"); }
-  };
-  return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {formats.map((f) => {
-        const I = ICON[f.id] ?? FileSpreadsheet;
-        const on = picked === f.id;
-        return (
-          <div key={f.id} className={cn("group rounded-2xl bg-white p-4 shadow-card ring-1 ring-inset transition hover:shadow-hover", on ? "ring-2 ring-gold-400" : "ring-line")}>
-            <button className="flex w-full items-start gap-3 text-left" onClick={() => onPick(on ? null : f.id)} title="Use this format for the next upload (otherwise it is detected)">
-              <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl ring-1 ring-inset transition", on ? "bg-gold-500 text-white ring-gold-500" : "bg-gold-50 text-gold-600 ring-gold-100")}><I size={18} /></span>
-              <span className="min-w-0">
-                <span className="block text-[14px] font-semibold leading-tight">{f.label}</span>
-                <span className="mt-0.5 block text-[11px] text-ink-muted">{f.apparatus}</span>
-              </span>
-            </button>
-            <p className="mt-2 text-xs leading-relaxed text-ink-soft">{f.what}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <a href={`/api/plant-data/${slug}/formats/${f.id}/sample.csv`} download className="inline-flex items-center gap-1 rounded-lg bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-night-700"><Download size={12} /> Sample CSV</a>
-              <button onClick={() => copy(f)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-ink-soft ring-1 ring-inset ring-line hover:bg-slate-50"><ClipboardCopy size={12} /> Copy headers</button>
-              <button onClick={() => setOpen(open === f.id ? null : f.id)} className="ml-auto text-[11px] font-semibold text-gold-700 hover:underline">{open === f.id ? "Hide columns" : `${f.columns.length} columns`}</button>
-            </div>
-            {open === f.id && (
-              <div className="mt-3 max-h-64 overflow-auto rounded-xl bg-slate-50 p-2">
-                <table className="w-full text-[11px]">
-                  <tbody>{f.columns.map((c: any) => (
-                    <tr key={c.id} className="border-b border-white last:border-0">
-                      <td className="py-1 pr-2 font-mono text-[10.5px] text-ink">{c.id}{c.required && <span className="text-rose-500">*</span>}</td>
-                      <td className="py-1 pr-2 text-ink-soft">{c.label}{c.unit && <span className="text-ink-faint"> ({c.unit})</span>}</td>
-                      <td className="py-1 text-right">{c.twin && <span className="rounded bg-gold-100 px-1.5 py-px text-[9.5px] font-semibold text-gold-700">twin</span>}</td>
-                    </tr>))}</tbody>
-                </table>
-                <div className="mt-1 text-[10px] text-ink-faint">* required · "twin" = feeds the failure tree. Your own header names are matched by meaning, e.g. "Main Compression Force (kN)".</div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// --- upload: file or pasted table → preview → column mapping → save -------------------------------------------------
-function Uploader({ slug, formats, hint, molecules, onSaved, title, subtitle }: { slug: string; formats: any[]; hint: string | null; molecules: any[]; onSaved: (molecule: string) => void; title?: string; subtitle?: string }) {
-  const [machine, setMachine] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [text, setText] = useState("");
-  const [paste, setPaste] = useState(false);
-  const [drag, setDrag] = useState(false);
-  const [prev, setPrev] = useState<any>(null);
-  const [format, setFormat] = useState<string>("");
-  const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [name, setName] = useState("");
-  const [molecule, setMolecule] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const toast = useToast();
-
-  const body = (f?: string) => {
-    const fd = new FormData();
-    if (file) fd.append("file", file); else fd.append("text", text);
-    if (f) fd.append("format", f);
-    fd.append("machine", machine);
-    return fd;
-  };
-  const preview = async (f?: string, fileArg?: File | null, mach?: string) => {
-    setBusy(true); setErr(null);
-    try {
-      const fd = new FormData();
-      const src = fileArg !== undefined ? fileArg : file;
-      if (src) fd.append("file", src); else fd.append("text", text);
-      if (f) fd.append("format", f);
-      fd.append("machine", mach ?? machine);
-      const r = await api<any>(`/api/plant-data/${slug}/preview`, { method: "POST", body: fd });
-      setPrev(r); setFormat(r.format); setMapping(r.mapping);
-      if (r.molecule_guess) setMolecule((m) => m || r.molecule_guess);
-      setName((n) => n || (r.filename ?? "").replace(/\.[a-z]+$/i, ""));
-    } catch (e) { setErr(e); } finally { setBusy(false); }
-  };
-  const take = (f: File | null) => { setFile(f); setPrev(null); if (f) preview(hint ?? undefined, f); };
-  const save = async () => {
-    setBusy(true); setErr(null);
-    try {
-      const fd = body(format);
-      fd.set("format", format);
-      fd.append("mapping", JSON.stringify(mapping));
-      fd.append("name", name);
-      fd.append("molecule_key", molecule);
-      const r = await api<any>(`/api/plant-data/${slug}/datasets`, { method: "POST", body: fd });
-      toast(`${r.name}: ${plural(r.batches, "batch", "batches")} read`);
-      setPrev(null); setFile(null); setText(""); setName(""); setPaste(false); setMachine("");
-      onSaved(molecule);
-    } catch (e) { setErr(e); } finally { setBusy(false); }
-  };
-  const fm = formats.find((f) => f.id === format);
-  const fields: any[] = fm ? [...fm.columns, ...Object.keys(mapping).filter((k) => !fm.columns.some((c: any) => c.id === k)).map((k) => ({ id: k, label: k, extra: true }))] : [];
-  const headers: string[] = prev?.headers ?? [];
-  const used = new Set(Object.values(mapping));
-
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader icon={<UploadCloud size={16} />} title={title ?? "Add your records"} subtitle={subtitle ?? "CSV, TSV or Excel from any apparatus above: the format and the columns are recognised, and you confirm them before anything is saved"} />
-      <div className="space-y-4 p-5">
-        {!prev && (
-          <div onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
-            onDrop={(e) => { e.preventDefault(); setDrag(false); take(e.dataTransfer.files?.[0] ?? null); }}
-            className={cn("relative grid place-items-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition", drag ? "border-gold-400 bg-gold-50" : "border-line bg-slate-50/60")}>
-            <motion.div animate={drag ? { scale: 1.08, y: -4 } : { scale: 1, y: 0 }} className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-white text-gold-600 shadow-card ring-1 ring-line"><UploadCloud size={24} /></motion.div>
-            <div className="text-[15px] font-semibold">Drop a file here, or <button className="text-gold-700 underline-offset-2 hover:underline" onClick={() => input.current?.click()}>browse</button></div>
-            <div className="mt-1 text-xs text-ink-muted">.csv · .tsv · .xlsx — up to 8 MB, 50,000 rows{hint && <> · as <b>{formats.find((f) => f.id === hint)?.label}</b></>}</div>
-            <button onClick={() => setPaste(!paste)} className="mt-3 text-xs font-semibold text-ink-soft hover:text-ink">{paste ? "Hide" : "Or paste rows from Excel"}</button>
-            <input ref={input} type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => take(e.target.files?.[0] ?? null)} />
-          </div>
-        )}
-        {paste && !prev && (
-          <div className="space-y-2">
-            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder={"Copy the cells in Excel (with the header row) and paste here, e.g.\nBatch No.\tAssay %\tDissolution\nB2401\t99.2\t88"}
-              className="input h-auto py-2 font-mono text-xs" />
-            <Button size="sm" onClick={() => { setFile(null); preview(hint ?? undefined, null); }} disabled={!text.trim()} loading={busy}>Read the table</Button>
-          </div>
-        )}
-        {err != null && <ErrorNote error={err} />}
-        {prev && (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <div><div className="label mb-1">File</div><div className="text-sm font-semibold">{prev.filename} <span className="font-normal text-ink-muted">· {plural(prev.rows, "row")} · {plural(prev.batches, "batch", "batches")}</span></div></div>
-              <div className="w-64"><div className="label mb-1">Read as</div>
-                <SearchSelect size="sm" value={format} onChange={(v) => { setFormat(v); preview(v); }} options={formats.map((f) => ({ value: f.id, label: f.label, sub: f.apparatus }))} /></div>
-              {prev.link && !mapping.machine && prev.machines?.length > 0 && (
-                <div className="w-48"><div className="label mb-1">From machine</div>
-                  <SearchSelect size="sm" value={machine} onChange={(v) => { setMachine(v); preview(format, undefined, v); }} clearLabel="Any machine" placeholder="Any machine"
-                    options={prev.machines.map((m: string) => ({ value: m, label: m }))} /></div>)}
-              <div className="w-64"><div className="label mb-1">Molecule (for the failure tree)</div>
-                <SearchSelect size="sm" value={molecule} onChange={setMolecule} clearLabel="Not set" placeholder="Choose the molecule" searchPlaceholder="Search a molecule…"
-                  options={molecules.map((m) => ({ value: m.key, label: m.name, sub: m.alerts ? `${m.alerts} CDSCO notices` : undefined }))} /></div>
-              <div className="w-56"><div className="label mb-1">Name</div><input className="input h-9 text-xs" value={name} onChange={(e) => setName(e.target.value)} /></div>
-            </div>
-
-            {prev.link && (
-              <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl px-4 py-3 text-xs ring-1 ring-inset", prev.link.linked ? "bg-gold-50 ring-gold-200" : "bg-amber-50 ring-amber-200")}>
-                <Clock size={15} className="text-gold-700" />
-                {prev.link.windows === 0
-                  ? <span><b>No batch numbers in this file, and no batch schedule yet.</b> Add the schedule first (step 1): it tells which batch ran on which machine, when.</span>
-                  : <span><b>Linked by time:</b> {plural(prev.link.linked, "reading")} of {prev.link.rows} fall inside {plural(prev.link.batches, "batch window")}
-                    {prev.link.outside > 0 && <> · {plural(prev.link.outside, "reading")} between batches (idle) are left out</>}
-                    {prev.link.no_time > 0 && <> · {prev.link.no_time} without a readable time</>}</span>}
-              </div>)}
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-              <div className="rounded-2xl ring-1 ring-inset ring-line">
-                <div className="flex items-center justify-between border-b border-line px-4 py-2.5"><span className="label">Columns</span>
-                  <span className="text-[11px] text-ink-muted">{Object.keys(mapping).length} matched{prev.unmapped.length > 0 && ` · ${prev.unmapped.length} not used`}</span></div>
-                <div className="max-h-80 divide-y divide-line overflow-auto">
-                  {fields.map((c) => (
-                    <div key={c.id} className="flex items-center gap-3 px-4 py-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 text-xs font-medium">{mapping[c.id] ? <CheckCircle2 size={13} className="text-brand-600" /> : <span className="h-[13px] w-[13px] rounded-full ring-1 ring-inset ring-slate-300" />}
-                          {c.label}{c.unit && <span className="text-ink-faint">({c.unit})</span>}{c.required && <span className="text-rose-500">*</span>}
-                          {c.twin && <span className="rounded bg-gold-100 px-1 text-[9.5px] font-semibold text-gold-700">twin</span>}</div>
-                      </div>
-                      <div className="w-56 shrink-0">
-                        <SearchSelect size="sm" value={mapping[c.id] ?? ""} clearLabel="Not in this file" placeholder="Not in this file"
-                          onChange={(v) => setMapping((m) => { const n = { ...m }; if (v) n[c.id] = v; else delete n[c.id]; return n; })}
-                          options={headers.map((h) => ({ value: h, label: h, disabled: used.has(h) && mapping[c.id] !== h }))} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {prev.unmapped.length > 0 && <div className="border-t border-line px-4 py-2 text-[11px] text-ink-muted">Not used: {prev.unmapped.join(", ")}</div>}
-              </div>
-              <div className="min-w-0 rounded-2xl ring-1 ring-inset ring-line">
-                <div className="border-b border-line px-4 py-2.5"><span className="label">First rows</span></div>
-                <div className="max-h-80 overflow-auto">
-                  <table className="w-full text-[11px]">
-                    <thead className="sticky top-0 bg-slate-50"><tr>{headers.map((h) => <th key={h} className={cn("whitespace-nowrap px-2.5 py-1.5 text-left font-semibold", used.has(h) ? "text-ink" : "text-ink-faint")}>{h}</th>)}</tr></thead>
-                    <tbody>{prev.preview.map((r: any, i: number) => <tr key={i} className="border-t border-line">{headers.map((h) => <td key={h} className={cn("whitespace-nowrap px-2.5 py-1 tabular-nums", !used.has(h) && "text-ink-faint")}>{String(r[h] ?? "")}</td>)}</tr>)}</tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={save} loading={busy} disabled={!(mapping.batch_no || (mapping.timestamp && (format === "batch_schedule" ? false : prev.link?.linked)) || (format === "batch_schedule" && mapping.batch_no))}><Activity size={15} /> Save and analyse</Button>
-              <Button variant="ghost" onClick={() => { setPrev(null); setFile(null); }}>Cancel</Button>
-              {!mapping.batch_no && !mapping.timestamp && <span className="text-xs text-rose-600">Map a column to "Batch number", or to "Timestamp" (linked through a batch schedule).</span>}
-            </div>
-          </motion.div>
-        )}
-      </div>
-    </Card>
-  );
-}
 
 // --- one control chart ------------------------------------------------------------------------------------------------
 function ControlChart({ c, onBatch }: { c: any; onBatch: (b: string) => void }) {
@@ -377,78 +178,6 @@ function Connectors({ slug, conns, onChange }: { slug: string; conns: any[]; onC
   );
 }
 
-function Live({ slug, molecule, onReplay }: { slug: string; molecule: string; onReplay: (b: string, params: Record<string, number>) => void }) {
-  const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["plant-live", slug, molecule], queryFn: () => api<any>(`/api/plant-data/${slug}/live${molecule ? `?molecule=${molecule}` : ""}`),
-    refetchInterval: 5000, placeholderData: keepPreviousData, enabled: !!slug });
-  const d = q.data;
-  const [sim, setSim] = useState(false);
-  if (q.error) return <ErrorNote error={q.error} />;
-  if (!d) return <Skeleton className="h-64" />;
-  const simOn = d.connectors.some((c: any) => c.online && c.name === "Demo simulator");
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-night-900 px-5 py-4 text-white shadow-lift">
-        <div><div className="text-[15px] font-semibold">Machines streaming in real time</div>
-          <div className="text-xs text-slate-400">{simOn ? "The plant simulator is running: tune every value it sends from the Sim engine." : "Connect a plant's agent below, or run the plant simulator and tune it from the Sim engine."}</div></div>
-        <Button onClick={() => setSim(true)} className="bg-gold-400 text-night-900 hover:bg-gold-300"><SlidersHorizontal size={15} /> Sim engine</Button>
-      </div>
-      <SimEngine slug={slug} open={sim} onClose={() => setSim(false)} machines={d.machines} />
-      <Connectors slug={slug} conns={d.connectors} onChange={() => qc.invalidateQueries({ queryKey: ["plant-live", slug] })} />
-      {d.machines.length > 0 && (
-        <>
-          <div className="flex items-baseline justify-between"><h3 className="text-[17px] font-semibold tracking-tight">Machines now</h3>
-            <span className="flex items-center gap-1.5 text-[11px] text-ink-muted"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />refreshing every 5 s</span></div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {d.machines.map((m: any) => (
-              <Card key={m.dataset_id} className="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div><div className="text-[15px] font-semibold">{m.machine}</div><div className="text-[11px] text-ink-muted">{m.format_label} · {m.ts ? new Date(m.ts).toLocaleTimeString("en-IN") : ""}</div></div>
-                  <div className="text-right"><div className="label">Batch</div><div className="font-mono text-[15px] font-semibold text-gold-700">{m.batch_no}</div></div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
-                  {m.fields.map((f: any) => (
-                    <div key={f.id} className="flex items-center justify-between gap-2 border-b border-line pb-1.5">
-                      <div className="min-w-0"><div className="truncate text-[11px] text-ink-muted">{f.label}{f.twin && <span className="ml-1 rounded bg-gold-100 px-1 text-[9px] font-semibold text-gold-700">twin</span>}</div>
-                        <div className="text-[15px] font-semibold tabular-nums">{fmt(m.latest[f.id], 4)} <span className="text-[10px] font-normal text-ink-faint">{f.unit}</span></div></div>
-                      <Spark data={m.series[f.id] ?? []} />
-                    </div>))}
-                </div>
-              </Card>))}
-          </div>
-        </>
-      )}
-      {d.forecasts?.length > 0 && (
-        <>
-          <h3 className="text-[17px] font-semibold tracking-tight">Forecast for the batches running now</h3>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {d.forecasts.map((f: any) => (
-              <motion.div key={f.batch_no} layout className="rounded-2xl bg-white p-4 shadow-card ring-1 ring-inset ring-line">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div><div className="font-mono text-[17px] font-semibold">{f.batch_no}</div>
-                    <div className="text-[11px] text-ink-muted">on {f.machines.join(", ")}{f.drying_in_progress && " · still drying: results if it stopped now"}</div></div>
-                  <Button size="sm" variant="secondary" onClick={() => onReplay(f.batch_no, f.live_params)}><PlayCircle size={14} /> Replay in the failure tree</Button>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {f.predicted.map((p: any) => (
-                    <div key={p.test} className={cn("rounded-xl p-2.5 ring-1 ring-inset transition-colors", p.fails ? "bg-rose-50 ring-rose-200" : "bg-emerald-50/50 ring-emerald-200")}
-                      title={p.corrected ? `Model ${fmt(p.model_value, 3)}, corrected by its bias against your ${p.corrected.n} measured batches (${p.corrected.bias > 0 ? "+" : ""}${fmt(p.corrected.bias, 2)})` : "Model value: no measured results of this test uploaded to correct it"}>
-                      <div className="truncate text-[10.5px] text-ink-muted">{p.label}</div>
-                      <div className={cn("text-[17px] font-semibold tabular-nums", p.fails && "text-rose-700")}>{fmt(p.value, 3)}</div>
-                      <div className="text-[9.5px] text-ink-faint">{p.lo != null && p.hi != null ? `${p.lo}–${p.hi}` : p.lo != null ? `≥ ${p.lo}` : `≤ ${p.hi}`}{p.corrected ? " · corrected" : " · model"}</div>
-                    </div>))}
-                </div>
-                <div className="mt-2 text-[10.5px] text-ink-faint">Live settings so far: {Object.keys(f.live_params).length ? Object.entries(f.live_params).map(([k, v]: any) => `${k.replace(/_/g, " ")} ${fmt(v, 3)}`).join(" · ") : "none yet"}; the rest at your medians.</div>
-              </motion.div>))}
-          </div>
-        </>
-      )}
-      {d.machines.length === 0 && d.connectors.length > 0 && <Empty icon={<Radio size={20} />} title="Waiting for the first readings">Start the agent with the token; machines appear here within a push (15 s by default).</Empty>}
-      {d.machines.length > 0 && !molecule && <div className="text-xs text-ink-muted">Choose the molecule above to forecast the running batches.</div>}
-    </div>
-  );
-}
-
 // --- how a time series becomes one row per batch -----------------------------------------------------------------------
 const BAND = ["#06a7c4", "#10b996", "#6366f1", "#f59e0b", "#a78bfa", "#fb7185"];
 
@@ -541,24 +270,304 @@ function Fold({ title, sub, children, open: initial = false, icon }: { title: st
   );
 }
 
-function Step({ n, title, done, children }: { n: number; title: string; done?: boolean; children: React.ReactNode }) {
+// --- upload: one button, a modal that asks what kind of data, then the right upload -----------------------------------
+const KIND_FORMATS: Record<"batch" | "timeseries", string[]> = {
+  batch: ["batch_summary", "qc_release", "press", "fbd", "ipqc", "dissolution", "rmg", "blender", "api_coa"],
+  timeseries: ["timeseries", "batch_schedule", "fbd", "press"],
+};
+
+function UploadModal({ open, onClose, slug, formats, molecules, onDone }: { open: boolean; onClose: () => void; slug: string; formats: any[]; molecules: any[]; onDone: (m?: string) => void }) {
+  const [kind, setKind] = useState<"batch" | "timeseries" | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [prev, setPrev] = useState<any>(null);
+  const [format, setFormat] = useState("");
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [machine, setMachine] = useState("");
+  const [molecule, setMolecule] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+  const [drag, setDrag] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+  const reset = () => { setKind(null); setFile(null); setPrev(null); setFormat(""); setMapping({}); setMachine(""); setName(""); setErr(null); };
+  const close = () => { reset(); onClose(); };
+  const read = async (f: File, fmt?: string, mach?: string) => {
+    setBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      if (fmt) fd.append("format", fmt);
+      fd.append("machine", mach ?? machine);
+      const r = await api<any>(`/api/plant-data/${slug}/preview`, { method: "POST", body: fd });
+      setPrev(r); setFormat(r.format); setMapping(r.mapping);
+      if (r.molecule_guess) setMolecule((m) => m || r.molecule_guess);
+      setName((n) => n || f.name.replace(/\.[a-z]+$/i, ""));
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+  const take = (f: File | null) => { if (!f) return; setFile(f); setPrev(null); read(f); };
+  const process = async () => {
+    if (!file) return;
+    setBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file); fd.append("format", format); fd.append("mapping", JSON.stringify(mapping));
+      fd.append("name", name); fd.append("molecule_key", molecule); fd.append("machine", machine);
+      const r = await api<any>(`/api/plant-data/${slug}/datasets`, { method: "POST", body: fd });
+      toast(`${r.name}: ${r.format === "batch_schedule" ? "schedule saved, time series re-linked" : `${plural(r.batches, "batch", "batches")} read`}`);
+      onDone(molecule || undefined); close();
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+  const fm = formats.find((f) => f.id === format);
+  const fields: any[] = fm ? [...fm.columns, ...Object.keys(mapping).filter((k) => !fm.columns.some((c: any) => c.id === k)).map((k) => ({ id: k, label: k }))] : [];
+  const used = new Set(Object.values(mapping));
+  const ok = prev && (format === "batch_schedule" ? mapping.batch_no && mapping.batch_start && mapping.batch_end : mapping.batch_no || (mapping.timestamp && prev.link?.linked));
+  const samples = kind ? formats.filter((f) => KIND_FORMATS[kind].includes(f.id)) : [];
+
   return (
-    <div className="relative pl-12">
-      <div className={cn("absolute left-0 top-0 grid h-8 w-8 place-items-center rounded-full text-sm font-semibold ring-1 ring-inset", done ? "bg-brand-500 text-white ring-brand-500" : "bg-white text-ink ring-line")}>{done ? <CheckCircle2 size={16} /> : n}</div>
-      <div className="absolute bottom-0 left-4 top-9 w-px bg-line" />
-      <div className="mb-2 text-[15px] font-semibold">{title}</div>
-      <div className="pb-6">{children}</div>
+    <Modal open={open} onClose={close} width={760} title={!kind ? "Upload data" : kind === "batch" ? "Upload batch data" : "Upload time-series data"}
+      footer={<><Button variant="ghost" onClick={close}>Cancel</Button>{kind && <Button onClick={process} loading={busy} disabled={!ok}><Activity size={15} /> Process</Button>}</>}>
+      {!kind ? (
+        <div className="space-y-3">
+          <p className="text-sm text-ink-soft">What does your file look like?</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {([["batch", Layers, "Batch data", "Every row has a batch number.", "BMR summary, QC results / CoA, a press or dryer log with a batch column, a dissolution export"],
+              ["timeseries", Clock, "Time-series data", "Rows have a timestamp, no batch number.", "SCADA historian, HMI trend or data-logger export. Needs a batch schedule (which batch ran when), uploaded the same way."]] as const).map(([k, I, t, d, ex]) => (
+              <button key={k} onClick={() => setKind(k)} className="group rounded-2xl p-5 text-left ring-1 ring-inset ring-line transition hover:-translate-y-0.5 hover:bg-gold-50/50 hover:shadow-hover hover:ring-gold-300">
+                <span className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-gold-50 text-gold-600 ring-1 ring-inset ring-gold-100 group-hover:bg-gold-500 group-hover:text-white"><I size={20} /></span>
+                <span className="block text-[16px] font-semibold">{t}</span>
+                <span className="mt-0.5 block text-sm text-ink-soft">{d}</span>
+                <span className="mt-2 block text-[11.5px] text-ink-muted">{ex}</span>
+              </button>))}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <button onClick={reset} className="text-xs font-semibold text-gold-700 hover:underline">← {kind === "batch" ? "Batch data" : "Time-series data"} · change</button>
+          {!prev ? (
+            <>
+              <div onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={(e) => { e.preventDefault(); setDrag(false); take(e.dataTransfer.files?.[0] ?? null); }}
+                onClick={() => input.current?.click()}
+                className={cn("grid cursor-pointer place-items-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition", drag ? "border-gold-400 bg-gold-50" : "border-line bg-slate-50/60 hover:border-gold-300 hover:bg-gold-50/40")}>
+                <motion.div animate={drag ? { scale: 1.1, y: -4 } : { scale: 1, y: 0 }} className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-white text-gold-600 shadow-card ring-1 ring-line">{busy ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-gold-500 border-t-transparent" /> : <UploadCloud size={24} />}</motion.div>
+                <div className="text-[15px] font-semibold">Drop the file here, or click to choose</div>
+                <div className="mt-1 text-xs text-ink-muted">CSV, TSV or Excel · up to 8 MB · your column names are matched for you</div>
+                <input ref={input} type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" className="hidden" onChange={(e) => take(e.target.files?.[0] ?? null)} />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">Templates:
+                {samples.map((f) => <a key={f.id} href={`/api/plant-data/${slug}/formats/${f.id}/sample.csv`} download className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-ink-soft ring-1 ring-inset ring-line hover:bg-slate-50"><Download size={11} /> {f.label}</a>)}
+              </div>
+            </>
+          ) : (
+            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-inset ring-line">
+                <FileSpreadsheet size={18} className="text-gold-600" />
+                <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{prev.filename}</div>
+                  <div className="text-[11px] text-ink-muted">{plural(prev.rows, "row")}{prev.batches ? ` · ${plural(prev.batches, "batch", "batches")}` : ""} · {plural(Object.keys(mapping).length, "column")} recognised</div></div>
+                <button onClick={() => { setPrev(null); setFile(null); }} className="text-xs font-semibold text-ink-muted hover:text-ink">Choose another</button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div><div className="label mb-1">Read as</div>
+                  <SearchSelect size="sm" value={format} onChange={(v) => { setFormat(v); if (file) read(file, v); }} options={formats.filter((f) => KIND_FORMATS[kind].includes(f.id)).map((f) => ({ value: f.id, label: f.label, sub: f.apparatus }))} /></div>
+                {prev.link && !mapping.machine && prev.machines?.length > 0 ? (
+                  <div><div className="label mb-1">From machine</div>
+                    <SearchSelect size="sm" value={machine} onChange={(v) => { setMachine(v); if (file) read(file, format, v); }} clearLabel="Any machine" placeholder="Any machine" options={prev.machines.map((m: string) => ({ value: m, label: m }))} /></div>
+                ) : (
+                  <div><div className="label mb-1">Molecule (for the failure tree)</div>
+                    <SearchSelect size="sm" value={molecule} onChange={setMolecule} clearLabel="Not set" placeholder="Choose the molecule" searchPlaceholder="Search a molecule…" options={molecules.map((m) => ({ value: m.key, label: m.name }))} /></div>)}
+              </div>
+              {prev.link && (
+                <div className={cn("flex items-start gap-2.5 rounded-xl px-4 py-3 text-xs ring-1 ring-inset", prev.link.linked ? "bg-brand-50/60 ring-brand-200" : "bg-amber-50 ring-amber-200")}>
+                  <Clock size={15} className="mt-0.5 shrink-0" />
+                  {prev.link.windows === 0
+                    ? <span><b>No batch schedule yet.</b> Timestamped readings are matched to batches with a schedule (batch, machine, start, end). Upload the schedule first — choose "Batch schedule" under Read as if this file is one.</span>
+                    : <span><b>{plural(prev.link.linked, "reading")} matched to {plural(prev.link.batches, "batch", "batches")}</b> by time{prev.link.outside > 0 ? `; ${prev.link.outside} between batches are left out` : ""}.</span>}
+                </div>)}
+              {format === "batch_schedule" && <div className="rounded-xl bg-indigo-50/60 px-4 py-3 text-xs ring-1 ring-inset ring-indigo-200"><b>Batch schedule:</b> once saved, every time-series file is re-matched to batches with it.</div>}
+              <Fold title={`Columns · ${Object.keys(mapping).length} recognised`} sub="Check or change which of your columns is which" icon={<ListChecks size={15} />}>
+                <div className="-my-2 max-h-72 divide-y divide-line overflow-auto">
+                  {fields.map((c) => (
+                    <div key={c.id} className="flex items-center gap-3 py-1.5">
+                      <div className="min-w-0 flex-1 text-xs">{mapping[c.id] ? <CheckCircle2 size={12} className="mr-1 inline text-brand-600" /> : null}{c.label}{c.unit && <span className="text-ink-faint"> ({c.unit})</span>}{c.required && <span className="text-rose-500">*</span>}</div>
+                      <div className="w-56"><SearchSelect size="sm" value={mapping[c.id] ?? ""} clearLabel="Not in this file" placeholder="Not in this file"
+                        onChange={(v) => setMapping((m) => { const n2 = { ...m }; if (v) n2[c.id] = v; else delete n2[c.id]; return n2; })}
+                        options={(prev.headers as string[]).map((h) => ({ value: h, label: h, disabled: used.has(h) && mapping[c.id] !== h }))} /></div>
+                    </div>))}
+                </div>
+              </Fold>
+            </motion.div>
+          )}
+          {err != null && <ErrorNote error={err} />}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// --- live line: the machines in order, each batch moving through them -------------------------------------------------
+const STATION_ICON: Record<string, any> = { rmg: Cog, fbd: Wind, blender: Layers, press: Gauge };
+const STATION_KEY: Record<string, string[]> = { rmg: ["binder_kg", "impeller_kw"], fbd: ["lod_pct", "inlet_c", "elapsed_min"], blender: ["blend_min", "blender_rpm"], press: ["force_kn", "tablet_weight_mg"] };
+const SHORT: Record<string, string> = { assay: "Assay", uniformity: "CU", dissolution: "Diss.", disintegration: "DT", lod: "LOD", strength: "Strength" };
+
+function Station({ m, cfg, speed, onTune, tick }: { m: any; cfg: any; speed: number; onTune?: () => void; tick: number }) {
+  const I = STATION_ICON[m.format] ?? Radio;
+  const keys = (STATION_KEY[m.format] ?? m.fields.map((f: any) => f.id)).filter((k: string) => m.latest[k] != null);
+  const main = keys[0];
+  const f = (id: string) => m.fields.find((x: any) => x.id === id);
+  const dur = cfg ? (m.format === "fbd" ? cfg.signals?.drying_min?.setpoint : m.format === "blender" ? Math.max(cfg.duration_min, cfg.signals?.blend_min?.setpoint ?? 0) : cfg.duration_min) : null;
+  const started = m.batch_started ? new Date(m.batch_started).getTime() : null;
+  const pr = dur && started ? Math.min(1, ((tick - started) / 1000) * speed / 60 / dur) : null;
+  return (
+    <motion.button layout onClick={onTune} disabled={!onTune} whileHover={onTune ? { y: -3 } : undefined}
+      className={cn("group relative flex min-w-0 flex-col rounded-2xl bg-white p-4 text-left shadow-card ring-1 ring-inset ring-line transition", onTune && "cursor-pointer hover:shadow-hover hover:ring-gold-300")}>
+      <div className="flex items-start gap-2.5">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-50 text-gold-600 ring-1 ring-inset ring-gold-100"><I size={19} /></span>
+        <div className="min-w-0 flex-1"><div className="flex items-center gap-1.5 text-[14px] font-semibold">{m.machine}<span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" /></span></div>
+          <div className="truncate text-[11px] text-ink-muted">{cfg?.label ?? m.format_label}</div></div>
+        {onTune && <Settings2 size={15} className="text-ink-faint transition group-hover:text-gold-600" />}
+      </div>
+      <div className="mt-3 h-7 overflow-hidden">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span key={m.batch_no} initial={{ x: -40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 40, opacity: 0 }} transition={{ type: "spring", stiffness: 260, damping: 24 }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-night-900 px-2.5 py-1 font-mono text-[12px] font-semibold text-gold-200">{m.batch_no}</motion.span>
+        </AnimatePresence>
+      </div>
+      {pr != null && <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100"><motion.div className="h-full rounded-full bg-gradient-to-r from-gold-400 to-brand-500" animate={{ width: `${Math.max(3, pr * 100)}%` }} transition={{ duration: 0.8 }} /></div>}
+      {main && (
+        <div className="mt-3 flex items-end justify-between gap-2">
+          <div><div className="text-[10.5px] text-ink-muted">{f(main)?.label}</div>
+            <div className="text-[22px] font-semibold leading-none tabular-nums">{fmt(m.latest[main], 4)} <span className="text-[11px] font-normal text-ink-faint">{f(main)?.unit}</span></div></div>
+          <Spark data={m.series[main] ?? []} />
+        </div>)}
+      <div className="mt-2 space-y-0.5">
+        {keys.slice(1, 3).map((k: string) => <div key={k} className="flex justify-between text-[11px]"><span className="text-ink-muted">{f(k)?.label}</span><span className="font-semibold tabular-nums">{fmt(m.latest[k], 4)} {f(k)?.unit}</span></div>)}
+      </div>
+    </motion.button>
+  );
+}
+
+function LiveLine({ slug, molecule, onReplay }: { slug: string; molecule: string; onReplay: (b: string, params: Record<string, number>) => void }) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["plant-live", slug, molecule], queryFn: () => api<any>(`/api/plant-data/${slug}/live${molecule ? `?molecule=${molecule}` : ""}`),
+    refetchInterval: 4000, placeholderData: keepPreviousData, enabled: !!slug });
+  const sim = useSimConfig(slug);
+  const [edit, setEdit] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const [tick, setTick] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setTick(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const [speed, setSpeed] = useState<number | null>(null);
+  useEffect(() => {
+    if (speed == null || !sim.draft || speed === sim.draft.speed) return;
+    const t = setTimeout(() => { const c = structuredClone(sim.draft); c.speed = speed; sim.apply(c, true); }, 600);
+    return () => clearTimeout(t);
+  }, [speed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const d = q.data;
+  if (q.error) return <ErrorNote error={q.error} />;
+  if (!d) return <Skeleton className="h-96" />;
+  const simConn = d.connectors.find((c: any) => c.name === "Demo simulator");
+  const simOn = !!simConn?.online;
+  const cfg = sim.draft;
+  const sp = speed ?? cfg?.speed ?? 30;
+  return (
+    <div className="space-y-5">
+      {/* the controls, on the line itself */}
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-night-900 px-5 py-4 text-white shadow-lift">
+        <div className="flex items-center gap-2.5">
+          <span className="relative flex h-3 w-3">{d.machines.length > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />}<span className={cn("relative inline-flex h-3 w-3 rounded-full", d.machines.length ? "bg-emerald-400" : "bg-slate-500")} /></span>
+          <div><div className="text-[15px] font-semibold">{d.machines.length ? `Live · ${plural(d.machines.length, "machine")} streaming` : "No machine streaming"}</div>
+            <div className="text-[11px] text-slate-400">{simOn ? "Plant simulator · click a machine to tune what it sends" : simConn ? "Plant simulator stopped" : "Connect a plant below, or start the plant simulator"}</div></div>
+        </div>
+        {cfg && simConn && (
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+            <Button size="sm" className={cfg.running ? "bg-white/10 text-white hover:bg-white/20" : "bg-gold-400 text-night-900 hover:bg-gold-300"} onClick={() => { const c = structuredClone(cfg); c.running = !c.running; sim.apply(c, true); }}>
+              {cfg.running ? <><Pause size={14} /> Pause</> : <><Play size={14} /> Run</>}</Button>
+            <label className="flex w-56 items-center gap-2 text-[11px] text-slate-300">Speed
+              <span className="relative h-[18px] flex-1"><span className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-white/15" />
+                <input type="range" min={1} max={120} value={sp} onChange={(e) => setSpeed(Number(e.target.value))} className="range absolute inset-0 w-full" /></span>
+              <b className="w-9 text-right text-white">{sp}×</b></label>
+            <Button size="sm" className="bg-white/10 text-white hover:bg-white/20" onClick={() => setAll(true)}><SlidersHorizontal size={14} /> All settings</Button>
+          </div>)}
+      </div>
+
+      {d.machines.length > 0 ? (
+        <div className="relative">
+          <div className="pointer-events-none absolute left-8 right-8 top-1/2 hidden h-0.5 -translate-y-1/2 bg-gradient-to-r from-gold-200 via-brand-200 to-gold-200 xl:block" />
+          <div className="relative grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {d.machines.map((m: any) => (
+              <Station key={m.dataset_id} m={m} cfg={cfg?.apparatus?.[m.machine]} speed={sp} tick={tick} onTune={simOn && cfg?.apparatus?.[m.machine] ? () => setEdit(m.machine) : undefined} />))}
+          </div>
+        </div>
+      ) : <Empty icon={<Radio size={20} />} title="Nothing streaming yet">{simConn ? "The plant simulator is connected but not sending: press Run above." : "Start the plant simulator on the server (docker compose --profile demo up -d plant-sim), or connect a plant's agent below."}</Empty>}
+
+      {d.recent?.length > 0 && (
+        <Card>
+          <CardHeader icon={<Layers size={16} />} title="Batches on the line" subtitle={molecule ? "Newest first: where each batch is, and what its tests are forecast to give" : "Newest first: where each batch is · choose the molecule above for the forecast"} />
+          <div className="divide-y divide-line px-5 pb-3 pt-2">
+            <AnimatePresence initial={false}>
+              {d.recent.map((b: any) => (
+                <motion.div key={b.batch} layout initial={{ opacity: 0, y: -10, backgroundColor: "#ecfeff" }} animate={{ opacity: 1, y: 0, backgroundColor: "#ffffff" }} transition={{ duration: 0.6 }}
+                  className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                  <div className="w-36 shrink-0"><div className="font-mono text-[13px] font-semibold">{b.batch}</div>
+                    <div className="text-[10.5px] text-ink-muted">{b.complete ? "complete" : `on ${b.stations.find((s: any) => s.status === "running")?.machine ?? "the line"}`}</div></div>
+                  <div className="flex items-center gap-1">
+                    {b.stations.map((s: any, i: number) => (
+                      <span key={s.machine} className="flex items-center gap-1" title={`${s.machine}: ${s.status}`}>
+                        <span className={cn("grid h-6 min-w-6 place-items-center rounded-full px-1.5 text-[9.5px] font-bold",
+                          s.status === "done" ? "bg-brand-500 text-white" : s.status === "running" ? "animate-pulse bg-gold-400 text-night-900" : "bg-slate-100 text-ink-faint")}>{s.machine.split("-")[0]}</span>
+                        {i < b.stations.length - 1 && <span className={cn("h-0.5 w-3", s.status === "done" ? "bg-brand-400" : "bg-slate-200")} />}
+                      </span>))}
+                  </div>
+                  <div className="flex flex-1 flex-wrap justify-end gap-1">
+                    {(b.forecast ?? []).map((t: any) => (
+                      <span key={t.test} className={cn("rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums ring-1 ring-inset", t.fails ? "bg-rose-50 text-rose-700 ring-rose-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200")}
+                        title={`${t.label}: ${t.value}${b.complete ? "" : " (settings so far)"}`}>{SHORT[t.test] ?? t.label} {fmt(t.value, 3)}</span>))}
+                  </div>
+                  {molecule && Object.keys(b.settings ?? {}).length > 0 && <Button size="sm" variant="ghost" onClick={() => onReplay(b.batch, b.settings)}><PlayCircle size={14} /> Failure tree</Button>}
+                </motion.div>))}
+            </AnimatePresence>
+          </div>
+        </Card>)}
+
+      <Fold title="Connect a real plant" sub="An edge agent at the plant reads machines over OPC UA or Modbus, read-only, and streams here" icon={<Plug size={15} />}>
+        <Connectors slug={slug} conns={d.connectors} onChange={() => qc.invalidateQueries({ queryKey: ["plant-live", slug] })} />
+      </Fold>
+
+      {edit && sim.draft && (
+        <SignalDialog m={edit} a={sim.draft.apparatus[edit]} guidance={sim.guidance} patterns={sim.patterns}
+          onChange={(f, k, v) => sim.set((c: any) => { c.apparatus[edit].signals[f][k] = v; })} onClose={() => setEdit(null)} onApply={() => sim.apply()} saving={sim.saving} />)}
+      <SimEngine slug={slug} open={all} onClose={() => setAll(false)} machines={d.machines} />
     </div>
   );
 }
 
-const TABS = [
-  { id: "data", label: "Add data" }, { id: "overview", label: "Overview" }, { id: "diagnosis", label: "Diagnosis" },
-  { id: "charts", label: "Control charts" }, { id: "tree", label: "Failure tree" }, { id: "live", label: "Live" },
-] as const;
-type PTab = (typeof TABS)[number]["id"];
+// --- one batch, on click --------------------------------------------------------------------------------------------------
+function BatchDrawer({ a, batch, onClose, onReplay }: { a: any; batch: string | null; onClose: () => void; onReplay: (b: string) => void }) {
+  const row = a?.batches.find((x: any) => x.batch_no === batch);
+  const d = a?.diagnoses.find((x: any) => x.batch === batch);
+  const label = (k: string) => a?.charts.find((c: any) => c.field === k)?.label ?? k.replace(/_/g, " ");
+  return (
+    <Drawer open={!!batch} onClose={onClose} width={640} title={<span className="font-mono">{batch}</span>} subtitle={[row?.product, row?.mfg_date].filter(Boolean).join(" · ")}>
+      {row && (
+        <div className="space-y-5">
+          {d ? <Diagnosis d={d} hasTwin={!!a.molecule} onReplay={() => onReplay(row.batch_no)} />
+            : <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200"><CheckCircle2 size={16} /> Every result of this batch is within its limit.</div>}
+          <div>
+            <div className="label mb-2">Everything recorded for this batch</div>
+            <div className="divide-y divide-line rounded-xl ring-1 ring-inset ring-line">
+              {Object.entries(row.values).map(([k, v]: any) => (
+                <div key={k} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <span className="text-ink-soft">{label(k)}{row.derived?.[k] && <span className="block text-[10px] text-ink-faint">{row.derived[k]}</span>}</span>
+                  <span className={cn("font-semibold tabular-nums", row.out_of_spec.includes(k) && "text-rose-600")}>{fmt(v, 4)}</span>
+                </div>))}
+            </div>
+          </div>
+          {a.molecule && !d && <Button variant="secondary" onClick={() => onReplay(row.batch_no)}><PlayCircle size={14} /> Replay in the failure tree</Button>}
+        </div>)}
+    </Drawer>
+  );
+}
 
-// --- the page ------------------------------------------------------------------------------------------------------------
+// --- the page --------------------------------------------------------------------------------------------------------------
 export function PlantData() {
   const params = useParams();
   const [sp, setSp] = useSearchParams();
@@ -569,206 +578,143 @@ export function PlantData() {
   // admins land on the plant simulator's organisation (backend DEMO_ORG) when it exists
   const orgList: any[] = orgs.data?.orgs ?? [];
   const slug = params.slug ?? me?.org?.slug ?? sp.get("org") ?? (orgList.find((o) => o.slug === "eurveda-demo") ?? orgList[0])?.slug ?? "";
-  const kind = (sp.get("data") === "timeseries" || sp.get("src") === "scada" ? "timeseries" : "batch") as "batch" | "timeseries";
-  const tab = ((TABS.find((t) => t.id === sp.get("tab"))?.id) ?? (sp.get("src") === "scada" ? "live" : "data")) as PTab;
+  const view = (sp.get("view") === "live" || sp.get("src") === "scada" || sp.get("tab") === "live" ? "live" : "batches") as "batches" | "live";
   const molecule = sp.get("m") ?? "";
-  const setParam = (k: string, v: string) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); if (k !== "src") n.delete("src"); setSp(n, { replace: true }); };
-  const setTab = (t: PTab) => setParam("tab", t === "data" ? "" : t);
+  const setParam = (k: string, v: string) => { const n2 = new URLSearchParams(sp); if (v) n2.set(k, v); else n2.delete(k); n2.delete("src"); n2.delete("tab"); n2.delete("data"); setSp(n2, { replace: true }); };
   const formats = useQuery({ queryKey: ["pd-formats", slug], queryFn: () => api<any>(`/api/plant-data/${slug}/formats`), enabled: !!slug, staleTime: 3600_000 });
   const mols = useQuery({ queryKey: ["pd-mols", slug], queryFn: () => api<any>(`/api/plant-data/${slug}/molecules`), enabled: !!slug, staleTime: 3600_000 });
-  const sets = useQuery({ queryKey: ["pd-sets", slug], queryFn: () => api<any>(`/api/plant-data/${slug}/datasets`), enabled: !!slug, refetchInterval: tab === "live" ? 15000 : false });
-  const [hint, setHint] = useState<string | null>(null);
+  const sets = useQuery({ queryKey: ["pd-sets", slug], queryFn: () => api<any>(`/api/plant-data/${slug}/datasets`), enabled: !!slug, refetchInterval: view === "live" ? 20000 : false });
+  const [upload, setUpload] = useState(false);
   const [group, setGroup] = useState<"cqa" | "param" | "raw">("cqa");
+  const [sel, setSel] = useState<string | null>(null);
   const [replay, setReplay] = useState<{ id: string; label: string; set: Record<string, number> } | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
   const datasets: any[] = sets.data?.datasets ?? [];
   useEffect(() => { if (!molecule) { const m = datasets.find((d) => d.molecule_key)?.molecule_key; if (m) setParam("m", m); } }, [datasets, molecule]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ana = useQuery({ queryKey: ["pd-analysis", slug, molecule, datasets.map((d) => `${d.id}:${d.rows}:${d.batches}`).join(",")], enabled: !!slug && datasets.length > 0,
+  const ana = useQuery({ queryKey: ["pd-analysis", slug, molecule, datasets.map((d) => `${d.id}:${d.rows}:${d.batches}`).join(",")], enabled: !!slug && datasets.length > 0 && view === "batches",
     queryFn: () => post<any>(`/api/plant-data/${slug}/analysis`, { molecule_key: molecule || undefined }), placeholderData: keepPreviousData });
   const a = ana.data;
   const charts = useMemo(() => (a?.charts ?? []).filter((c: any) => c.kind === group), [a, group]);
   const worst = useMemo(() => (a?.charts ?? []).filter((c: any) => c.cpk != null).sort((x: any, y: any) => x.cpk - y.cpk)[0], [a]);
-  const refresh = (m?: string) => { if (m) setParam("m", m); qc.invalidateQueries({ queryKey: ["pd-sets", slug] }); qc.invalidateQueries({ queryKey: ["pd-analysis", slug] }); qc.invalidateQueries({ queryKey: ["pd-timeline", slug] }); };
+  const refresh = (m?: string) => { if (m && !molecule) setParam("m", m); qc.invalidateQueries({ queryKey: ["pd-sets", slug] }); qc.invalidateQueries({ queryKey: ["pd-analysis", slug] }); qc.invalidateQueries({ queryKey: ["pd-timeline", slug] }); };
   const remove = async (d: any) => {
     if (!confirm(`Delete "${d.name}" (${d.batches} batches)? This can't be undone.`)) return;
     try { await del(`/api/plant-data/${slug}/datasets/${d.id}`); toast("Deleted"); refresh(); } catch (e) { toast((e as Error).message, "error"); }
   };
-  const replayParams = (label: string, params: Record<string, number>) => { setReplay({ id: `${label}:${Date.now()}`, label, set: params }); setTab("tree"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const replayParams = (label: string, p: Record<string, number>) => {
+    setReplay({ id: `${label}:${Date.now()}`, label, set: p }); setSel(null);
+    if (view !== "batches") setParam("view", "");
+    setTimeout(() => treeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+  };
   const replayBatch = (b: string) => {
     const row = a?.batches.find((x: any) => x.batch_no === b);
     replayParams(`batch ${b}`, Object.fromEntries(Object.entries(row?.values ?? {}).filter(([k]) => TWIN_PARAMS.includes(k))) as Record<string, number>);
   };
-  const openDiag = (b: string) => { setTab("diagnosis"); setTimeout(() => document.getElementById(`diag-${b}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 120); };
 
   if (!slug) return me?.is_platform && orgs.isLoading ? <PageSkeleton /> : <Empty icon={<FileSpreadsheet size={20} />} title="No organisation">Plant data belongs to an organisation: create one in Admin → Organisations.</Empty>;
   if (formats.isLoading || sets.isLoading) return <PageSkeleton />;
   if (formats.error) return <ErrorNote error={formats.error} />;
-  const fmts: any[] = formats.data.formats;
-  const schedules = datasets.filter((d) => d.format === "batch_schedule");
-  const tagged = datasets.filter((d) => d.live);
-  const timed = datasets.filter((d) => d.timestamps && d.format !== "batch_schedule");
-  const counts: Partial<Record<PTab, number>> = { diagnosis: a?.counts?.out_of_spec_batches, overview: a?.counts?.batches, live: tagged.length };
-
-  const files = datasets.length > 0 && (
-    <Fold title="Your data" sub={`${plural(datasets.length, "source")} joined on batch number · newer values win where two overlap`} icon={<FileSpreadsheet size={15} />}>
-      <div className="-my-2 divide-y divide-line">
-        {datasets.map((d) => (
-          <div key={d.id} className="flex flex-wrap items-center gap-3 py-2.5 text-xs">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-50 text-ink-muted ring-1 ring-inset ring-line">{(() => { const I = d.live ? Radio : d.format === "batch_schedule" ? CalendarClock : ICON[d.format] ?? FileSpreadsheet; return <I size={15} />; })()}</span>
-            <div className="min-w-0 flex-1"><div className="flex items-center gap-1.5 truncate text-[13px] font-semibold">{d.name}
-              {d.live && <Badge tone="brand">live</Badge>}{d.format === "batch_schedule" && <Badge tone="indigo">reference</Badge>}{d.linked_by_time && <Badge tone="sky">linked by time</Badge>}</div>
-              <div className="text-ink-muted">{d.format_label} · {plural(d.rows, "row")} · {plural(d.batches, "batch", "batches")}{d.link ? ` · ${d.link.linked} of ${d.link.rows} readings in batches` : ""} · {d.uploaded_by} · {new Date(d.created_at).toLocaleDateString("en-IN")}</div></div>
-            <button onClick={() => remove(d)} className="rounded-lg p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-600" title="Delete"><Trash2 size={15} /></button>
-          </div>))}
-      </div>
-    </Fold>
-  );
-
-  const dataTab = kind === "batch" ? (
-    <div className="space-y-5">
-      <div className="rounded-2xl bg-gradient-to-r from-gold-50 to-brand-50 px-5 py-4 text-[13px] text-ink-soft ring-1 ring-inset ring-gold-100">
-        <b className="text-ink">Batch data:</b> every row carries a batch number (a batch summary, QC results, or an equipment log with a batch column). Files are joined on that number. Readings with only a timestamp? Switch to <button className="font-semibold text-gold-700 underline-offset-2 hover:underline" onClick={() => setParam("data", "timeseries")}>time-series data</button>.
-      </div>
-      <Fold title="Formats and sample files" sub={`${fmts.filter((f) => f.kind !== "reference" && f.id !== "timeseries").length} apparatus layouts · download a sample to see the columns`} icon={<ListChecks size={15} />} open={!datasets.length}>
-        <Formats slug={slug} formats={fmts.filter((f) => f.kind !== "reference" && f.id !== "timeseries")} picked={hint} onPick={setHint} />
-      </Fold>
-      <Uploader slug={slug} formats={fmts} hint={hint} molecules={mols.data?.molecules ?? []} onSaved={refresh} />
-      {files}
-    </div>
-  ) : (
-    <div className="space-y-5">
-      <div className="rounded-2xl bg-gradient-to-r from-gold-50 to-brand-50 px-5 py-4 text-[13px] text-ink-soft ring-1 ring-inset ring-gold-100">
-        <b className="text-ink">Time-series data</b> (SCADA, historian, data logger) has timestamps, not batch numbers. To turn readings into batches, Eurveda needs a <b>reference</b>: which batch was on which machine, from when to when.
-        A reading at 08:15 on FBD-1 belongs to the batch the schedule puts on FBD-1 at 08:15.
-      </div>
-      <Card className="p-5">
-        <Step n={1} title="Reference: which batch ran when" done={schedules.length > 0 || tagged.length > 0}>
-          <p className="mb-3 text-xs text-ink-muted">
-            {schedules.length || tagged.length
-              ? <>Using {schedules.length ? plural(schedules.length, "batch schedule") : ""}{schedules.length && tagged.length ? " and " : ""}{tagged.length ? `${plural(tagged.length, "live stream")} (each reading carries the machine's batch tag)` : ""}.</>
-              : <>Upload a batch schedule: batch number, machine, start and end (from your BMR or production log). Live SCADA streams need none: the agent reads the machine's batch tag with every reading.</>}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <a href={`/api/plant-data/${slug}/formats/batch_schedule/sample.csv`} download className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset ring-line hover:bg-slate-50"><Download size={12} /> Sample schedule</a>
-            <button onClick={() => setHint("batch_schedule")} className={cn("inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset", hint === "batch_schedule" ? "bg-ink text-white ring-ink" : "ring-line hover:bg-slate-50")}><CalendarClock size={12} /> Upload a schedule below</button>
-          </div>
-        </Step>
-        <Step n={2} title="Your time series: upload an export, or stream it live" done={timed.length > 0}>
-          <div className="flex flex-wrap gap-2">
-            <a href={`/api/plant-data/${slug}/formats/timeseries/sample.csv`} download className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset ring-line hover:bg-slate-50"><Download size={12} /> Sample historian export</a>
-            <button onClick={() => setHint("timeseries")} className={cn("inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset", hint === "timeseries" ? "bg-ink text-white ring-ink" : "ring-line hover:bg-slate-50")}><UploadCloud size={12} /> Upload an export below</button>
-            <button onClick={() => setTab("live")} className="inline-flex items-center gap-1 rounded-lg bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-night-700"><Radio size={12} /> Stream from machines (SCADA)</button>
-          </div>
-        </Step>
-        <Step n={3} title="Check how it maps" done={timed.length > 0}>
-          <p className="text-xs text-ink-muted">The timeline below shows each reading, the batch window it fell in, and the value the batch gets.</p>
-        </Step>
-      </Card>
-      <Uploader slug={slug} formats={fmts} hint={hint ?? "timeseries"} molecules={mols.data?.molecules ?? []} onSaved={refresh}
-        title={hint === "batch_schedule" ? "Upload the batch schedule" : "Upload a time-series export"}
-        subtitle={hint === "batch_schedule" ? "Batch number, machine, start and end time per row" : "A timestamp per row; a machine column, or choose the machine; readings in any of the listed columns"} />
-      <Timeline slug={slug} sets={datasets} />
-      {files}
-    </div>
-  );
-
-  const overview = a && !a.empty ? (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Batches" value={a.counts.batches} icon={<Layers size={18} />} hint={`${plural(a.counts.fields, "field")} across ${plural(datasets.length, "source")}`} />
-        <Stat label="Outside a limit" value={a.counts.out_of_spec_batches} icon={<AlertTriangle size={18} />} tone={a.counts.out_of_spec_batches ? "rose" : "brand"} delay={0.05} hint="batches with a result beyond its limit" />
-        <Stat label="Control-chart signals" value={a.counts.signals} icon={<Activity size={18} />} tone="amber" delay={0.1} hint="Nelson rules 1–3: drift before a failure" />
-        <Stat label="Lowest Cpk" value={worst ? worst.cpk : "—"} decimals={2} icon={<Gauge size={18} />} tone="indigo" delay={0.15} hint={worst ? `${worst.label}${worst.cpk_indicative ? " · fewer than 25 batches: indicative" : ""}` : "needs ≥ 5 batches with a limit"} />
-      </div>
-      <Card className="overflow-hidden">
-        <CardHeader icon={<ListChecks size={16} />} title="Batches" subtitle="Quality results against their limits; click a batch outside a limit to see why" />
-        <div className="mt-3 max-h-[560px] overflow-auto">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50 text-[10.5px] uppercase tracking-wide text-ink-muted"><tr>
-              <th className="px-4 py-2 text-left">Batch</th><th className="px-3 py-2 text-left">Made</th>
-              {QC_COLS.filter((k) => a.batches.some((b: any) => k in b.values)).map((k) => <th key={k} className="px-3 py-2 text-right">{a.charts.find((c: any) => c.field === k)?.label ?? k}</th>)}
-            </tr></thead>
-            <tbody>{a.batches.map((b: any) => (
-              <tr key={b.batch_no} className={cn("border-t border-line", b.out_of_spec.length && "cursor-pointer bg-rose-50/40 hover:bg-rose-50")} onClick={() => b.out_of_spec.length && openDiag(b.batch_no)}>
-                <td className="px-4 py-2 font-semibold">{b.batch_no}</td><td className="px-3 py-2 text-ink-muted">{b.mfg_date ?? ""}</td>
-                {QC_COLS.filter((k) => a.batches.some((x: any) => k in x.values)).map((k) => (
-                  <td key={k} className={cn("px-3 py-2 text-right tabular-nums", b.out_of_spec.includes(k) ? "font-semibold text-rose-600" : "")}>{fmt(b.values[k], 4)}</td>))}
-              </tr>))}</tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  ) : <Empty icon={<Layers size={20} />} title="No batches yet">Add data first: a file with batch numbers, or a time series with a batch schedule.</Empty>;
-
-  const diagnosis = a?.diagnoses?.length ? (
-    <div className="grid gap-4 xl:grid-cols-2">{a.diagnoses.map((d: any) => <div key={d.batch} id={`diag-${d.batch}`} className="scroll-mt-40"><Diagnosis d={d} hasTwin={!!a.molecule} onReplay={() => replayBatch(d.batch)} /></div>)}</div>
-  ) : <Empty icon={<CheckCircle2 size={20} />} title="No batch outside a limit">Every batch's results are within their limits{a?.counts?.batches ? ` (${plural(a.counts.batches, "batch", "batches")})` : ""}.</Empty>;
-
-  const chartsTab = (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-[11px] text-ink-muted">Individuals charts: limits = mean ± 3·MR̄/1.128; signals = Nelson rules 1–3. Cpk* with fewer than 25 batches is indicative.</span>
-        <Segmented value={group} onChange={setGroup} options={[{ value: "cqa", label: "Quality results" }, { value: "param", label: "Process settings" }, { value: "raw", label: "Other readings" }]} />
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {charts.map((c: any) => <ControlChart key={c.field} c={c} onBatch={(b) => a.batches.find((x: any) => x.batch_no === b)?.out_of_spec.length && openDiag(b)} />)}
-      </div>
-      {charts.length === 0 && <Empty icon={<Activity size={20} />} title="Nothing to chart here">None of your data has fields of this kind yet.</Empty>}
-    </div>
-  );
-
-  const tree = (
-    <div className="space-y-5">
-      {a?.molecule && Object.keys(a.model_check ?? {}).length > 0 && (
-        <Fold title="How well the generic model matches your batches" sub="model prediction from each batch's settings vs its measured result" icon={<Gauge size={15} />}>
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {Object.entries(a.model_check).map(([k, v]: any) => (
-              <div key={k} className="rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-line">
-                <div className="text-[11px] text-ink-muted">{a.charts.find((c: any) => c.field === k)?.label ?? k}</div>
-                <div className="text-lg font-semibold tabular-nums">±{fmt(v.mean_abs_error, 2)}</div>
-                <div className="text-[10.5px] text-ink-faint">bias {v.bias > 0 ? "+" : ""}{fmt(v.bias, 2)} over {v.n}</div>
-              </div>))}
-          </div>
-          <p className="mt-2 text-[11px] text-ink-muted">A large bias means the twin's generic constants don't describe your product yet: the live forecast removes it; read the tree as a ranking of where to look.</p>
-        </Fold>
-      )}
-      {molecule ? <ProcessTwin mkey={molecule} endpoint={`/api/plant-data/${slug}/twin`} inject={replay} />
-        : <Empty icon={<Beaker size={20} />} title="Choose the molecule to open the failure tree">The tree needs the molecule's dose and solubility; your data supplies the process settings and their spread.</Empty>}
-    </div>
-  );
+  const cols = a ? QC_COLS.filter((k) => a.batches.some((b: any) => k in b.values)) : [];
 
   return (
     <div className="space-y-5">
-      <div className="sticky top-16 z-10 -mx-1 rounded-2xl bg-white/90 px-4 pt-3 shadow-card ring-1 ring-inset ring-line backdrop-blur-md">
-        <div className="flex flex-wrap items-center gap-3 pb-3">
-          <Segmented value={kind} onChange={(v) => setParam("data", v === "batch" ? "" : v)} options={[
-            { value: "batch", label: <span className="flex items-center gap-1.5"><Layers size={13} /> I have batch data</span> },
-            { value: "timeseries", label: <span className="flex items-center gap-1.5"><Clock size={13} /> I have time-series data</span> }]} />
-          {me?.is_platform && !params.slug && (
-            <div className="w-52"><SearchSelect size="sm" value={slug} onChange={(v) => setParam("org", v)} searchPlaceholder="Search an organisation…"
-              options={orgList.map((o: any) => ({ value: o.slug, label: o.name, sub: o.city }))} /></div>)}
-          <div className="w-60"><SearchSelect size="sm" value={molecule} onChange={(v) => setParam("m", v)} clearLabel="No molecule" placeholder="Molecule for the failure tree" searchPlaceholder="Search a molecule…"
-            options={(mols.data?.molecules ?? []).map((m: any) => ({ value: m.key, label: m.name, sub: m.alerts ? `${m.alerts} CDSCO notices` : undefined }))} /></div>
-          <span className="ml-auto hidden text-[11px] text-ink-muted lg:inline">{plural(datasets.length, "source")} · private to the organisation</span>
-        </div>
-        <div className="no-scrollbar flex gap-1 overflow-x-auto border-t border-line">
-          {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={cn("relative flex shrink-0 items-center gap-1.5 px-3 pb-2.5 pt-2 text-[13px] font-semibold transition", tab === t.id ? "text-ink" : "text-ink-muted hover:text-ink")}>
-              {t.label}{counts[t.id] ? <span className={cn("rounded-full px-1.5 text-[10px]", t.id === "diagnosis" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-ink-muted")}>{counts[t.id]}</span> : null}
-              {tab === t.id && <motion.span layoutId="pd-tab" className="absolute inset-x-2 bottom-0 h-[2.5px] rounded-full bg-gradient-to-r from-gold-400 to-brand-500" />}
-            </button>))}
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented value={view} onChange={(v) => setParam("view", v === "batches" ? "" : v)} options={[
+          { value: "batches", label: <span className="flex items-center gap-1.5 px-1 text-[13px]"><Layers size={14} /> Batches</span> },
+          { value: "live", label: <span className="flex items-center gap-1.5 px-1 text-[13px]"><Radio size={14} /> Live line</span> }]} />
+        {me?.is_platform && !params.slug && (
+          <div className="w-52"><SearchSelect size="sm" value={slug} onChange={(v) => setParam("org", v)} searchPlaceholder="Search an organisation…"
+            options={orgList.map((o: any) => ({ value: o.slug, label: o.name, sub: o.city }))} /></div>)}
+        <div className="w-60"><SearchSelect size="sm" value={molecule} onChange={(v) => setParam("m", v)} clearLabel="No molecule" placeholder="Molecule" searchPlaceholder="Search a molecule…"
+          options={(mols.data?.molecules ?? []).map((m: any) => ({ value: m.key, label: m.name, sub: m.alerts ? `${m.alerts} CDSCO notices` : undefined }))} /></div>
+        <Button className="ml-auto" onClick={() => setUpload(true)}><UploadCloud size={15} /> Upload data</Button>
       </div>
-      {ana.error && tab !== "data" && tab !== "live" && <ErrorNote error={ana.error} />}
-      <motion.div key={`${tab}-${kind}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-        {tab === "data" && dataTab}
-        {["overview", "diagnosis", "charts"].includes(tab) && datasets.length > 0 && !a && <div className="space-y-4"><Skeleton className="h-28" /><Skeleton className="h-72" />
-          <div className="text-center text-xs text-ink-muted">Reading your batches… the first analysis after a restart can take a minute.</div></div>}
-        {tab === "overview" && (a || !datasets.length) && overview}
-        {tab === "diagnosis" && (a || !datasets.length) && diagnosis}
-        {tab === "charts" && (a || !datasets.length) && chartsTab}
-        {tab === "tree" && tree}
-        {tab === "live" && <Live slug={slug} molecule={molecule} onReplay={(b, p) => replayParams(`live batch ${b}`, p)} />}
-      </motion.div>
+
+      {view === "live" ? <LiveLine slug={slug} molecule={molecule} onReplay={(b, p) => replayParams(`live batch ${b}`, p)} /> : (
+        <>
+          {!datasets.length ? (
+            <div className="grid place-items-center rounded-3xl bg-gradient-to-br from-gold-50 via-white to-brand-50 px-6 py-16 text-center ring-1 ring-inset ring-line">
+              <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-white text-gold-600 shadow-card ring-1 ring-line"><FileSpreadsheet size={24} /></div>
+              <div className="text-[22px] font-semibold tracking-tight">Your batches, against their limits</div>
+              <p className="mt-1 max-w-lg text-sm text-ink-muted">Upload batch records or equipment exports, or watch the simulated line stream batches in real time.</p>
+              <div className="mt-5 flex gap-2"><Button onClick={() => setUpload(true)}><UploadCloud size={15} /> Upload data</Button>
+                <Button variant="secondary" onClick={() => setParam("view", "live")}><Radio size={15} /> Watch the live line</Button></div>
+            </div>
+          ) : !a ? <div className="space-y-4"><Skeleton className="h-28" /><Skeleton className="h-72" /><div className="text-center text-xs text-ink-muted">Reading your batches…</div></div> : (
+            <>
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <Stat label="Batches" value={a.counts.batches} icon={<Layers size={18} />} hint={`from ${plural(datasets.length, "source")}`} />
+                <Stat label="Outside a limit" value={a.counts.out_of_spec_batches} icon={<AlertTriangle size={18} />} tone={a.counts.out_of_spec_batches ? "rose" : "brand"} delay={0.05} hint="click one in the table to see why" />
+                <Stat label="Control-chart signals" value={a.counts.signals} icon={<Activity size={18} />} tone="amber" delay={0.1} hint="drift before a failure" />
+                <Stat label="Lowest Cpk" value={worst ? worst.cpk : "—"} decimals={2} icon={<Gauge size={18} />} tone="indigo" delay={0.15} hint={worst ? worst.label : "needs ≥ 5 batches with a limit"} />
+              </div>
+
+              <Card className="overflow-hidden">
+                <CardHeader icon={<ListChecks size={16} />} title="Batches" subtitle="Click a batch to see everything recorded for it, and why it fell outside a limit" />
+                <div className="mt-3 max-h-[520px] overflow-auto">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-slate-50 text-[10.5px] uppercase tracking-wide text-ink-muted"><tr>
+                      <th className="px-4 py-2 text-left">Batch</th><th className="px-3 py-2 text-left">Made</th>
+                      {cols.map((k) => <th key={k} className="px-3 py-2 text-right">{a.charts.find((c: any) => c.field === k)?.label ?? k}</th>)}<th />
+                    </tr></thead>
+                    <tbody>{a.batches.map((b: any) => (
+                      <tr key={b.batch_no} onClick={() => setSel(b.batch_no)} className={cn("cursor-pointer border-t border-line transition hover:bg-gold-50/50", b.out_of_spec.length && "bg-rose-50/40")}>
+                        <td className="px-4 py-2 font-semibold">{b.out_of_spec.length > 0 && <AlertTriangle size={12} className="mr-1 inline text-rose-500" />}{b.batch_no}</td>
+                        <td className="px-3 py-2 text-ink-muted">{b.mfg_date ?? ""}</td>
+                        {cols.map((k) => <td key={k} className={cn("px-3 py-2 text-right tabular-nums", b.out_of_spec.includes(k) && "font-semibold text-rose-600")}>{fmt(b.values[k], 4)}</td>)}
+                        <td className="px-3 text-right text-ink-faint">›</td>
+                      </tr>))}</tbody>
+                  </table>
+                </div>
+              </Card>
+
+              <div className="space-y-3">
+                <Fold title="Control charts" sub={`${plural(a.charts.length, "chart")} · limits, drift signals and Cpk per field`} icon={<Activity size={15} />}>
+                  <div className="mb-3 flex justify-end"><Segmented value={group} onChange={setGroup} options={[{ value: "cqa", label: "Quality results" }, { value: "param", label: "Process settings" }, { value: "raw", label: "Other readings" }]} /></div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {charts.map((c: any) => <ControlChart key={c.field} c={c} onBatch={(b) => setSel(b)} />)}
+                  </div>
+                  {charts.length === 0 && <div className="text-xs text-ink-muted">None of your data has fields of this kind yet.</div>}
+                </Fold>
+                {datasets.some((d) => d.timestamps && d.format !== "batch_schedule") && (
+                  <Fold title="How time-series data became batches" sub="Readings, the batch windows they fell in, and each batch's value" icon={<Clock size={15} />}>
+                    <Timeline slug={slug} sets={datasets} />
+                  </Fold>)}
+                <Fold title="Your files and streams" sub={`${plural(datasets.length, "source")}, joined on batch number`} icon={<FileSpreadsheet size={15} />}>
+                  <div className="-my-2 divide-y divide-line">
+                    {datasets.map((d) => (
+                      <div key={d.id} className="flex flex-wrap items-center gap-3 py-2.5 text-xs">
+                        <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-50 text-ink-muted ring-1 ring-inset ring-line">{(() => { const I = d.live ? Radio : d.format === "batch_schedule" ? CalendarClock : ICON[d.format] ?? FileSpreadsheet; return <I size={15} />; })()}</span>
+                        <div className="min-w-0 flex-1"><div className="flex items-center gap-1.5 truncate text-[13px] font-semibold">{d.name}
+                          {d.live && <Badge tone="brand">live</Badge>}{d.format === "batch_schedule" && <Badge tone="indigo">schedule</Badge>}{d.linked_by_time && <Badge tone="sky">matched by time</Badge>}</div>
+                          <div className="text-ink-muted">{d.format_label} · {plural(d.rows, "row")} · {plural(d.batches, "batch", "batches")} · {d.uploaded_by}</div></div>
+                        <button onClick={() => remove(d)} className="rounded-lg p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-600" title="Delete"><Trash2 size={15} /></button>
+                      </div>))}
+                  </div>
+                </Fold>
+                {a.molecule && Object.keys(a.model_check ?? {}).length > 0 && (
+                  <Fold title="How well the model matches your batches" sub="The model's prediction from each batch's settings, against what was measured" icon={<Gauge size={15} />}>
+                    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                      {Object.entries(a.model_check).map(([k, v]: any) => (
+                        <div key={k} className="rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-line">
+                          <div className="text-[11px] text-ink-muted">{a.charts.find((c: any) => c.field === k)?.label ?? k}</div>
+                          <div className="text-lg font-semibold tabular-nums">±{fmt(v.mean_abs_error, 2)}</div>
+                          <div className="text-[10.5px] text-ink-faint">bias {v.bias > 0 ? "+" : ""}{fmt(v.bias, 2)} over {v.n}</div>
+                        </div>))}
+                    </div>
+                  </Fold>)}
+              </div>
+            </>
+          )}
+          <div ref={treeRef} className="scroll-mt-24">
+            {molecule ? <ProcessTwin mkey={molecule} endpoint={`/api/plant-data/${slug}/twin`} inject={replay} />
+              : <Empty icon={<Beaker size={20} />} title="Choose the molecule to open the failure tree">The tree needs the molecule's dose and solubility; your data supplies the process settings and their spread.</Empty>}
+          </div>
+        </>
+      )}
+
+      <UploadModal open={upload} onClose={() => setUpload(false)} slug={slug} formats={formats.data.formats} molecules={mols.data?.molecules ?? []} onDone={refresh} />
+      <BatchDrawer a={a} batch={sel} onClose={() => setSel(null)} onReplay={replayBatch} />
     </div>
   );
 }

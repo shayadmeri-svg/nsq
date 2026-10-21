@@ -60,7 +60,7 @@ function Num({ value, onChange, step = "any", className }: { value: number; onCh
     className={cn("input h-8 w-[84px] px-2 text-right text-xs tabular-nums", className)} />;
 }
 
-function SignalDialog({ m, a, guidance, patterns, onChange, onClose, onApply, saving }: {
+export function SignalDialog({ m, a, guidance, patterns, onChange, onClose, onApply, saving }: {
   m: string; a: any; guidance: Record<string, any>; patterns: string[]; onChange: (f: string, k: string, v: any) => void; onClose: () => void; onApply: () => void; saving: boolean;
 }) {
   return (
@@ -102,6 +102,28 @@ function SignalDialog({ m, a, guidance, patterns, onChange, onClose, onApply, sa
       </div>
     </Modal>
   );
+}
+
+/** The simulator's settings for an organisation: the saved config, a local draft, and apply (PUT). */
+export function useSimConfig(slug: string, enabled = true) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const q = useQuery({ queryKey: ["sim-config", slug], queryFn: () => api<any>(`/api/plant-data/${slug}/sim-config`), enabled: enabled && !!slug, refetchInterval: 15000 });
+  const [draft, setDraft] = useState<any>(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (q.data && !dirty) setDraft(q.data.config); }, [q.data, dirty]);
+  const set = (fn: (c: any) => void) => { setDraft((c: any) => { const n2 = structuredClone(c); fn(n2); return n2; }); setDirty(true); };
+  const apply = async (cfg?: any, quiet = false) => {
+    setSaving(true);
+    try {
+      const r = await api<any>(`/api/plant-data/${slug}/sim-config`, { method: "PUT", json: { config: cfg ?? draft } });
+      setDraft(r.config); setDirty(false);
+      qc.setQueryData(["sim-config", slug], (old: any) => ({ ...old, config: r.config, guidance: r.guidance }));
+      if (!quiet) toast("Applied: the simulator picks it up within 5 seconds");
+    } catch (e) { toast((e as Error).message, "error"); } finally { setSaving(false); }
+  };
+  return { q, draft, setDraft, dirty, setDirty, saving, set, apply, guidance: q.data?.guidance ?? {}, patterns: q.data?.patterns ?? Object.keys(PATTERN_HELP) };
 }
 
 export function SimEngine({ slug, open, onClose, machines }: { slug: string; open: boolean; onClose: () => void; machines: any[] }) {

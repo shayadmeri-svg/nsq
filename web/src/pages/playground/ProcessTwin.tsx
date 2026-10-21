@@ -3,6 +3,7 @@
 // Server: core/chem/process_twin.py via POST /api/lab/molecule/{key}/process-twin.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, ExternalLink, FileText, FlaskConical, Radio, RotateCcw, UploadCloud, Zap } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -10,6 +11,14 @@ import { Badge, Button, Card, CardHeader, ErrorNote, Skeleton } from "../../comp
 import { post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { plural } from "../../lib/format";
+
+type View = "risks" | "process" | "tree" | "how";
+const VIEWS: { id: View; label: string; hint: string }[] = [
+  { id: "risks", label: "What can go wrong", hint: "Failures recorded for this molecule (CDSCO, FDA): inject one and watch the results above change" },
+  { id: "process", label: "Process", hint: "The unit operations and their settings: drag a setting to see what it does to each test" },
+  { id: "tree", label: "Failure tree", hint: "Each test's chance of failing, and which settings tip it, ranked" },
+  { id: "how", label: "How it works", hint: "The equations behind each link, the assumptions, and where each limit comes from" },
+];
 
 const BASIS_TONE: Record<string, "brand" | "amber" | "slate"> = { mechanistic: "brand", correlation: "brand", assumed: "amber" };
 const fmt = (v: number | null | undefined, d = 2) => (v == null ? "—" : Math.abs(v) >= 100 ? v.toFixed(0) : Number(v.toFixed(d)).toString());
@@ -245,7 +254,8 @@ export function ProcessTwin({ mkey, endpoint, inject }: { mkey: string; endpoint
   const [picked, setPicked] = useState<string | null>(null);
   const [scenario, setScenario] = useState<string | null>(null);
   useEffect(() => { setOverrides({}); setScenario(null); setPicked(null); }, [mkey]);
-  useEffect(() => { if (inject) { setOverrides(inject.set); setScenario(inject.id); } }, [inject]);
+  const [view, setView] = useState<View>("risks");
+  useEffect(() => { if (inject) { setOverrides(inject.set); setScenario(inject.id); setView("tree"); } }, [inject]);
   const [debounced, setDebounced] = useState(overrides);
   useEffect(() => { const t = setTimeout(() => setDebounced(overrides), 450); return () => clearTimeout(t); }, [overrides]);
   const q = useQuery({ queryKey: ["twin", endpoint ?? "lab", mkey, debounced],
@@ -277,65 +287,79 @@ export function ProcessTwin({ mkey, endpoint, inject }: { mkey: string; endpoint
     <Card>
       <CardHeader icon={<FlaskConical size={16} />} title="Process twin and failure tree" action={feed || undefined}
         subtitle="A wet-granulated tablet of this molecule, unit operation by unit operation: inject an error, watch it travel to the quality tests, and see which parameters tip each test" />
-      <div className="space-y-5 p-5">
+      <div className="space-y-4 p-5">
         {q.error && <ErrorNote error={q.error} />}
         {!d ? <Skeleton className="h-96" /> : (
           <>
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
               <span><b className="text-ink">{d.molecule.name}</b> {d.molecule.dose_mg} mg</span>
-              <span>· solubility {fmt(d.molecule.solubility_mg_ml, 4)} mg/mL in the dissolution medium</span>
+              <span>· solubility {fmt(d.molecule.solubility_mg_ml, 4)} mg/mL</span>
               <span>· {d.molecule.medium}</span>
+              {d.plant && <Badge tone="brand">calibrated to your {plural(d.plant.batches, "batch", "batches")}</Badge>}
               {q.isFetching && <span className="text-brand-700">· recalculating…</span>}
             </div>
-            {d.plant && (
-              <div className="rounded-xl bg-gradient-to-r from-gold-50 to-brand-50 px-4 py-3 text-xs text-ink-soft ring-1 ring-inset ring-gold-200">
-                <b className="text-ink">Calibrated to your {plural(d.plant.batches, "batch", "batches")}.</b>{" "}
-                {Object.keys(d.plant.baseline).length
-                  ? <>{plural(Object.keys(d.plant.baseline).length, "setting")} start at your median ({Object.keys(d.plant.baseline).map((k) => d.unit_ops.flatMap((u: any) => u.params).find((p: any) => p.id === k)?.label ?? k).join(", ")}); </>
-                  : "None of your files holds a process setting the twin uses yet, so it runs on generic defaults; "}
-                {Object.keys(d.plant.nor).length > 0 && <>{plural(Object.keys(d.plant.nor).length, "range")} {Object.keys(d.plant.nor).length === 1 ? "is" : "are"} your own spread (mean ± 3 SD), so failure probabilities and tipping margins reflect how your process actually varies.</>}
-                {inject && scenario === inject.id && <div className="mt-1 font-semibold text-gold-700">Replaying {inject.label}: its recorded settings are applied below.</div>}
+
+            {/* the result, always in view: what each quality test gives with the settings now */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="label">{scenario && inject && scenario === inject.id ? `Replaying ${inject.label}` : Object.keys(overrides).length ? "With your injected error" : d.plant ? "Your process today" : "Nominal process"}</span>
+                {Object.keys(overrides).length > 0 && <Button size="sm" variant="ghost" onClick={() => { setOverrides({}); setScenario(null); }}><RotateCcw size={13} /> {d.plant ? "Back to your baseline" : "Back to nominal"}</Button>}
               </div>
-            )}
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+                {d.cqas.map((c: any) => {
+                  const v = d.current.values[c.id], fail = d.current.fails[c.id], wh = d.withheld?.[c.id], mv = d.moved[c.id];
+                  return (
+                    <motion.div key={c.id} layout className={cn("rounded-xl p-3 ring-1 ring-inset transition-colors duration-500", wh ? "bg-slate-50 ring-line" : fail ? "bg-rose-50 ring-rose-200" : "bg-emerald-50/50 ring-emerald-200")}>
+                      <div className="text-[11px] font-medium text-ink-muted">{c.label}</div>
+                      <motion.div key={wh ? "na" : fmt(v)} initial={{ opacity: 0.4, y: 4 }} animate={{ opacity: 1, y: 0 }} className={cn("text-lg font-semibold tabular-nums", fail && !wh && "text-rose-700")}>{wh ? "n/a" : fmt(v)}</motion.div>
+                      <div className="text-[10px] text-ink-muted" title={d.spec_basis?.[c.id]?.text}>{wh ? "not assessable" : <>limit {limitText(c.id, d.specs)}</>}{!wh && Math.abs(mv) > 1e-3 && <span className={cn("ml-1 font-semibold", fail ? "text-rose-600" : "text-ink")}>({mv > 0 ? "+" : ""}{fmt(mv)})</span>}</div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
 
-            <Scenarios d={d} active={scenario} onInject={(id, set, u) => {
-              if (scenario === id) { setScenario(null); setOverrides({}); return; }
-              setScenario(id); setOverrides(set); setActive(u);
-            }} />
-            {Object.keys(overrides).length > 0 && <div><Button size="sm" variant="ghost" onClick={() => { setOverrides({}); setScenario(null); }}><RotateCcw size={13} /> {d.plant ? "Back to your baseline" : "Back to the nominal process"}</Button></div>}
+            <div className="no-scrollbar flex gap-1 overflow-x-auto border-b border-line">
+              {VIEWS.map((v) => (
+                <button key={v.id} onClick={() => setView(v.id)} className={cn("relative shrink-0 px-3 pb-2.5 pt-1 text-[13px] font-semibold transition", view === v.id ? "text-ink" : "text-ink-muted hover:text-ink")}>
+                  {v.label}
+                  {view === v.id && <motion.span layoutId={`twin-view-${endpoint ?? "lab"}`} className="absolute inset-x-2 bottom-0 h-[2.5px] rounded-full bg-gradient-to-r from-gold-400 to-brand-500" />}
+                </button>))}
+            </div>
+            <span className="-mt-2 block text-[11px] text-ink-muted">{VIEWS.find((v) => v.id === view)?.hint}</span>
 
-            <Cycle ops={d.unit_ops} active={active} hot={hot} warm={warm} onPick={(id) => setActive(active === id ? null : id)} />
-            {op && op.params.length > 0 && <ParamEditor op={op} overrides={overrides} setOverride={setOverride} />}
-
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
-              {d.cqas.map((c: any) => {
-                const v = d.current.values[c.id], fail = d.current.fails[c.id], wh = d.withheld?.[c.id], mv = d.moved[c.id];
-                return (
-                  <div key={c.id} className={cn("rounded-xl p-3 ring-1 ring-inset", wh ? "bg-slate-50 ring-line" : fail ? "bg-rose-50 ring-rose-200" : "bg-emerald-50/50 ring-emerald-200")}>
-                    <div className="text-[11px] font-medium text-ink-muted">{c.label}</div>
-                    <div className="font-display text-lg font-extrabold">{wh ? "n/a" : fmt(v)}</div>
-                    <div className="text-[10px] text-ink-muted" title={d.spec_basis?.[c.id]?.text}>{wh ? "not assessable" : <>limit {limitText(c.id, d.specs)} <span className={cn("rounded px-1 font-semibold", d.spec_basis?.[c.id]?.kind === "source" ? "bg-brand-50 text-brand-700" : "bg-amber-50 text-amber-700")}>{d.spec_basis?.[c.id]?.kind === "source" ? "cited" : "default"}</span></>}{!wh && Math.abs(mv) > 1e-3 && <span className={cn("ml-1 font-semibold", fail ? "text-rose-600" : "text-ink")}>({mv > 0 ? "+" : ""}{fmt(mv)})</span>}</div>
+            <motion.div key={view} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-4">
+              {view === "risks" && (
+                <Scenarios d={d} active={scenario} onInject={(id, set, u) => {
+                  if (scenario === id) { setScenario(null); setOverrides({}); return; }
+                  setScenario(id); setOverrides(set); setActive(u);
+                }} />)}
+              {view === "process" && (
+                <>
+                  <Cycle ops={d.unit_ops} active={active} hot={hot} warm={warm} onPick={(id) => setActive(active === id ? null : id)} />
+                  {op && op.params.length > 0 ? <ParamEditor op={op} overrides={overrides} setOverride={setOverride} />
+                    : <div className="text-xs text-ink-muted">Click a step of the process to see and change its settings.</div>}
+                </>)}
+              {view === "tree" && <Tree d={d} picked={picked} onPick={(u, key) => { setActive(u); setPicked(key || null); }} />}
+              {view === "how" && (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-xl bg-slate-50 p-3 text-[11px]">
+                    <div className="label mb-1.5">How each link is modelled</div>
+                    <ul className="space-y-1">{d.links.map((l: any, i: number) => <li key={i} className="flex gap-2"><Badge tone={BASIS_TONE[l.basis] ?? "slate"}>{l.basis}</Badge><span><b>{d.cqas.find((c: any) => c.id === l.to)?.label}:</b> {l.what}</span></li>)}</ul>
+                    {d.plant && <div className="mt-3 rounded-lg bg-white p-2.5 ring-1 ring-inset ring-line"><b>Calibrated to your data:</b>{" "}
+                      {Object.keys(d.plant.baseline).length ? <>{plural(Object.keys(d.plant.baseline).length, "setting")} start at your median; </> : "no process setting in your data yet; "}
+                      {Object.keys(d.plant.nor).length > 0 && <>{plural(Object.keys(d.plant.nor).length, "range")} {Object.keys(d.plant.nor).length === 1 ? "is" : "are"} your own spread (mean ± 3 SD).</>}</div>}
                   </div>
-                );
-              })}
-            </div>
-
-            <Tree d={d} picked={picked} onPick={(u, key) => { setActive(u); setPicked(key || null); }} />
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-xl bg-slate-50 p-3 text-[11px]">
-                <div className="label mb-1.5">How each link is modelled</div>
-                <ul className="space-y-1">{d.links.map((l: any, i: number) => <li key={i} className="flex gap-2"><Badge tone={BASIS_TONE[l.basis] ?? "slate"}>{l.basis}</Badge><span><b>{d.cqas.find((c: any) => c.id === l.to)?.label}:</b> {l.what}</span></li>)}</ul>
-              </div>
-              <div className="rounded-xl bg-amber-50/60 p-3 text-[11px] text-ink-soft">
-                <div className="label mb-1.5 text-amber-800">Read this first</div>
-                <ul className="list-disc space-y-1 pl-4">{d.assumptions.map((a: string) => <li key={a}>{a}</li>)}</ul>
-                <div className="label mb-1 mt-2.5 text-amber-800">Where each limit comes from</div>
-                <ul className="space-y-0.5">{d.cqas.map((c: any) => d.spec_basis?.[c.id] && <li key={c.id}><b>{c.label}:</b> {d.spec_basis[c.id].text}
-                  {d.spec_basis[c.id].url && <> <a href={d.spec_basis[c.id].url} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">source</a></>}</li>)}</ul>
-                <div className="mt-2">Influence = Morris elementary effects (SALib) over each parameter's normal range; P(fail) = Monte Carlo over {plural(d.mc.n, "batch", "batches")}; tipping points = one-at-a-time sweeps.</div>
-              </div>
-            </div>
+                  <div className="rounded-xl bg-amber-50/60 p-3 text-[11px] text-ink-soft">
+                    <div className="label mb-1.5 text-amber-800">Read this first</div>
+                    <ul className="list-disc space-y-1 pl-4">{d.assumptions.map((a: string) => <li key={a}>{a}</li>)}</ul>
+                    <div className="label mb-1 mt-2.5 text-amber-800">Where each limit comes from</div>
+                    <ul className="space-y-0.5">{d.cqas.map((c: any) => d.spec_basis?.[c.id] && <li key={c.id}><b>{c.label}:</b> {d.spec_basis[c.id].text}
+                      {d.spec_basis[c.id].url && <> <a href={d.spec_basis[c.id].url} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">source</a></>}</li>)}</ul>
+                    <div className="mt-2">Influence = Morris elementary effects (SALib) over each parameter's normal range; P(fail) = Monte Carlo over {plural(d.mc.n, "batch", "batches")}; tipping points = one-at-a-time sweeps.</div>
+                  </div>
+                </div>)}
+            </motion.div>
           </>
         )}
       </div>

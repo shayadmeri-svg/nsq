@@ -208,6 +208,12 @@ export function Drawer({ open, onClose, title, subtitle, children, width = 720 }
 }
 
 export function Modal({ open, onClose, title, children, footer, width = 512 }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; width?: number }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, onClose]);
   // portalled: inside a transformed parent (a drawer) `fixed` would be positioned relative to that parent
   return createPortal(
     <AnimatePresence>
