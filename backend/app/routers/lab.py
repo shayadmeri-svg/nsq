@@ -48,6 +48,11 @@ def dissolution(key: str, body: dict[str, Any] = Body(default={}), user: User = 
     return _run(lab.dissolution, key, body)
 
 
+@router.post("/molecule/{key}/process-twin")
+def process_twin(key: str, body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
+    return _run(lab.process_twin, key, body)
+
+
 @router.post("/molecule/{key}/crystallization")
 def crystallization(key: str, body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
     return _run(lab.crystallize, key, body)

@@ -9,6 +9,7 @@ import { Quality } from "./pages/org/Quality";
 import { Infrastructure } from "./pages/org/Infrastructure";
 import { Opportunities } from "./pages/org/Opportunities";
 import { EuExport } from "./pages/org/EuExport";
+import { Pharmacopoeia } from "./pages/org/Pharmacopoeia";
 import { Team } from "./pages/org/Team";
 import { FeatureAccess } from "./pages/org/FeatureAccess";
 import { Features } from "./pages/admin/Features";
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="/o/:slug/opportunities" element={<Opportunities />} />
         <Route path="/o/:slug/opportunities/:molecule" element={<Opportunities />} />
         <Route path="/o/:slug/eu" element={<EuExport />} />
+        <Route path="/o/:slug/pharmacopoeia" element={<Pharmacopoeia />} />
         <Route path="/o/:slug/eu/:molecule" element={<EuExport />} />
         <Route path="/o/:slug/team" element={<Team />} />
         <Route path="/o/:slug/access" element={<FeatureAccess />} />

@@ -395,6 +395,19 @@ function PassportDetail({ d }: { d: any }) {
             <tbody>{methods.map((m, i) => <tr key={i} className="border-b border-line/60"><td className="px-4 py-2 font-medium">{m.dosage_form}</td><td className="px-4 py-2">{m.apparatus || "—"}</td><td className="px-4 py-2">{m.rpm ?? "—"}</td><td className="px-4 py-2">{m.medium}</td><td className="px-4 py-2">{m.volume_ml ? `${m.volume_ml} mL` : "—"}</td><td className="px-4 py-2">{m.times_text || "—"}</td><td className="px-4 py-2 text-ink-muted">{m.updated}</td></tr>)}</tbody></table></div>
         ) : <p className="px-5 pb-4 pt-1 text-xs text-ink-faint">FDA lists no dissolution method for this molecule.</p>}
       </div>
+      {(d.pheur ?? []).length > 0 && (
+        <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
+          <div className="flex items-center justify-between"><div className="label">European Pharmacopoeia</div>
+            <a href="https://extranet.edqm.eu/publications/recherches_sw.shtml" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-700 hover:underline">EDQM Knowledge Database <ExternalLink size={10} /></a></div>
+          {d.pheur.map((m: any) => (
+            <div key={m.number} className="mt-2 text-xs">
+              <div><a href={m.url} target="_blank" rel="noreferrer" className="font-semibold text-brand-700 hover:underline">Ph. Eur. {m.number} {m.name}</a> <span className="text-ink-muted">· {m.status} · last published {m.last_published}</span></div>
+              {m.under_revision && <div className="mt-1 rounded bg-amber-50 px-2 py-1"><b>Under revision{m.under_revision.pharmeuropa ? ` (Pharmeuropa ${m.under_revision.pharmeuropa})` : ""}:</b> {m.under_revision.text}</div>}
+              {m.upcoming.map((e: any) => <div key={e.issue} className="mt-1 rounded bg-rose-50 px-2 py-1"><b>Issue {e.issue}, applies {fmtDate(e.implementation)}:</b> {(e.changes ?? []).map((c: any) => c.section ? `${c.section} — ${c.text}` : c.text).join("; ")}</div>)}
+              {m.recent.slice(0, 1).map((e: any) => <div key={e.issue} className="mt-1 text-ink-soft"><b>Last change ({e.kind} {e.issue}):</b> {(e.changes ?? []).map((c: any) => c.section || c.text).join(", ")}</div>)}
+            </div>))}
+        </div>
+      )}
       {lab && (
         <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
           <div className="flex items-center justify-between"><div className="label">US label</div>{lab.url && <a href={lab.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-700 hover:underline">DailyMed: {lab.brand} ({lab.application}) <ExternalLink size={10} /></a>}</div>

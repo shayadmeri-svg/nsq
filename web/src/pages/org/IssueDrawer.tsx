@@ -125,7 +125,7 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
       </Section>
     ) : null,
     methods: ev?.patents ? (
-      <Section key="methods" i={5} icon={<BookOpenCheck size={15} />} title="Patent status">
+      <Section key="methods" i={5} icon={<BookOpenCheck size={15} />} title="Patent and pharmacopoeia status">
         <div className="grid gap-2 sm:grid-cols-3">{ev.patents.markets.map((g: any) => (
           <div key={g.code} className="rounded-xl bg-slate-50 p-3 text-xs">
             <div className="flex items-center justify-between"><b>{g.name}</b><Badge tone={g.status === "off_patent" ? "brand" : g.status === "unknown" ? "slate" : g.status === "loe_pending" ? "amber" : "rose"}>{String(g.status).replace("_", " ")}</Badge></div>
@@ -133,6 +133,14 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
             <div className="mt-1 text-ink-soft">{g.note}</div>
             <div className="mt-1 flex flex-wrap gap-2">{(g.sources ?? []).map((x: any, i: number) => <Src key={i} label={x.label} url={x.url} />)}</div>
           </div>))}</div>
+        {(ev.pheur ?? []).map((m: any) => (
+          <div key={m.number} className="mt-3 rounded-xl bg-slate-50 p-3 text-xs">
+            <div><b>Ph. Eur. {m.number} {m.name}</b> <span className="text-ink-muted">· last published {m.last_published}</span>
+              <a href={m.url} target="_blank" rel="noreferrer" className="ml-2 text-brand-700 hover:underline">EDQM</a></div>
+            {m.under_revision && <div className="mt-1"><b>Under revision:</b> {m.under_revision.text}</div>}
+            {m.upcoming.map((e: any) => <div key={e.issue} className="mt-1 text-rose-700"><b>Issue {e.issue} applies {e.implementation}:</b> {(e.changes ?? []).map((c: any) => c.section || c.text).join(", ")}</div>)}
+            {[...m.upcoming, ...m.recent].some((e: any) => (e.changes ?? []).some((c: any) => c.you_failed_it)) && <div className="mt-1 font-semibold text-rose-700">A Ph. Eur. revision touches the test this batch failed.</div>}
+          </div>))}
         {ev.patents.compound?.number && <p className="mt-3 text-xs">Compound patent: <a href={ev.patents.compound.url} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">{ev.patents.compound.number} — {ev.patents.compound.title}</a></p>}
       </Section>
     ) : null,

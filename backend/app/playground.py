@@ -567,7 +567,7 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
 
     # The hand-typed IP / Ph. Eur. monograph text and its "differences" (gmp_knowledge) could not be checked against
     # any public source, so they are gone; the FDA Dissolution Methods Database and the US label are shown instead.
-    from . import evidence
+    from . import evidence, pharmacopoeia
 
     ob_curated, pharma = None, None
     label = evidence.label_block(key)
@@ -600,6 +600,7 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
         "fit_needs": needs,
         "orange_book_curated": ob_curated,
         "label": label,
+        "pheur": pharmacopoeia.molecule_changes(key),
         "pharmacopeia": pharma,
         "nsq": nsq,
     })

@@ -1,11 +1,12 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Atom, Beaker, ExternalLink, Info } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
 import { useToast } from "../../components/ui/toast";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { ProcessTwin } from "./ProcessTwin";
 
 // Every number on this page carries where it came from:
 //   source     a cited record (PubChem, CDSCO NSQ list, FAERS), linked
@@ -13,7 +14,7 @@ import { cn } from "../../lib/cn";
 //   assumed    a default the user can (and should) replace
 //   user       a value the user typed
 type Kind = "source" | "estimate" | "assumption" | "assumed" | "user" | null | undefined;
-type Tab = "molecule" | "dissolution" | "be" | "safety" | "crystal" | "compaction" | "fluidbed";
+type Tab = "molecule" | "dissolution" | "be" | "safety" | "crystal" | "compaction" | "fluidbed" | "twin";
 const tip = { contentStyle: { borderRadius: 10, fontSize: 12 } };
 
 function useDebounced<T>(v: T, ms = 300) {
@@ -145,45 +146,88 @@ function IonControls({ f, set, p }: { f: any; set: (k: string) => (v: any) => vo
   );
 }
 
+// "min, %" per line → [[min, %], ...]
+function parseProfile(text: string): [number, number][] {
+  return text.split(/\n+/).map((l) => l.split(/[,\s;]+/).map(Number)).filter((x) => x.length >= 2 && x.every((v) => Number.isFinite(v)) && x[0] > 0).map((x) => [x[0], x[1]] as [number, number]);
+}
+
 function Dissolution({ mkey, p }: { mkey: string; p: any }) {
   const dose0 = p.derived.dose_mg ?? null;
-  // volume and pH start empty: the server fills them from FDA's dissolution method for this molecule when there is one
-  const init = { dose_mg: dose0 as number | null, d50_um: 20, gsd: 1.8, lag_min: 2, volume_ml: null as number | null, q_pct: 75, q_time_min: 45, ph: null as number | null, ionization: "auto" as Ion, pka: null as number | null };
+  // volume, pH and paddle speed start empty: the server takes them from FDA's dissolution method when there is one;
+  // disintegration and granule break-up start empty too (assumed until you enter a measurement or measured points)
+  const init = { dose_mg: dose0 as number | null, d50_um: 20, gsd: 1.8, volume_ml: null as number | null, q_pct: 75, q_time_min: 45, ph: null as number | null,
+    rpm: null as number | null, disintegration_min: null as number | null, granule_breakup_min: null as number | null, ionization: "auto" as Ion, pka: null as number | null };
   const [f, setF] = useState(init);
-  useEffect(() => setF(init), [mkey]); // eslint-disable-line
-  const df = useDebounced(f);
+  const [measTxt, setMeasTxt] = useState("");
+  const [refTxt, setRefTxt] = useState("");
+  useEffect(() => { setF(init); setMeasTxt(""); setRefTxt(""); }, [mkey]); // eslint-disable-line
+  const body = useMemo(() => ({ ...f, measured: parseProfile(measTxt), reference: parseProfile(refTxt) }), [f, measTxt, refTxt]);
+  const df = useDebounced(body, 500);
   const q = useQuery({ queryKey: ["lab-diss", mkey, df], queryFn: () => post<any>(`/api/lab/molecule/${mkey}/dissolution`, df), placeholderData: keepPreviousData, retry: false });
   const r = q.data;
   const set = (k: string) => (v: any) => setF({ ...f, [k]: v });
+  const inp = (k: string) => r?.inputs?.[k];
+  const curve = (ts: number[], ps: number[]) => ts.map((t, i) => ({ t, pct: ps[i] }));
+  const fitted = r?.fit?.ok;
   return (
     <Card>
-      <CardHeader title="Dissolution in a USP vessel" subtitle="Noyes-Whitney with a Hintz-Johnson diffusion layer over a log-normal particle size distribution" />
+      <CardHeader title="Dissolution in a USP vessel" subtitle="The tablet disintegrates (Weibull), granules break up into particles, particles dissolve (Noyes-Whitney, diffusion layer from paddle speed) — fitted to your measured points when you give them" />
       <div className="grid gap-5 p-5 xl:grid-cols-[300px_1fr]">
         <div className="space-y-3">
           <Num label="Dose" unit="mg" value={f.dose_mg} onChange={set("dose_mg")} step={5} kind={f.dose_mg == null ? undefined : f.dose_mg === dose0 ? "source" : "user"} hint={p.provenance.dose.label} />
           <Num label="Particle d50" unit="µm" value={f.d50_um} min={1} max={200} onChange={set("d50_um")} dflt={20} />
           <Num label="Size spread (GSD)" value={f.gsd} min={1.1} max={3} step={0.1} onChange={set("gsd")} dflt={1.8} />
-          <Num label="Disintegration lag" unit="min" value={f.lag_min} min={0} max={20} step={0.5} onChange={set("lag_min")} dflt={2} />
+          <div className="label pt-1">Tablet</div>
+          <Num label="Disintegration time (measured)" unit="min" value={f.disintegration_min ?? inp("disintegration_min")?.value ?? null} step={0.5} onChange={set("disintegration_min")}
+            kind={f.disintegration_min != null ? "user" : (inp("disintegration_min")?.kind === "fitted" ? "estimate" : inp("disintegration_min")?.kind)}
+            hint={inp("disintegration_min")?.label ?? "From the IP disintegration test: the time by which the tablet has broken up"} />
+          <Num label="Granule break-up half-life" unit="min" value={f.granule_breakup_min ?? inp("granule_breakup_min")?.value ?? null} step={0.5} onChange={set("granule_breakup_min")}
+            kind={f.granule_breakup_min != null ? "user" : (inp("granule_breakup_min")?.kind === "fitted" ? "estimate" : inp("granule_breakup_min")?.kind)}
+            hint="How fast granules fall apart into primary particles; fitted when you enter measured points" />
+          <div className="label pt-1">Apparatus</div>
+          <Num label="Paddle speed" unit="rpm" value={f.rpm ?? inp("rpm")?.value ?? null} min={25} max={150} step={5} onChange={set("rpm")}
+            kind={f.rpm != null ? "user" : inp("rpm")?.kind} hint={inp("rpm")?.label ?? "No FDA method: 50 rpm assumed"} />
           <Num label="Medium volume" unit="mL" value={f.volume_ml ?? r?.inputs.medium.volume_ml ?? null} min={250} max={1000} step={50} onChange={set("volume_ml")}
             kind={f.volume_ml == null ? r?.inputs.medium.kind : "user"} hint={r?.inputs.medium.label} />
           {r?.fda_method && f.volume_ml == null && <div className="-mt-1 text-[10.5px] text-ink-muted">{r.inputs.medium.label}</div>}
           <IonControls f={{ ...f, ph: f.ph ?? r?.inputs.medium.ph ?? 6.8 }} set={set} p={p} />
           <div className="text-[10.5px] text-ink-muted">Generic Q: enter the monograph's</div>
           <div className="grid grid-cols-2 gap-2"><Num label="Q" unit="%" value={f.q_pct} onChange={set("q_pct")} dflt={75} /><Num label="at" unit="min" value={f.q_time_min} onChange={set("q_time_min")} dflt={45} /></div>
+          <label className="block text-xs"><div className="mb-1 font-medium text-ink-soft">Your measured profile <span className="text-ink-faint">(min, % — one per line)</span></div>
+            <textarea value={measTxt} onChange={(e) => setMeasTxt(e.target.value)} rows={4} placeholder={"5, 32\n10, 61\n15, 80\n30, 96"} className="input w-full font-mono text-xs" /></label>
+          <label className="block text-xs"><div className="mb-1 font-medium text-ink-soft">Reference profile for f2 <span className="text-ink-faint">(innovator / biobatch)</span></div>
+            <textarea value={refTxt} onChange={(e) => setRefTxt(e.target.value)} rows={3} placeholder={"5, 35\n10, 65\n15, 84\n30, 97"} className="input w-full font-mono text-xs" /></label>
         </div>
         <div>
           {q.error ? <ErrorNote error={q.error} /> : !r ? <Skeleton className="h-72" /> : (
             <>
               <div className="mb-1 flex flex-wrap items-center gap-2 text-sm"><VerdictBadge verdict={r.verdict} /><b>{r.at_q}%</b> dissolved at {r.spec.q_time_min} min (Q {r.spec.q_pct}%)<span className="text-ink-muted">· t85 {r.t85 ?? "not reached"} min · sink index {r.sink_index}</span></div>
-              <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
                 <span>{r.verdict_basis}</span>
                 <span className="flex items-center gap-1">· solubility {fmt(r.inputs.solubility_mg_ml.value)} mg/mL at medium pH <Pill kind={r.inputs.solubility_mg_ml.kind} url={r.inputs.solubility_mg_ml.url} label={r.inputs.solubility_mg_ml.label} /></span>
                 {r.inputs.pka.value != null && <span className="flex items-center gap-1">· pKa {r.inputs.pka.value} <Pill kind={r.inputs.pka.kind} url={r.inputs.pka.url} label={r.inputs.pka.label} /></span>}
+                <span>· diffusion layer {r.tablet.diffusion_layer_um} µm at {r.inputs.rpm.value} rpm</span>
               </div>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={r.times_min.map((t: number, i: number) => ({ t, pct: r.pct[i] }))}><CartesianGrid stroke="#eef2f7" /><XAxis dataKey="t" type="number" fontSize={11} unit=" min" /><YAxis domain={[0, 100]} fontSize={11} unit="%" /><Tooltip {...tip} />
-                  <ReferenceLine y={r.spec.q_pct} stroke="#e11d48" strokeDasharray="4 3" /><ReferenceLine x={r.spec.q_time_min} stroke="#e11d48" strokeDasharray="4 3" /><Line dataKey="pct" stroke="#0a9a7d" strokeWidth={2} dot={false} name="% dissolved (model)" /></LineChart>
+              {(r.fit || r.f2) && (
+                <div className="mb-3 flex flex-wrap gap-2 text-xs">
+                  {r.fit && <div className={cn("rounded-lg px-2.5 py-1.5 ring-1 ring-inset", fitted ? "bg-emerald-50 ring-emerald-200" : "bg-amber-50 ring-amber-200")}>
+                    {fitted ? <>Fitted to {r.fit.n} points: disintegration <b>{r.fit.disintegration_min} min</b>, granule break-up <b>{r.fit.granule_breakup_min} min</b> · RMSE {r.fit.rmse_pct} pts{r.fit.note ? ` · ${r.fit.note}` : ""}</> : <>Not fitted: {r.fit.reason}</>}</div>}
+                  {r.f2 && <div className={cn("rounded-lg px-2.5 py-1.5 ring-1 ring-inset", r.f2.similar ? "bg-emerald-50 ring-emerald-200" : r.f2.similar === false ? "bg-rose-50 ring-rose-200" : "bg-slate-50 ring-slate-200")}>
+                    <b>f2</b> {r.f2.f2 ?? "—"} · {r.f2.reason} <span className="text-ink-muted">({r.f2.basis})</span></div>}
+                </div>
+              )}
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart><CartesianGrid stroke="#eef2f7" /><XAxis dataKey="t" type="number" fontSize={11} unit=" min" domain={[0, "dataMax"]} allowDuplicatedCategory={false} /><YAxis domain={[0, 100]} fontSize={11} unit="%" /><Tooltip {...tip} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <ReferenceLine y={r.spec.q_pct} stroke="#e11d48" strokeDasharray="4 3" /><ReferenceLine x={r.spec.q_time_min} stroke="#e11d48" strokeDasharray="4 3" />
+                  <Line data={curve(r.ceiling.times_min, r.ceiling.pct)} dataKey="pct" stroke="#94a3b8" strokeDasharray="5 4" dot={false} name="drug substance only (ceiling)" />
+                  <Line data={curve(r.times_min, r.pct)} dataKey="pct" stroke="#0a9a7d" strokeWidth={2} dot={false} name={fitted ? "tablet model (fitted)" : "tablet model"} />
+                  <Line data={curve(r.times_min, r.tablet.tablet_pct)} dataKey="pct" stroke="#f59e0b" strokeWidth={1} dot={false} name="tablet still intact" />
+                  {r.measured?.length > 0 && <Scatter data={r.measured.map(([t, v]: number[]) => ({ t, pct: v }))} dataKey="pct" fill="#4f46e5" name="your measured points" />}
+                  {r.reference?.length > 0 && <Scatter data={r.reference.map(([t, v]: number[]) => ({ t, pct: v }))} dataKey="pct" fill="#e11d48" shape="diamond" name="reference" />}
+                </ComposedChart>
               </ResponsiveContainer>
+              <p className="mt-1 text-[11px] text-ink-muted">Grey dashes: {r.ceiling.label}. The tablet curve is only as good as the disintegration and break-up inputs — enter a measured disintegration time, or 3+ measured points to fit them.</p>
               {r.why.map((w: string) => <p key={w} className={cn("mt-2 text-xs", r.verdict === "withheld" ? "text-amber-800" : "text-rose-700")}>{w}</p>)}
             </>
           )}
@@ -225,7 +269,7 @@ function Bioequivalence({ mkey, p }: { mkey: string; p: any }) {
           <div className="label">Test product</div>
           <Num label="Dose" unit="mg" value={f.dose_mg} onChange={set("dose_mg")} step={5} kind={f.dose_mg == null ? undefined : f.dose_mg === dose0 ? "source" : "user"} hint={p.provenance.dose.label} />
           <Num label="Particle d50" unit="µm" value={f.d50_um} min={1} max={250} onChange={set("d50_um")} dflt={60} />
-          <Num label="Disintegration lag" unit="min" value={f.lag_min} min={0} max={60} onChange={set("lag_min")} dflt={5} />
+          <Num label="Disintegration time" unit="min" value={f.lag_min} min={0} max={60} onChange={set("lag_min")} dflt={5} />
           <Num label="Reference d50" unit="µm" value={f.ref_d50_um} min={1} max={50} onChange={set("ref_d50_um")} dflt={5} />
           <IonControls f={{ ...f, ph: f.ph ?? 6.8 }} set={set} p={p} />
           <div className="label pt-2">Pharmacokinetics (from the US label where it states them)</div>
@@ -451,7 +495,7 @@ export function Lab() {
   };
   if (list.error) return <ErrorNote error={list.error} />;
   if (!list.data) return <Skeleton className="h-96" />;
-  const needsMol = ["molecule", "dissolution", "be", "safety", "crystal"].includes(tab);
+  const needsMol = ["molecule", "dissolution", "be", "safety", "crystal", "twin"].includes(tab);
   return (
     <div className="space-y-5">
       <Card className="flex flex-wrap items-center gap-3 p-4">
@@ -461,7 +505,7 @@ export function Lab() {
               {mols.map((m: any) => <option key={m.key} value={m.key}>{m.name}{m.alerts ? ` · ${m.alerts} NSQ alerts` : ""}{m.has_structure ? "" : " · no structure yet"}</option>)}
             </select>
           : <span className="text-xs text-ink-muted">Generic process model: not tied to a molecule</span>}
-        <Segmented value={tab} onChange={setTab} options={[{ value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "be", label: "Bioequivalence" }, { value: "safety", label: "Safety" }, { value: "crystal", label: "Crystallisation" }, { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" }]} />
+        <Segmented value={tab} onChange={setTab} options={[{ value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "be", label: "Bioequivalence" }, { value: "safety", label: "Safety" }, { value: "crystal", label: "Crystallisation" }, { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" }, { value: "twin", label: "Failure tree" }]} />
         <span className="ml-auto flex items-center gap-2 text-[11px] text-ink-muted"><Beaker size={13} />{withStructure} of {mols.length} molecules have structures
           <span className="hidden items-center gap-1 lg:flex"><Pill kind="source" /> cited <Pill kind="estimate" /> published method <Pill kind="assumption" /> replace me</span></span>
       </Card>
@@ -479,6 +523,7 @@ export function Lab() {
           {tab === "be" && <Bioequivalence mkey={key} p={prof.data} />}
           {tab === "safety" && <Safety mkey={key} />}
           {tab === "crystal" && <Crystal mkey={key} solvents={list.data.solvents} engines={list.data.engines} />}
+          {tab === "twin" && <ProcessTwin mkey={key} />}
         </>
       ))}
       {tab === "compaction" && <Compaction materials={list.data.materials} note={list.data.materials_note} />}

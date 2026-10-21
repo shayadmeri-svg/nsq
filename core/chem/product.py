@@ -106,6 +106,153 @@ def dissolution(dose_mg: float, cs_mg_ml: float, diff_cm2_s: float, d50_um: floa
     }
 
 
+# --- tablet dissolution: disintegration → granules → particles, paddle hydrodynamics ----------------
+
+NU_WATER_37 = 0.00692  # cm²/s, kinematic viscosity of water at 37 °C
+
+
+def levich_layer_um(rpm: float, diff_cm2_s: float, nu_cm2_s: float = NU_WATER_37) -> float:
+    """Diffusion-layer thickness from the Levich rotating-disc solution, δ = 1.61·D^(1/3)·ν^(1/6)·ω^(-1/2).
+
+    Used as the hydrodynamic ceiling on the Hintz-Johnson layer (h = min(r, δ)), so paddle speed matters: 50 rpm
+    gives ~65 µm, 75 rpm ~55 µm for a small drug molecule. A USP paddle is not a rotating disc — this is the
+    standard first approximation, not a CFD result."""
+    omega = 2 * math.pi * max(rpm, 1.0) / 60
+    return 1.61 * diff_cm2_s ** (1 / 3) * nu_cm2_s ** (1 / 6) * omega ** -0.5 * 1e4
+
+
+def weibull_scale(t95_min: float, beta: float) -> float:
+    """Weibull scale τ such that 95% of the tablet has disintegrated at t95 (the measured disintegration time)."""
+    return t95_min / (-math.log(0.05)) ** (1 / beta)
+
+
+def tablet_dissolution(dose_mg: float, cs_mg_ml: float, diff_cm2_s: float, *, d50_um: float = 20.0, gsd: float = 1.8,
+                       density_g_cm3: float = 1.3, volume_ml: float = 900.0, rpm: float = 50.0,
+                       disintegration_min: float = 5.0, weibull_beta: float = 1.5, granule_breakup_min: float = 2.0,
+                       t_end_min: float = 60.0, bins: int = 15, cohort_min: float = 0.25, dt_s: float = 1.0) -> dict[str, Any]:
+    """A tablet in a paddle vessel: the tablet disintegrates (Weibull, 95% at the disintegration time) into
+    granules, granules break up into primary particles (first order, half-life `granule_breakup_min`), and each
+    released particle dissolves by Noyes-Whitney with h = min(r, Levich δ(rpm)) against the bulk concentration.
+
+    Particles are tracked in release cohorts (one per `cohort_min`), so a particle released late starts at its
+    full size instead of sharing the history of earlier ones."""
+    if dose_mg <= 0 or cs_mg_ml <= 0 or d50_um <= 0:
+        raise ValueError("dose, solubility and particle size must be positive")
+    if disintegration_min <= 0 or granule_breakup_min <= 0:
+        raise ValueError("disintegration and granule break-up times must be positive")
+    z = np.linspace(-2.5, 2.5, bins)
+    w = np.exp(-z ** 2 / 2)
+    w /= w.sum()
+    radii0 = (d50_um * gsd ** z) / 2 * 1e-4  # cm
+    rho = density_g_cm3
+    vol_const = rho * 4 / 3 * math.pi
+    pmass0 = vol_const * radii0 ** 3  # g per particle in each size class
+    cs = cs_mg_ml * 1e-3
+    total = dose_mg * 1e-3
+    delta_um = levich_layer_um(rpm, diff_cm2_s)
+    hmax = delta_um * 1e-4
+    tau = weibull_scale(disintegration_min, weibull_beta)
+    kg = math.log(2) / (granule_breakup_min * 60)  # 1/s
+
+    dt = float(dt_s)
+    steps = int(t_end_min * 60 / dt)
+    every = max(1, int(round(cohort_min * 60 / dt)))
+    granules = 0.0  # g of drug held in granules
+    released_prev = 0.0  # tablet fraction released so far
+    R = np.zeros((0, bins))
+    N = np.zeros((0, bins))
+    pending = 0.0  # particle mass released since the last cohort
+    rec_t, rec_p, rec_tab, rec_gran = [0.0], [0.0], [100.0], [0.0]
+    record = max(1, steps // 180)
+    for k in range(1, steps + 1):
+        t = k * dt
+        frac = 1 - math.exp(-((t / 60) / tau) ** weibull_beta)
+        granules += (frac - released_prev) * total
+        released_prev = frac
+        freed = granules * (1 - math.exp(-kg * dt))
+        granules -= freed
+        pending += freed
+        if k % every == 0 and pending > 0:
+            R = np.vstack([R, radii0])
+            N = np.vstack([N, pending * w / pmass0])
+            pending = 0.0
+        undissolved = float(np.sum(N * vol_const * R ** 3)) if R.size else 0.0
+        dissolved = total - (1 - released_prev) * total - granules - pending - undissolved
+        c = max(dissolved, 0.0) / volume_ml
+        if R.size:
+            drive = diff_cm2_s * (cs - c) / rho
+            big = R > hmax
+            R = np.where(big, R - drive / hmax * dt, np.sqrt(np.maximum(R ** 2 - 2 * drive * dt, 0.0)))
+            R = np.maximum(R, 0.0)
+        if k % record == 0 or k == steps:
+            undissolved = float(np.sum(N * vol_const * R ** 3)) if R.size else 0.0
+            dissolved = total - (1 - released_prev) * total - granules - pending - undissolved
+            rec_t.append(round(t / 60, 3))
+            rec_p.append(round(100 * max(dissolved, 0.0) / total, 2))
+            rec_tab.append(round(100 * (1 - released_prev), 2))
+            rec_gran.append(round(100 * granules / total, 2))
+    sink = cs_mg_ml * volume_ml / dose_mg
+    return {"times_min": rec_t, "pct": rec_p, "tablet_pct": rec_tab, "granule_pct": rec_gran,
+            "diffusion_layer_um": round(delta_um, 1), "weibull_tau_min": round(tau, 3), "sink_index": round(sink, 2),
+            "assumptions": [
+                f"Disintegration: Weibull, β {weibull_beta:g}, 95% of the tablet broken up at {disintegration_min:g} min",
+                f"Granules release primary particles first order, half-life {granule_breakup_min:g} min",
+                f"Primary particles log-normal, d50 {d50_um:g} µm, GSD {gsd:g}; Noyes-Whitney with h = min(r, {delta_um:.0f} µm)",
+                f"Diffusion layer ceiling from the Levich rotating-disc relation at {rpm:g} rpm (a paddle is approximated as a disc)",
+                f"Perfectly mixed {volume_ml:g} mL vessel; no coning, no floating, no gelling excipients",
+            ]}
+
+
+def f2(reference: list[tuple[float, float]], test: list[tuple[float, float]]) -> dict[str, Any]:
+    """FDA/EMA similarity factor f2 = 50·log10(100 / sqrt(1 + mean((R−T)²))), on shared time points.
+
+    Rules applied (FDA guidance, Dissolution testing of IR solid oral dosage forms): at least 3 shared points, only
+    one point after both profiles pass 85%, and when both release ≥ 85% by 15 min the profiles are similar without f2."""
+    ref = {round(float(t), 3): float(p) for t, p in reference}
+    tst = {round(float(t), 3): float(p) for t, p in test}
+    times = sorted(set(ref) & set(tst) - {0.0})
+    if not times:
+        return {"f2": None, "similar": None, "reason": "no shared time points"}
+    if all(ref[t] >= 85 and tst[t] >= 85 for t in times if t <= 15) and any(t <= 15 for t in times):
+        return {"f2": None, "similar": True, "points": [t for t in times if t <= 15],
+                "reason": "both release ≥ 85% within 15 min: similar without f2 (very rapidly dissolving)"}
+    used = []
+    for t in times:
+        used.append(t)
+        if ref[t] >= 85 and tst[t] >= 85:
+            break
+    if len(used) < 3:
+        return {"f2": None, "similar": None, "points": used, "reason": "needs at least 3 shared time points (only one after 85%)"}
+    msd = sum((ref[t] - tst[t]) ** 2 for t in used) / len(used)
+    val = 50 * math.log10(100 / math.sqrt(1 + msd))
+    return {"f2": round(val, 1), "similar": val >= 50, "points": used,
+            "reason": f"f2 {val:.1f} on {len(used)} points ({'≥' if val >= 50 else '<'} 50)"}
+
+
+def fit_tablet(points: list[tuple[float, float]], base: dict[str, Any]) -> dict[str, Any]:
+    """Fit the disintegration time and granule break-up half-life to measured % dissolved (least squares, log scale)."""
+    from scipy.optimize import least_squares
+
+    pts = [(float(t), float(p)) for t, p in points if t is not None and p is not None and float(t) > 0]
+    if len(pts) < 3:
+        return {"ok": False, "reason": "needs at least 3 measured points"}
+    t_end = max(base.get("t_end_min", 60), max(t for t, _ in pts))
+
+    def model(x):
+        # coarser grid while searching (the reported curve is recomputed at full resolution by the caller)
+        res = tablet_dissolution(**{**base, "t_end_min": t_end, "disintegration_min": float(np.exp(x[0])),
+                                    "granule_breakup_min": float(np.exp(x[1])), "bins": 9, "cohort_min": 0.5, "dt_s": 3.0})
+        return np.interp([t for t, _ in pts], res["times_min"], res["pct"])
+
+    x0 = np.log([base.get("disintegration_min", 5.0), base.get("granule_breakup_min", 2.0)])
+    sol = least_squares(lambda x: model(x) - np.array([p for _, p in pts]), x0, bounds=(np.log([0.05, 0.02]), np.log([120, 120])),
+                        diff_step=0.05, max_nfev=40)
+    resid = sol.fun
+    return {"ok": True, "disintegration_min": round(float(np.exp(sol.x[0])), 2), "granule_breakup_min": round(float(np.exp(sol.x[1])), 2),
+            "rmse_pct": round(float(np.sqrt(np.mean(resid ** 2))), 2), "n": len(pts),
+            "note": "two parameters fitted to the points; with exactly 3 points the fit has one degree of freedom" if len(pts) == 3 else None}
+
+
 # --- compaction ------------------------------------------------------------------------------------
 
 MATERIALS = {

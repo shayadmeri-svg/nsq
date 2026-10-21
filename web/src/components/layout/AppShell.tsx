@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, KeyRound, LayoutDashboard, LogOut, Map, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
+import { Activity, BookOpenCheck, Building2, ChevronDown, ClipboardList, Compass, Factory, FlaskConical, FlaskRound, Gauge, Globe2, KeyRound, LayoutDashboard, LogOut, Map, Menu, PanelLeftClose, PanelLeftOpen, ScrollText, ShieldCheck, Sparkles, UserCog, Users, Workflow } from "lucide-react";
 import { createContext, useContext } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -191,6 +191,7 @@ export function AppShell({ me }: { me: Me }) {
           <NavItem to={`/o/${slug}/infrastructure`} icon={<Factory size={17} />}>Infrastructure</NavItem>
           <NavItem to={`/o/${slug}/opportunities`} icon={<Sparkles size={17} />}>Patent opportunities</NavItem>
           <NavItem to={`/o/${slug}/eu`} icon={<Globe2 size={17} />}>EU export route</NavItem>
+          <NavItem to={`/o/${slug}/pharmacopoeia`} icon={<BookOpenCheck size={17} />}>Pharmacopoeia changes</NavItem>
           {!me.is_platform && me.features?.length > 0 && <NavItem to={`/o/${slug}/playground`} icon={<Compass size={17} />}>Playground</NavItem>}
           {(me.is_platform || me.role === "org_admin") && <NavItem to={`/o/${slug}/team`} icon={<Users size={17} />}>Team</NavItem>}
           {(me.is_platform || me.role === "org_admin") && <NavItem to={`/o/${slug}/access`} icon={<KeyRound size={17} />}>Feature access</NavItem>}

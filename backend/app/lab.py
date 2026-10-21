@@ -15,6 +15,7 @@ import re
 from collections import Counter, defaultdict
 from typing import Any, Optional
 
+import numpy as np
 import requests
 
 from chem import crystallization, molecule, product, thermo_props
@@ -490,11 +491,81 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
     volume = float(p["volume_ml"]) if p.get("volume_ml") not in (None, "") else float((meth or {}).get("volume_ml") or 900)
     ph = float(p["ph"]) if p.get("ph") not in (None, "") else float((meth or {}).get("ph") or 6.8)
     t_end = float(p["t_end_min"]) if p.get("t_end_min") not in (None, "") else max(60.0, max((meth or {}).get("times_min") or [60.0]))
-    res = product.dissolution(dose_mg=dose, cs_mg_ml=cs, diff_cm2_s=float(p.get("diffusivity") or d["diffusivity_cm2_s"]),
-                              d50_um=float(p.get("d50_um", 20)), gsd=float(p.get("gsd", 1.8)), density_g_cm3=float(p.get("density", 1.3)),
-                              volume_ml=volume, lag_min=float(p.get("lag_min", 2)), q_pct=float(p.get("q_pct", 75)),
-                              q_time_min=float(p.get("q_time_min", 45)), t_end_min=t_end,
-                              ionization=ion, pka=pka, ph=ph)
+    diff = float(p.get("diffusivity") or d["diffusivity_cm2_s"])
+    d50, gsd_, dens = float(p.get("d50_um", 20)), float(p.get("gsd", 1.8)), float(p.get("density", 1.3))
+    q_pct, q_time = float(p.get("q_pct", 75)), float(p.get("q_time_min", 45))
+    # Paddle speed: typed > FDA's method > 50 rpm (assumed)
+    if p.get("rpm") not in (None, ""):
+        rpm, rpm_kind = float(p["rpm"]), "user"
+    elif meth and meth.get("rpm"):
+        rpm, rpm_kind = float(meth["rpm"]), "source"
+    else:
+        rpm, rpm_kind = 50.0, "assumption"
+    # Disintegration time: a measured value (IP disintegration test) when typed; the old "lag" input maps onto it
+    dis_in = p.get("disintegration_min") if p.get("disintegration_min") not in (None, "") else p.get("lag_min")
+    dis, dis_kind = (float(dis_in), "user") if dis_in not in (None, "") and float(dis_in) > 0 else (5.0, "assumption")
+    gb_in = p.get("granule_breakup_min")
+    gb, gb_kind = (float(gb_in), "user") if gb_in not in (None, "") and float(gb_in) > 0 else (2.0, "assumption")
+
+    def _pts(v: Any) -> list[tuple[float, float]]:
+        out_ = []
+        for x in v or []:
+            try:
+                t_, y_ = (x["t"], x["pct"]) if isinstance(x, dict) else (x[0], x[1])
+                out_.append((float(t_), float(y_)))
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+        return sorted(out_)
+
+    measured, reference = _pts(p.get("measured")), _pts(p.get("reference"))
+    # Drug-substance ceiling: every primary particle free at t = 0 (the old model, now with the rpm-based layer)
+    layer = product.levich_layer_um(rpm, diff)
+    res = product.dissolution(dose_mg=dose, cs_mg_ml=cs, diff_cm2_s=diff, d50_um=d50, gsd=gsd_, density_g_cm3=dens,
+                              volume_ml=volume, h_max_um=layer, lag_min=0.0, q_pct=q_pct, q_time_min=q_time,
+                              t_end_min=t_end, ionization=ion, pka=pka, ph=ph)
+    base = dict(dose_mg=dose, cs_mg_ml=res["solubility_mg_ml"], diff_cm2_s=diff, d50_um=d50, gsd=gsd_, density_g_cm3=dens,
+                volume_ml=volume, rpm=rpm, disintegration_min=dis, granule_breakup_min=gb,
+                t_end_min=max(t_end, max((t_ for t_, _ in measured + reference), default=0)))
+    fit = None
+    if len(measured) >= 3:
+        fit = product.fit_tablet(measured, base)
+        if fit.get("ok"):
+            base.update(disintegration_min=fit["disintegration_min"], granule_breakup_min=fit["granule_breakup_min"])
+            dis, gb, dis_kind, gb_kind = fit["disintegration_min"], fit["granule_breakup_min"], "fitted", "fitted"
+    tab = product.tablet_dissolution(**base)
+    times_, pct_ = tab["times_min"], tab["pct"]
+    at_q = float(np.interp(q_time, times_, pct_))
+
+    def _t_at(target: float, ts: list[float], ps: list[float]) -> Optional[float]:
+        for (t0, p0), (t1, p1) in zip(zip(ts, ps), zip(ts[1:], ps[1:])):
+            if p1 >= target > p0:
+                return round(t0 + (target - p0) / (p1 - p0) * (t1 - t0), 1)
+        return None
+
+    why = [w for w in res["why"] if w.startswith(("Not enough solubility", "Non-sink"))]
+    verdict = "pass" if at_q >= q_pct else "fail"
+    if verdict == "fail" and res["sink_index"] >= 1:
+        ceiling_at_q = res["at_q"]
+        if ceiling_at_q >= q_pct:
+            why.append(f"The drug substance itself would reach {ceiling_at_q:.0f}% by {q_time:g} min: the tablet (disintegration "
+                       f"{dis:g} min, granule break-up half-life {gb:g} min) is what holds it back.")
+        else:
+            why.append("Even free primary particles miss Q: particle size or solubility limits it, not the tablet.")
+    # f2: the regulator's similarity factor — measured (or, failing that, model) test profile against a reference profile
+    f2r = None
+    if reference:
+        if measured:
+            f2r = {**product.f2(reference, measured), "basis": "your measured profile vs the reference profile"}
+        else:
+            model_pts = [(t_, float(np.interp(t_, times_, pct_))) for t_, _ in reference]
+            f2r = {**product.f2(reference, model_pts), "basis": "model profile vs the reference profile (what-if, not a measurement)"}
+    res = {**res, "times_min": times_, "pct": pct_, "at_q": round(at_q, 1), "t50": _t_at(50, times_, pct_), "t85": _t_at(85, times_, pct_),
+           "verdict": verdict, "why": why,
+           "ceiling": {"times_min": res["times_min"], "pct": res["pct"], "t85": res["t85"], "at_q": res["at_q"],
+                       "label": "drug substance only: every primary particle free at t = 0 (an upper bound, not a tablet)"},
+           "tablet": {k: tab[k] for k in ("tablet_pct", "granule_pct", "diffusion_layer_um", "weibull_tau_min")},
+           "measured": measured, "reference": reference, "fit": fit, "f2": f2r,
+           "assumptions": tab["assumptions"] + [a for a in res["assumptions"] if a.startswith(("Diffusivity", "Weak", "Neutral", "Acceptance"))]}
     if withheld:
         res = {**res, "verdict": "withheld", "why": [f"Verdict withheld: {w}." for w in withheld] + res["why"]}
     def _given(k: str, dflt: float) -> float:
@@ -507,7 +578,11 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
         sol_label = (f"{cs:.3g} mg/mL at 37 °C, extrapolated from {sol.get('display_mg_ml')} mg/mL at 25 °C ({sol.get('model')}) "
                      "with the van 't Hoff equation and ΔHfus")
     return {**res, "withheld": withheld,
-            "verdict_basis": "model result under the assumed particle size" + (" and generic Q" if {"q_pct", "q_time_min"} & set(assumed) else ""),
+            "verdict_basis": ("model fitted to your measured points" if fit and fit.get("ok") else
+                              "model with assumed " + ", ".join(x for x, k_ in (("disintegration time", dis_kind), ("granule break-up", gb_kind),
+                                                                               ("paddle speed", rpm_kind)) if k_ == "assumption") if "assumption" in (dis_kind, gb_kind, rpm_kind)
+                              else "model result under the assumed particle size")
+                             + (" and generic Q" if {"q_pct", "q_time_min"} & set(assumed) else ""),
             "inputs": {"dose_mg": {"value": dose, "kind": dose_kind, "label": prof["provenance"]["dose"]["label"] if dose_kind == "source" else None},
                        "solubility_mg_ml": {"value": float(f"{cs:.3g}"), "kind": cs_kind if cs_kind == "user" else "estimate", "label": sol_label,
                                             "url": sol.get("url")},
@@ -519,8 +594,58 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
                                   "url": (meth or {}).get("url")},
                        "pka": {"value": pka, "kind": pka_kind, "ionization": ion, "label": d["pka"].get("source") if pka_kind in ("source", "estimate") else None,
                                "url": d["pka"].get("url")},
-                       "diffusivity": {"value": d["diffusivity_cm2_s"], "kind": "estimate", "label": d["diffusivity_note"]}},
+                       "diffusivity": {"value": d["diffusivity_cm2_s"], "kind": "estimate", "label": d["diffusivity_note"]},
+                       "rpm": {"value": rpm, "kind": rpm_kind, "label": "FDA method" if rpm_kind == "source" else None},
+                       "disintegration_min": {"value": dis, "kind": dis_kind,
+                                              "label": "fitted to your points" if dis_kind == "fitted" else "enter the measured disintegration time (IP test)" if dis_kind == "assumption" else None},
+                       "granule_breakup_min": {"value": gb, "kind": gb_kind, "label": "fitted to your points" if gb_kind == "fitted" else None}},
             "assumed": assumed, "fda_method": meth}
+
+
+_twin_cache: dict[str, Any] = {}
+
+
+def process_twin(key: str, p: dict[str, Any]) -> dict[str, Any]:
+    """Process twin of a wet-granulated tablet of this molecule: unit operations, error injection, Monte Carlo,
+    Morris sensitivity, tipping points and the failure tree (chem.process_twin). The molecule enters through its
+    dose (CDSCO strengths), solubility at the FDA method's medium pH and diffusivity; its CDSCO failure pattern sits
+    next to the model's failure probabilities."""
+    import json as _json
+
+    from chem import process_twin as twin
+
+    prof = profile(key)
+    if prof is None:
+        raise KeyError(key)
+    d = prof["derived"]
+    overrides = {k: v for k, v in (p.get("overrides") or {}).items() if v not in (None, "")}
+    specs = {k: float(v) for k, v in (p.get("specs") or {}).items() if v not in (None, "")}
+    form = {k: float(v) for k, v in (p.get("formulation") or {}).items() if v not in (None, "")}
+    ck = _json.dumps([key, overrides, specs, form, p.get("dose_mg")], sort_keys=True, default=str)
+    if ck in _twin_cache:
+        return _twin_cache[ck]
+    diss = dissolution(key, {"dose_mg": p.get("dose_mg")} if p.get("dose_mg") else {})
+    dose = float(diss["inputs"]["dose_mg"]["value"])
+    cs = float(diss["solubility_mg_ml"])
+    meth = diss.get("fda_method")
+    if meth and meth.get("rpm"):
+        form.setdefault("rpm", float(meth["rpm"]))
+    if meth and meth.get("volume_ml"):
+        vol = float(meth["volume_ml"])
+    else:
+        vol = 900.0
+    nsq = prof.get("nsq") or {}
+    mol = twin.Molecule(name=prof["name"], dose_mg=dose, cs37_mg_ml=cs, diff_cm2_s=float(d["diffusivity_cm2_s"]), volume_ml=vol,
+                        cdsco_categories=nsq.get("categories") or [], alerts=int(nsq.get("alerts") or 0))
+    withheld = {"dissolution": "; ".join(diss["withheld"])} if diss.get("withheld") else None
+    out = twin.run(mol, overrides, form, specs, withheld=withheld)
+    out["molecule"] = {"key": key, "name": prof["name"], "dose_mg": dose, "dose_kind": diss["inputs"]["dose_mg"]["kind"],
+                       "solubility_mg_ml": cs, "solubility_label": diss["inputs"]["solubility_mg_ml"]["label"],
+                       "medium": diss["inputs"]["medium"]["label"], "diffusivity": d["diffusivity_cm2_s"], "alerts": mol.alerts}
+    if len(_twin_cache) > 64:
+        _twin_cache.clear()
+    _twin_cache[ck] = out
+    return out
 
 
 def engines() -> dict[str, Any]:

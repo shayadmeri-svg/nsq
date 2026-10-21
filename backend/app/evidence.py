@@ -184,4 +184,7 @@ def for_alert(product: str, category: str) -> dict[str, Any]:
     out["label"] = label_block(key)
     out["recalls"] = recalls_block(key, category)
     out["patents"] = patents_block(key)
+    from . import pharmacopoeia as ph
+
+    out["pheur"] = ph.molecule_changes(key, {category} if category else None)
     return out

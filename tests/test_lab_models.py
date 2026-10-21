@@ -105,3 +105,51 @@ def test_crystallisation_curve_covers_slider_range_and_flags_ideal():
     assert c["temps_c"][0] <= -10 and c["temps_c"][-1] >= 85
     assert c["ideal"] and not c["solvent_modelled"]
     assert not thermo_props.curve(151.16, 169.8, 27000, "ethanol", gamma=3)["ideal"]
+
+
+# --- tablet dissolution: disintegration → granules → particles ---------------------------------------
+
+def test_tablet_converges_to_the_particle_ceiling_when_it_breaks_up_instantly():
+    import numpy as np
+
+    fast = product.tablet_dissolution(650, 22.5, 9.9e-6, rpm=50, disintegration_min=0.02, granule_breakup_min=0.01, t_end_min=5,
+                                      cohort_min=0.02)
+    ceiling = product.dissolution(650, 22.5, 9.9e-6, lag_min=0, t_end_min=5, h_max_um=fast["diffusion_layer_um"])
+    for t in (1.0, 2.0, 4.0):
+        assert np.interp(t, fast["times_min"], fast["pct"]) == pytest.approx(np.interp(t, ceiling["times_min"], ceiling["pct"]), abs=3)
+
+
+def test_disintegration_and_breakup_slow_a_soluble_drug():
+    import numpy as np
+
+    slow = product.tablet_dissolution(650, 22.5, 9.9e-6, rpm=50, disintegration_min=10, granule_breakup_min=4, t_end_min=60)
+    assert np.interp(2, slow["times_min"], slow["pct"]) < 15  # not the near-instant curve of free particles
+    assert slow["pct"][-1] > 95
+    # mass balance: intact tablet + granules + dissolved never exceeds the dose
+    assert all(a + b + c <= 100.5 for a, b, c in zip(slow["tablet_pct"], slow["granule_pct"], slow["pct"]))
+
+
+def test_levich_layer_thins_with_paddle_speed():
+    assert product.levich_layer_um(50, 1e-5) > product.levich_layer_um(100, 1e-5)
+    assert product.levich_layer_um(100, 1e-5) == pytest.approx(product.levich_layer_um(50, 1e-5) / 2 ** 0.5, rel=1e-6)
+
+
+def test_fit_recovers_known_tablet_parameters():
+    import numpy as np
+
+    truth = product.tablet_dissolution(650, 22.5, 9.9e-6, rpm=50, disintegration_min=6, granule_breakup_min=3, t_end_min=45)
+    pts = [(t, float(np.interp(t, truth["times_min"], truth["pct"]))) for t in (5, 10, 15, 20, 30, 45)]
+    fit = product.fit_tablet(pts, {"dose_mg": 650, "cs_mg_ml": 22.5, "diff_cm2_s": 9.9e-6, "rpm": 50, "t_end_min": 45})
+    assert fit["ok"] and fit["rmse_pct"] < 3
+    assert fit["disintegration_min"] == pytest.approx(6, rel=0.35)
+
+
+def test_f2_follows_the_fda_rules():
+    same = product.f2([(5, 30), (10, 60), (15, 80), (30, 95)], [(5, 30), (10, 60), (15, 80), (30, 95)])
+    assert same["f2"] == pytest.approx(100.0)
+    apart = product.f2([(5, 30), (10, 60), (15, 80), (30, 95)], [(5, 10), (10, 25), (15, 40), (30, 60)])
+    assert apart["f2"] < 50 and apart["similar"] is False
+    rapid = product.f2([(5, 90), (10, 96), (15, 99)], [(5, 88), (10, 97), (15, 100)])
+    assert rapid["f2"] is None and rapid["similar"] is True  # both ≥ 85% by 15 min
+    few = product.f2([(5, 30), (10, 60)], [(5, 31), (10, 59)])
+    assert few["f2"] is None  # fewer than 3 shared points

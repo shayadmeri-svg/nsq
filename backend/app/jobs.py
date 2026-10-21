@@ -233,6 +233,7 @@ SOURCE_TITLES = {
     "fda_labels": "FDA drug labels (excipients, pharmacokinetics)",
     "fda_dissolution": "FDA Dissolution Methods Database",
     "patent_families": "Google Patents (compound patent families)",
+    "edqm_kd": "EDQM Knowledge Database (Ph. Eur. monographs)",
     "cdsco_plants": "CDSCO plant registry (WHO-GMP + SUGAM)",
     "cdsco_wc": "CDSCO Written Confirmations (API exports to EU)",
     "eudragmdp": "EU GMP certificates (EudraGMDP, India)",
@@ -254,6 +255,7 @@ _SOURCE_JOB_DESC = {
     "fda_labels": "Single-ingredient US labels (openFDA): the inactive ingredients and the PK values each label states (half-life, volume, bioavailability, Tmax, clearance), quoted with the DailyMed link — Lab bioequivalence inputs and Investigate evidence.",
     "fda_dissolution": "FDA's recommended dissolution method for every drug product (apparatus, rpm, medium, volume, sampling times) — Lab dissolution inputs and Investigate evidence.",
     "patent_families": "For each molecule's Orange Book drug-substance patents: title, assignee and dates from Google Patents, the compound patent's international (PCT) filing date, each family member's legal status per country and SPCs — the per-market patent status (core/patent_terms.py). Pages cached 30 days, one per second.",
+    "edqm_kd": "For each molecule, its European Pharmacopoeia monograph(s) from EDQM's free Knowledge Database: status, last supplement / issue, ongoing revision (Pharmeuropa) and the revision history per issue; implementation dates from EDQM's publication schedule — Organisation → Pharmacopoeia changes, Workbench, Investigate. Pages cached 30 days.",
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
     "cdsco_wc": "CDSCO International Cell: every Written Confirmation for API exports to the EU (~700 letters since 2013) with its PDF — Playground · Written confirmations. Runs on the server: the index every time, then only letters not yet held, newest first, while the disk keeps WC_MIN_FREE_GB free (first full download ~1.5 GB, spread over runs by the time budget). If CDSCO refuses the server, set INDIA_PROXY in .env — or run just fetch-cdsco-wc on a laptop and just push-wc.",
@@ -270,7 +272,7 @@ _SOURCE_JOB_DESC = {
 }
 _MOLECULE_SOURCES = {"orange_book", "purple_book", "ema", "clinical_trials", "chembl", "patent_families", "fda_dissolution"}
 # Sources that query per molecule, so they need the molecule candidates first
-_PER_MOLECULE = ("clinical_trials", "pubchem", "chembl", "fda_labels", "patent_families")
+_PER_MOLECULE = ("clinical_trials", "pubchem", "chembl", "fda_labels", "patent_families", "edqm_kd")
 
 # Sources the server cannot fetch (the publisher refuses cloud networks, needs a key, or the download is too big for
 # the server): run the recipe on a laptop, then push the file. The server's daily sync skips the heavy ones.
