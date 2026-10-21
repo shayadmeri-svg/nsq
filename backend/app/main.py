@@ -39,6 +39,32 @@ def init_db() -> None:
         db.commit()
 
 
+def ensure_plant_sim_connector() -> None:
+    """The plant simulator service (docker compose --profile demo) streams with PLANT_SIM_TOKEN into the organisation
+    PLANT_SIM_ORG: keep a connector with that token, so the demo needs no copying of tokens."""
+    import os
+
+    from .models import PlantConnector
+    from .routers.plant_data import _hash
+
+    token, slug = os.environ.get("PLANT_SIM_TOKEN", ""), os.environ.get("PLANT_SIM_ORG", "")
+    if not token or not slug:
+        return
+    with SessionLocal() as db:
+        org = db.scalar(select(Org).where(Org.slug == slug))
+        if org is None:
+            log.warning("PLANT_SIM_ORG=%s: no such organisation", slug)
+            return
+        c = db.scalar(select(PlantConnector).where(PlantConnector.token_hash == _hash(token)))
+        if c is None:
+            db.add(PlantConnector(org_id=org.id, name="Demo simulator", token_hash=_hash(token), token_hint=token[:10],
+                                  created_by="PLANT_SIM_TOKEN", status={}, agent={}))
+            log.warning("plant simulator connector created for %s", slug)
+        elif c.org_id != org.id:
+            c.org_id = org.id
+        db.commit()
+
+
 def rename_retired_plants() -> None:
     """Move references off plant ids the seed has retired (renamed) and drop their Redis keys."""
     try:
@@ -101,6 +127,7 @@ def restore_user_plants() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ensure_plant_sim_connector()
     rename_retired_plants()
     restore_user_plants()
     scheduler.start()

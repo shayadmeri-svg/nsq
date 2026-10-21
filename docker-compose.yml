@@ -82,6 +82,9 @@ services:
       - COMTRADE_KEY=${COMTRADE_KEY:-}
       - INDIA_PROXY=${INDIA_PROXY:-}
       - WC_MIN_FREE_GB=${WC_MIN_FREE_GB:-3}
+      # Plant data demo: the connector the plant-sim service streams with (both empty = no demo connector)
+      - PLANT_SIM_TOKEN=${PLANT_SIM_TOKEN:-}
+      - PLANT_SIM_ORG=${PLANT_SIM_ORG:-}
     volumes:
       # Seeds, snapshot and CSV uploads. Read-write: the snapshot and
       # refresh jobs write here.
@@ -101,6 +104,27 @@ services:
     restart: unless-stopped
     expose:
       - "8010"
+    networks: [nsq-net]
+
+  plant-sim:
+    # Simulated dryer + tablet press (OPC UA) read by the real edge agent and streamed to the API, for demos of
+    # Playground → Plant data → Live. Off unless asked for: docker compose --profile demo up -d plant-sim
+    # Needs PLANT_SIM_TOKEN (any long random string starting evd_) and PLANT_SIM_ORG (an organisation slug) in .env.
+    profiles: ["demo"]
+    build:
+      context: ./edge-agent
+    image: nsq-plant-sim:local
+    container_name: nsq-plant-sim
+    environment:
+      - EURVEDA_TOKEN=${PLANT_SIM_TOKEN:-}
+      - EURVEDA_URL=http://api:8001
+      - SIM_SPEED=${SIM_SPEED:-30}
+      - SIM_FAULT=${SIM_FAULT:-short-dry}
+      - SIM_FAULT_EVERY=${SIM_FAULT_EVERY:-3}
+    mem_limit: 320m
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
     networks: [nsq-net]
 
   web:

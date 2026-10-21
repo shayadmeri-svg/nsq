@@ -23,6 +23,7 @@ import logging
 import math
 import random
 import struct
+import time
 
 from asyncua import Server, ua
 
@@ -41,6 +42,7 @@ class Plant:
         self.rng = random.Random(seed)
         self.fault, self.every = fault, every
         self.n = 1
+        self.prefix = time.strftime("B%d%H%M-")  # batch numbers stay unique across restarts: B220024-001, B220024-002…
         self.fbd_t = 0.0
         self.press_batch = ""
         self.press_t = 0.0
@@ -51,7 +53,7 @@ class Plant:
 
     def _new_fbd_batch(self) -> None:
         f = self._faulty(self.n)
-        self.fbd_batch = f"SIM{self.n:04d}"
+        self.fbd_batch = f"{self.prefix}{self.n:03d}"
         self.fbd_target = (39.0 if f and self.fault == "short-dry" else self.rng.gauss(60, 1.5))
         self.fbd_rh = 25.0 if f and self.fault == "humid-air" else self.rng.gauss(8, 0.8)
         self.fbd_final = 1.6 + 0.09 * max(0.0, 60 - self.fbd_target) + 0.06 * max(0.0, self.fbd_rh - 8) + self.rng.gauss(0, 0.12)

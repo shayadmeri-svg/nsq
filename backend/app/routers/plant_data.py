@@ -34,7 +34,8 @@ from ..security import current_user, org_for_user
 router = APIRouter(prefix="/api/plant-data/{slug}", tags=["plant-data"], dependencies=[Depends(features.gate)])
 ingest_router = APIRouter(prefix="/api/ingest/plant-data", tags=["plant-data"])
 LIVE = "live:"  # filename prefix of datasets fed by a connector: live:<connector id>:<machine>
-MAX_LIVE_ROWS = 20_000
+MAX_LIVE_ROWS = 3_000  # raw tail kept per live stream; older batches keep their per-batch values
+MAX_LIVE_BATCHES = 300
 _live_cache: dict[tuple, tuple[dict[str, Any], dict[str, Any]]] = {}
 ONLINE_S = 90
 
@@ -317,7 +318,9 @@ def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current
     org = org_for_user(db, slug, user)
     conns = db.scalars(select(PlantConnector).where(PlantConnector.org_id == org.id)).all()
     rows = _datasets(db, org.id)
-    live_ds = [d for d in rows if (d.filename or "").startswith(LIVE)]
+    live_all = [d for d in rows if (d.filename or "").startswith(LIVE)]
+    online = {c.id for c in conns if _online(c)}
+    live_ds = [d for d in live_all if int(((d.filename or "").split(":") + ["0", "0"])[1] or 0) in online]  # machines running now
     machines = []
     for d in live_ds:
         raw = d.raw or []
@@ -351,7 +354,7 @@ def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current
     # Calibration and the model's bias against this plant's measured results (uploaded files) change only when the
     # files do: computed once per file set, not on every 5-second refresh.
     files = [d for d in rows if not (d.filename or "").startswith(LIVE)]
-    ck = (org.id, molecule, tuple((d.id, len(d.raw or [])) for d in (files or live_ds)))
+    ck = (org.id, molecule, tuple((d.id, len(d.raw or [])) for d in (files or live_all)))
     hit = _live_cache.get(ck)
     if hit is None:
         cal = _calibration(rows)
@@ -432,10 +435,14 @@ def ingest(body: dict[str, Any] = Body(...), authorization: str = Header(""), db
                               batches={}, uploaded_by=f"connector:{c.name}")
             db.add(ds)
         raw = [*(ds.raw or []), *new][-MAX_LIVE_ROWS:]
-        df = pd.DataFrame(raw).fillna("").astype(str)
+        touched = {r["batch_no"] for r in new}
+        df = pd.DataFrame([r for r in raw if r["batch_no"] in touched]).fillna("").astype(str)
         mapping = {k: k for k in df.columns if k in bd.F}
-        ds.raw, ds.columns, ds.mapping, ds.format = raw, list(df.columns), mapping, fmt
-        ds.batches = bd.aggregate(df, fmt, mapping)
+        batches = {**(ds.batches or {}), **bd.aggregate(df, fmt, mapping)}  # only the batches this push touched
+        ds.raw, ds.format = raw, fmt
+        ds.columns = list(dict.fromkeys([*(ds.columns or []), *df.columns]))
+        ds.mapping = {k: k for k in ds.columns if k in bd.F}
+        ds.batches = dict(list(batches.items())[-MAX_LIVE_BATCHES:])
         status[machine] = {"format": fmt, "ts": new[-1]["timestamp"], "batch_no": new[-1]["batch_no"], "readings": len(new),
                            "values": {k: v for k, v in new[-1].items() if k not in ("batch_no", "timestamp", "product")}}
     c.status = status
