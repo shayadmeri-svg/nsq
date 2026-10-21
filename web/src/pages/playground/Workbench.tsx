@@ -284,7 +284,22 @@ function Synthesis({ moleculeKey, bare }: { moleculeKey: string; bare?: boolean 
 // ------------------------------------------------------------------------------ dossier: tiles and their expanded views
 
 const nfx = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("en-IN"));
-const MARKET_TONE: Record<string, "brand" | "amber" | "rose"> = { off_patent: "brand", loe_pending: "amber" };
+const MARKET_TONE: Record<string, "brand" | "amber" | "rose" | "slate"> = { off_patent: "brand", loe_pending: "amber", patented: "rose", unknown: "slate" };
+const BASIS_TONE: Record<string, "brand" | "indigo" | "slate"> = { sourced: "brand", derived: "indigo", unknown: "slate" };
+const BASIS_HINT: Record<string, string> = {
+  sourced: "stated by the publisher (Orange Book, EMA, the country's patent record via Google Patents)",
+  derived: "follows from sourced dates by the statute cited",
+  unknown: "no public source settles it",
+};
+
+function SourceLinks({ sources }: { sources?: { label: string; url?: string }[] }) {
+  if (!sources?.length) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">{sources.map((x, i) => x.url
+      ? <a key={i} href={x.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-700 hover:underline">{x.label} <ExternalLink size={10} /></a>
+      : <span key={i} className="text-[11px] text-ink-muted">{x.label}</span>)}</div>
+  );
+}
 
 function Identity({ d }: { d: any }) {
   const p = d.patent, r = d.regulatory;
@@ -334,59 +349,57 @@ function PassportTile({ d }: { d: any }) {
 }
 
 function PassportDetail({ d }: { d: any }) {
-  const r = d.regulatory;
+  const r = d.regulatory, cp = d.patent.compound_patent, lab = d.label;
+  const methods: any[] = r?.dissolution_methods ?? [];
   return (
     <div className="space-y-5">
       <div className="grid gap-x-10 rounded-2xl bg-white p-5 ring-1 ring-inset ring-line md:grid-cols-2">
         <div>
           <Field k="US LOE" v={<span className="flex items-center gap-1">{fmtDate(d.patent.estimated_loe_us)}<Estimate field="loe" prov={d.patent.provenance?.loe_us} /></span>} />
           <Field k="EU LOE" v={<span className="flex items-center gap-1">{fmtDate(d.patent.estimated_loe_eu)}<Estimate field="loe" prov={d.patent.provenance?.loe_eu} /></span>} />
-          <Field k="India LOE" v={fmtDate(d.patent.estimated_loe_in)} />
-          <Field k="FTO risk" v={<span className="flex items-center gap-1 capitalize">{d.patent.fto_risk}<Estimate field="fto_risk" prov={d.patent.provenance?.fto_risk} /></span>} />
-          <Field k="Therapeutic area" v={d.patent.therapeutic_area} />
-          <Field k="Market size" v={d.patent.market_size_usd_bn ? `$${d.patent.market_size_usd_bn} bn` : null} />
+          <Field k="India LOE" v={<span className="flex items-center gap-1">{fmtDate(d.patent.estimated_loe_in)}<Estimate field="loe" prov={d.patent.provenance?.loe_in} /></span>} />
+          <Field k="FTO risk (US)" v={<span className="flex items-center gap-1 capitalize">{d.patent.fto_risk}<Estimate field="fto_risk" prov={d.patent.provenance?.fto_risk} /></span>} />
+          <Field k="Therapeutic area (WHO ATC)" v={<span className="flex items-center gap-1">{d.patent.therapeutic_area || "—"}<Estimate field="area" prov={d.patent.provenance?.therapeutic_area} /></span>} />
+          <Field k="Market size" v={<span className="text-ink-faint">not shown — no public source gives sales by molecule</span>} />
         </div>
         <div>
           <Field k="Reference drug (RLD)" v={r?.rld} />
           <Field k="RLD holder" v={r?.rld_applicant} />
           <Field k="TE code" v={r?.te_code} />
           <Field k="Dosage form / strength" v={[r?.dosage_form, r?.strength].filter(Boolean).join(" · ")} />
-          <Field k="BCS class" v={r?.bcs_class} />
-          <Field k="Readiness" v={r?.readiness} />
+          <Field k="First approved" v={d.patent.provenance?.first_approval ? d.patent.provenance.first_approval.note : null} />
         </div>
       </div>
-      <div>
-        <div className="label mb-2">Pharmacopoeia monographs</div>
-        <div className="grid gap-3 md:grid-cols-3">{[["IP", r?.ip_2026_monograph], ["Ph. Eur.", r?.ph_eur_monograph], ["USP", r?.usp_monograph]].map(([k, v]) => (
-          <div key={k} className={cn("rounded-xl p-3 text-xs", v ? "bg-emerald-50 text-emerald-900" : "bg-white text-ink-faint ring-1 ring-inset ring-line")}><b>{k}</b><div className="mt-1">{v || "not listed"}</div></div>
-        ))}</div>
-        {(r?.exclusivity ?? []).length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{r.exclusivity.map((x: any, i: number) => <Badge key={i} tone={x.expiry_date && new Date(x.expiry_date) > new Date() ? "rose" : "slate"}>{x.type} · {fmtDate(x.expiry_date)}</Badge>)}</div>}
-        {(r?.analytical_specs ?? []).length > 0 && <div className="mt-3 text-xs text-ink-soft"><b>Key tests:</b> {r.analytical_specs.join(" · ")}</div>}
-      </div>
-      {d.orange_book_curated && (
+      {cp?.number && (
         <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
-          <div className="label mb-2">FDA Orange Book (curated record)</div>
-          <Field k="TE codes" v={(d.orange_book_curated.te_codes ?? []).join(", ")} />
-          <Field k="RLD applicant" v={d.orange_book_curated.rld_applicant} />
-          <Field k="Application / approval" v={`${d.orange_book_curated.rld_app_number} · ${d.orange_book_curated.rld_approval_date}`} />
-          <Field k="Dosage forms" v={(d.orange_book_curated.dosage_forms ?? []).join(", ")} />
-          <Field k="Strengths" v={(d.orange_book_curated.strengths ?? []).join(", ")} />
-          <Field k="Marketing status" v={(d.orange_book_curated.marketing_statuses ?? []).join(", ")} />
-          {d.orange_book_curated.provenance?.reference_url && <a href={d.orange_book_curated.provenance.reference_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-brand-700 hover:underline">Source (retrieved {d.orange_book_curated.provenance.retrieved_at}) <ExternalLink size={11} /></a>}
+          <div className="label mb-2">Compound patent and its family</div>
+          <a href={cp.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline">{cp.number} — {cp.title} <ExternalLink size={12} /></a>
+          <div className="mt-1 text-xs text-ink-muted">{[cp.assignee, cp.priority && `priority ${fmtDate(cp.priority)}`, cp.international_filing && `international (PCT) filing ${fmtDate(cp.international_filing)}`, cp.expiration && `US expiry ${fmtDate(cp.expiration)}`].filter(Boolean).join(" · ")}</div>
+          {(cp.spcs ?? []).length > 0 && <div className="mt-2 text-xs text-ink-soft">SPCs in the family: {cp.spcs.map((x: any) => <a key={x.number} href={x.url} target="_blank" rel="noreferrer" className="mr-2 text-brand-700 hover:underline">{x.number}</a>)}</div>}
+          <div className="mt-2 text-[11px] text-ink-faint">Drug-substance patent from the FDA Orange Book; title, dates and family from Google Patents.</div>
         </div>
       )}
-      {d.pharmacopeia && (
-        <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-inset ring-line">
-          <div className="px-5 pt-4"><div className="label">IP vs Ph. Eur. vs USP</div><p className="mt-0.5 text-xs text-ink-muted">Method by method — where an Indian-spec batch may not meet the export spec</p></div>
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-xs"><thead><tr className="border-y border-line bg-slate-50/70 text-left text-[10px] uppercase tracking-wider text-ink-muted"><th className="px-4 py-2">Test</th><th className="px-4 py-2">IP 2026</th><th className="px-4 py-2">Ph. Eur.</th><th className="px-4 py-2">USP</th><th className="px-4 py-2">Verdict</th></tr></thead>
-              <tbody>{d.pharmacopeia.map((row: any) => (
-                <tr key={row.section} className="border-b border-line/60 align-top">
-                  <td className="px-4 py-2.5 font-semibold capitalize">{row.section}</td>
-                  {["IP 2026", "Ph. Eur.", "USP"].map((ph) => <td key={ph} className="max-w-[260px] px-4 py-2.5 text-ink-soft">{row.methods[ph]?.raw_text ?? <span className="text-ink-faint">—</span>}</td>)}
-                  <td className="px-4 py-2.5"><Badge tone={row.significance === "NSQ_RELEVANT" ? "rose" : row.significance === "EQUIVALENT" ? "brand" : "slate"}>{String(row.significance).replace(/_/g, " ").toLowerCase()}</Badge><div className="mt-1 text-ink-muted">{row.rationale}</div></td>
-                </tr>))}</tbody></table>
-          </div>
+      <div>
+        <div className="label mb-2">Monographs on Indian products</div>
+        <div className="grid gap-3 md:grid-cols-3">{[["IP", r?.ip_2026_monograph], ["BP / Ph. Eur.", r?.ph_eur_monograph], ["USP", r?.usp_monograph]].map(([k, v]) => (
+          <div key={k} className={cn("rounded-xl p-3 text-xs", v ? "bg-emerald-50 text-emerald-900" : "bg-white text-ink-faint ring-1 ring-inset ring-line")}><b>{k}</b><div className="mt-1">{v || "not seen on CDSCO-listed products"}</div></div>
+        ))}</div>
+        <p className="mt-1.5 text-[11px] text-ink-faint">From the IP / BP / USP label on CDSCO NSQ product names. The monograph texts themselves are subscription-only and are not reproduced.</p>
+        {(r?.exclusivity ?? []).length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{r.exclusivity.map((x: any, i: number) => <Badge key={i} tone={x.expiry_date && new Date(x.expiry_date) > new Date() ? "rose" : "slate"}>{x.type} · {fmtDate(x.expiry_date)}</Badge>)}</div>}
+      </div>
+      <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-inset ring-line">
+        <div className="flex items-center justify-between px-5 pt-4"><div className="label">FDA dissolution method</div>
+          <a href="https://www.accessdata.fda.gov/scripts/cder/dissolution/index.cfm" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-700 hover:underline">FDA Dissolution Methods Database <ExternalLink size={10} /></a></div>
+        {methods.length ? (
+          <div className="mt-2 overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-y border-line bg-slate-50/70 text-left text-[10px] uppercase tracking-wider text-ink-muted"><th className="px-4 py-2">Dosage form</th><th className="px-4 py-2">Apparatus</th><th className="px-4 py-2">rpm</th><th className="px-4 py-2">Medium</th><th className="px-4 py-2">Volume</th><th className="px-4 py-2">Sampling (min)</th><th className="px-4 py-2">Updated</th></tr></thead>
+            <tbody>{methods.map((m, i) => <tr key={i} className="border-b border-line/60"><td className="px-4 py-2 font-medium">{m.dosage_form}</td><td className="px-4 py-2">{m.apparatus || "—"}</td><td className="px-4 py-2">{m.rpm ?? "—"}</td><td className="px-4 py-2">{m.medium}</td><td className="px-4 py-2">{m.volume_ml ? `${m.volume_ml} mL` : "—"}</td><td className="px-4 py-2">{m.times_text || "—"}</td><td className="px-4 py-2 text-ink-muted">{m.updated}</td></tr>)}</tbody></table></div>
+        ) : <p className="px-5 pb-4 pt-1 text-xs text-ink-faint">FDA lists no dissolution method for this molecule.</p>}
+      </div>
+      {lab && (
+        <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
+          <div className="flex items-center justify-between"><div className="label">US label</div>{lab.url && <a href={lab.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-700 hover:underline">DailyMed: {lab.brand} ({lab.application}) <ExternalLink size={10} /></a>}</div>
+          <Field k="Inactive ingredients" v={(lab.inactive_ingredients ?? []).join(", ") || null} />
+          {Object.entries(lab.pk ?? {}).map(([k, v]: [string, any]) => <Field key={k} k={({ half_life_h: "Half-life (h)", vd_l: "Volume of distribution (L)", vd_l_kg: "Volume of distribution (L/kg)", f_pct: "Bioavailability (%)", tmax_h: "Tmax (h)", cl: "Clearance" } as any)[k] ?? k} v={<span title={v.text}>{v.value}{v.unit ? ` ${v.unit}` : ""} <span className="text-ink-faint">— “{String(v.text).slice(0, 140)}{String(v.text).length > 140 ? "…" : ""}”</span></span>} />)}
         </div>
       )}
     </div>
@@ -395,15 +408,15 @@ function PassportDetail({ d }: { d: any }) {
 
 function MarketsTile({ d }: { d: any }) {
   const g = d.patent.geo_coverage ?? [];
-  const c = { off: g.filter((x: any) => x.market_status === "off_patent").length, pend: g.filter((x: any) => x.market_status === "loe_pending").length };
-  const blocked = g.length - c.off - c.pend;
+  const n = (st: string) => g.filter((x: any) => x.market_status === st).length;
+  const c = { off: n("off_patent"), pend: n("loe_pending"), pat: n("patented"), unk: n("unknown") };
   return (
     <Tile id="markets" title="Where it can be sold" icon={<Globe2 size={14} />} subtitle={`${g.length} markets checked`} accent="#10b996">
-      <div className="grid grid-cols-3 gap-2">
-        <Figure value={c.off} label="off-patent" tone="#0a9a7d" /><Figure value={c.pend} label="LOE pending" tone="#d97706" /><Figure value={blocked} label="blocked" tone={blocked ? "#e11d48" : undefined} />
+      <div className="grid grid-cols-4 gap-2">
+        <Figure value={c.off} label="off-patent" tone="#0a9a7d" /><Figure value={c.pend} label="LOE ≤ 5 y" tone="#d97706" /><Figure value={c.pat} label="patented" tone={c.pat ? "#e11d48" : undefined} /><Figure value={c.unk} label="unknown" />
       </div>
       {g.length > 0 && <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="bg-brand-500" style={{ width: `${(100 * c.off) / g.length}%` }} /><div className="bg-amber-400" style={{ width: `${(100 * c.pend) / g.length}%` }} /><div className="bg-rose-400" style={{ width: `${(100 * blocked) / g.length}%` }} />
+        <div className="bg-brand-500" style={{ width: `${(100 * c.off) / g.length}%` }} /><div className="bg-amber-400" style={{ width: `${(100 * c.pend) / g.length}%` }} /><div className="bg-rose-400" style={{ width: `${(100 * c.pat) / g.length}%` }} />
       </div>}
     </Tile>
   );
@@ -411,13 +424,18 @@ function MarketsTile({ d }: { d: any }) {
 
 function MarketsDetail({ d }: { d: any }) {
   return (
-    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{(d.patent.geo_coverage ?? []).map((g: any) => (
-      <div key={g.country_code} className="rounded-xl bg-white p-3 text-xs ring-1 ring-inset ring-line">
-        <div className="flex items-center justify-between"><span className="font-semibold">{g.country_name}</span><Badge tone={MARKET_TONE[g.market_status] ?? "rose"}>{g.market_status.replace("_", " ")}</Badge></div>
-        <div className="mt-1 text-ink-muted">{[g.loe_date && `LOE ${fmtDate(g.loe_date)}`, g.patent_barrier && g.patent_barrier !== "none" && `barrier: ${g.patent_barrier}`, g.export_eligible && "export eligible"].filter(Boolean).join(" · ") || "—"}</div>
-        {g.notes && <div className="mt-1 text-ink-faint">{g.notes}</div>}
-      </div>
-    ))}</div>
+    <div className="space-y-3">
+      <p className="text-xs text-ink-muted">Each status says how it was reached: <b>sourced</b> — {BASIS_HINT.sourced}; <b>derived</b> — {BASIS_HINT.derived}; <b>unknown</b> — {BASIS_HINT.unknown}.</p>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{(d.patent.geo_coverage ?? []).map((g: any) => (
+        <div key={g.country_code} className="rounded-xl bg-white p-3 text-xs ring-1 ring-inset ring-line">
+          <div className="flex items-center justify-between gap-2"><span className="font-semibold">{g.country_name}</span>
+            <span className="flex gap-1"><Badge tone={MARKET_TONE[g.market_status] ?? "slate"}>{g.market_status.replace("_", " ")}</Badge>{g.basis && <Badge tone={BASIS_TONE[g.basis] ?? "slate"}>{g.basis}</Badge>}</span></div>
+          <div className="mt-1 text-ink-muted">{[g.loe_date && `${g.basis === "derived" && g.market_status !== "off_patent" ? "at the latest " : ""}${fmtDate(g.loe_date)}`, g.patent_barrier && g.patent_barrier !== "none" && `barrier: ${g.patent_barrier}`].filter(Boolean).join(" · ") || ""}</div>
+          {g.notes && <div className="mt-1 text-ink-soft">{g.notes}</div>}
+          <SourceLinks sources={g.sources} />
+        </div>
+      ))}</div>
+    </div>
   );
 }
 
@@ -445,8 +463,7 @@ function DemandDetail({ d }: { d: any }) {
         <Field k="Trend" v={d.demand?.growth_trend} />
         <Field k="Cluster" v={d.demand?.cluster} />
         <Field k="Generic competitors" v={d.demand?.competitor_anda_count} />
-        <Field k="Prevalence India / global" v={d.demand && (d.demand.disease_prevalence_india_millions || d.demand.disease_prevalence_global_millions) ? `${d.demand.disease_prevalence_india_millions} M / ${d.demand.disease_prevalence_global_millions} M` : null} />
-        <Field k="Buyer activity / momentum" v={d.demand ? `${d.demand.buyer_activity_score} / ${d.demand.market_momentum_score}` : null} />
+        <Field k="Indian market breadth" v={d.demand ? <span>{d.demand.buyer_activity_score}/100 <span className="text-ink-faint">— {d.demand.provenance?.buyer_activity_score?.note ?? "manufacturers seen in CDSCO alerts"}</span></span> : null} />
       </div>
       <div className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-line">
         <div className="label mb-2">Manufacturing complexity · {titleCase(cx.modality)} · {titleCase(cx.drug_form)}{cx.sterility_required ? " · sterile" : ""}</div>

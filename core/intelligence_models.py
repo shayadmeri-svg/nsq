@@ -24,6 +24,7 @@ class PatentEntry(BaseModel):
     expiry_date: Optional[date] = None
     jurisdiction: str = "global"  # e.g. US, EU, IN, global
     risk_level: str = "medium"  # low | medium | high
+    url: str = ""  # the patent's public page (Google Patents) when known
 
 
 class GeoCoverage(BaseModel):
@@ -31,11 +32,13 @@ class GeoCoverage(BaseModel):
 
     country_code: str  # ISO 3166-1 alpha-2, e.g. "US"
     country_name: str
-    market_status: str = "patented"  # patented | loe_pending | off_patent | export_eligible
+    market_status: str = "unknown"  # patented | loe_pending | off_patent | unknown
     loe_date: Optional[date] = None
     export_eligible: bool = False
     patent_barrier: str = "none"  # none | composition | formulation | process | device | secondary
     notes: str = ""
+    basis: str = ""  # sourced | derived | unknown — how the status was reached (core/patent_terms.py)
+    sources: list[dict[str, Any]] = Field(default_factory=list)  # [{label, url}]
 
 
 class PatentIntelligence(BaseModel):
@@ -65,6 +68,12 @@ class PatentIntelligence(BaseModel):
     # field -> {"status": sourced|derived|estimate, "source", "retrieved_at", "note"}
     provenance: dict[str, Any] = Field(default_factory=dict)
     signals: dict[str, Any] = Field(default_factory=dict)  # compact per-source facts for the UI
+    # The compound patent (Orange Book drug-substance patent with the earliest priority) and its family (Google Patents)
+    compound_patent: dict[str, Any] = Field(default_factory=dict)
+
+    def status_in(self, code: str) -> str:
+        g = next((x for x in self.geo_coverage if x.country_code == code), None)
+        return g.market_status if g else "unknown"
 
     def export_eligible_count(self) -> int:
         return sum(1 for g in self.geo_coverage if g.export_eligible)
@@ -100,6 +109,7 @@ class PatentIntelligence(BaseModel):
             "aliases": _json_encode(self.aliases),
             "provenance": _json_encode(self.provenance),
             "signals": _json_encode(self.signals),
+            "compound_patent": _json_encode(self.compound_patent),
         }
 
     @classmethod
@@ -129,6 +139,7 @@ class PatentIntelligence(BaseModel):
             aliases=_parse_list(data.get("aliases", "")),
             provenance=_parse_json(data.get("provenance", ""), {}),
             signals=_parse_json(data.get("signals", ""), {}),
+            compound_patent=_parse_json(data.get("compound_patent", ""), {}),
         )
 
 
@@ -262,6 +273,7 @@ class RegulatoryPassport(BaseModel):
     source_url: str = ""
     notes: str = ""
     provenance: dict[str, Any] = Field(default_factory=dict)
+    dissolution_methods: list[dict[str, Any]] = Field(default_factory=list)  # FDA Dissolution Methods Database rows
 
     def to_redis(self) -> dict[str, str]:
         return {
@@ -284,6 +296,7 @@ class RegulatoryPassport(BaseModel):
             "source_url": self.source_url,
             "notes": self.notes,
             "provenance": _json_encode(self.provenance),
+            "dissolution_methods": _json_encode(self.dissolution_methods),
         }
 
     @classmethod
@@ -308,6 +321,7 @@ class RegulatoryPassport(BaseModel):
             source_url=data.get("source_url", ""),
             notes=data.get("notes", ""),
             provenance=_parse_json(data.get("provenance", ""), {}),
+            dissolution_methods=_parse_json(data.get("dissolution_methods", ""), []),
         )
 
 

@@ -281,6 +281,7 @@ export function Infrastructure() {
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-300"><MapPin size={13} />{[p.city, p.state, p.country].filter(Boolean).join(", ")}</div>
               <div className="mt-1 font-display text-xl font-bold">{p.site_name}</div>
+              {p.reference?.demo && p.reference?.company && <div className="mt-0.5 text-xs font-medium text-amber-300">Demo profile modelled on {p.reference.company}, {p.reference.site} — not this organisation's own plant</div>}
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {p.certifications_active.length ? p.certifications_active.map((c: string) => <span key={c} className="flex items-center gap-1 rounded-full bg-brand-400/15 px-2.5 py-0.5 text-[11px] font-semibold text-brand-200 ring-1 ring-inset ring-brand-400/30"><ShieldCheck size={11} />{c.replace(/_/g, " ")}</span>) : <span className="text-xs text-slate-400">No active certifications</span>}
               </div>

@@ -9,7 +9,7 @@ import { fmtDate } from "../../lib/format";
 import { ExpandedProvider, type Section } from "../../components/ui/Expanded";
 
 type Metric = "strictness" | "pics" | "exclusivity" | "linkage" | "molecule";
-const STATUS_COLOR: Record<string, string> = { off_patent: "#10b996", loe_pending: "#f59e0b", patented: "#e11d48" };
+const STATUS_COLOR: Record<string, string> = { off_patent: "#10b996", loe_pending: "#f59e0b", patented: "#e11d48", unknown: "#94a3b8" };
 const STRICT = ["#f1f5f9", "#dbeafe", "#93c5fd", "#60a5fa", "#2563eb", "#1e3a8a"];
 const REGION_ORDER = ["North America", "Europe", "East Asia", "Oceania", "Latin America", "Middle East", "South Asia", "Africa"];
 
@@ -41,7 +41,7 @@ export function RegulatoryMap() {
     pics: [["#10b996", "PIC/S member"], ["#fbbf24", "not a member"]],
     exclusivity: [["#10b996", "none"], ["#fbbf24", "≤ 5 years"], ["#e11d48", "8+ years"], ["#cbd5e1", "check"]],
     linkage: [["#e11d48", "patent linkage"], ["#10b996", "no linkage"], ["#cbd5e1", "check"]],
-    molecule: [["#10b996", "off-patent"], ["#f59e0b", "LOE within 5 y"], ["#e11d48", "patented"], ["#e2e8f0", "no data"]],
+    molecule: [["#10b996", "off-patent"], ["#f59e0b", "LOE within 5 y"], ["#e11d48", "patented"], ["#94a3b8", "unknown (no public source)"], ["#e2e8f0", "market not covered"]],
   };
   const sel = picked ? d.markets[picked] : null;
   const counts = picked ? d.molecule_counts[picked] : null;
@@ -101,7 +101,7 @@ export function RegulatoryMap() {
                   <div className="flex flex-wrap gap-1.5">{Object.entries(counts).filter(([k]) => k !== "export_eligible").map(([k, v]: any) => <span key={k} className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white" style={{ background: STATUS_COLOR[k] ?? "#64748b" }}>{k.replace("_", " ")} {v}</span>)}
                     {counts.export_eligible != null && <Badge tone="brand">export-eligible {counts.export_eligible}</Badge>}</div></div>}
                 {facts && <div className="mt-3 space-y-1">{Object.entries(facts).map(([k, v]: any) => <div key={k} className="flex justify-between text-xs"><span className="text-ink-muted">{k}</span><b className="tabular-nums">{Number(v).toLocaleString("en-IN")}</b></div>)}</div>}
-                {molRow && <div className="mt-3 rounded-lg bg-slate-50 p-2.5 text-xs"><b>{d.molecule.name}:</b> {molRow.status.replace("_", " ")}{molRow.loe ? `, LOE ${fmtDate(molRow.loe)}` : ""}{molRow.barrier && molRow.barrier !== "none" ? `, barrier: ${molRow.barrier}` : ""}{molRow.notes ? ` — ${molRow.notes}` : ""}</div>}
+                {molRow && <div className="mt-3 rounded-lg bg-slate-50 p-2.5 text-xs"><b>{d.molecule.name}:</b> {molRow.status.replace("_", " ")}{molRow.loe ? `, LOE ${fmtDate(molRow.loe)}` : ""}{molRow.barrier && molRow.barrier !== "none" ? `, barrier: ${molRow.barrier}` : ""}{molRow.basis ? ` (${molRow.basis})` : ""}{molRow.notes ? ` — ${molRow.notes}` : ""}</div>}
               </div>
             ) : <div className="rounded-2xl border border-dashed border-line p-6 text-center text-sm text-ink-muted">This country is not in the reference yet.</div>}
           </div>

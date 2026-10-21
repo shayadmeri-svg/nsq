@@ -55,7 +55,7 @@ function CliffChart({ rows, onPick }: { rows: any[]; onPick: (k: string) => void
         <Tooltip cursor={{ strokeDasharray: "3 3" }} content={({ active, payload }: any) => active && payload?.[0] ? (
           <div className="rounded-xl bg-night-900/95 px-3 py-2 text-xs text-white shadow-lift">
             <div className="font-semibold">{payload[0].payload.api_name}</div>
-            <div className="text-slate-300">Fit {Math.round(payload[0].payload.fit_score)} · {payload[0].payload.available_now ? "off-patent now" : `${payload[0].payload.years_to_loe} y to LOE`}</div>
+            <div className="text-slate-300">Fit {Math.round(payload[0].payload.fit_score)} · {payload[0].payload.available_now ? "off-patent in India" : payload[0].payload.india_status === "unknown" ? "India status unknown" : `${payload[0].payload.years_to_loe} y to India LOE`}</div>
             {payload[0].payload.market_size_usd_bn && <div className="text-slate-300">${payload[0].payload.market_size_usd_bn} bn market</div>}
           </div>
         ) : null} />
@@ -86,7 +86,7 @@ function Detail({ slug, molecule, onClose }: { slug: string; molecule?: string; 
             </div>
             {fit ? (
               <div className="rounded-2xl border border-line p-4">
-                <div className="flex items-center justify-between"><div className="label flex items-center gap-1.5">Fit with {data.plant.name} <Estimate field="talent_depth" /></div><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[fit.commercial_fit_tier]}`}>{titleCase(fit.commercial_fit_tier)}</span></div>
+                <div className="flex items-center justify-between"><div className="label flex items-center gap-1.5">Fit with {data.plant.name} <Estimate field="talent_depth" /><span className="normal-case text-ink-faint">(talent shown, not scored: no public source)</span></div><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[fit.commercial_fit_tier]}`}>{titleCase(fit.commercial_fit_tier)}</span></div>
                 <PillarRadar height={190} scores={{ infrastructure: fit.infrastructure_fit_score, talent: fit.talent_fit_score, certification: fit.certification_fit_score, gmp: fit.gmp_readiness_score }} />
               </div>
             ) : <Empty title="No plant linked">Add a plant to score the fit.</Empty>}
@@ -164,7 +164,7 @@ function MoleculeTable({ rows, slug, limit }: { rows: any[]; slug: string; limit
               <td className="whitespace-nowrap px-3 py-3 text-xs">{m.best_plant?.name ?? "—"}</td>
               <td className="px-3 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[m.fit_tier]}`}>{titleCase(m.fit_tier)}</span></td>
               <td className="max-w-[260px] px-3 py-3 text-xs text-ink-muted"><div className="truncate">{[...m.missing_capabilities.map((c: any) => c.label), ...m.missing_certifications.map((c: string) => c.toUpperCase())].join(", ") || <span className="text-emerald-600">Nothing core</span>}</div></td>
-              <td className="px-5 py-3 text-right font-display font-bold tabular-nums">{Math.round(m.fit_score)}</td>
+              <td className="px-5 py-3 text-right font-display font-bold tabular-nums" title={`plant fit ${Math.round(m.fit_score)}`}>{Math.round(m.total_score)}</td>
             </tr>
           ))}
         </tbody>

@@ -30,8 +30,8 @@ export function OrgOverview() {
         <Stat label="NSQ alerts" value={k.alerts ?? 0} icon={<Activity size={18} />} tone="rose" hint={k.alerts ? `${k.last_12m} in the last 12 months · ${fmtMonth(q.period?.first)} – ${fmtMonth(q.period?.last)}` : "No alerts linked to this organisation"} />
         <Stat label="Alert rank (1 = most alerts)" value={k.national_rank ? `#${k.national_rank}` : "—"} icon={<AlertTriangle size={18} />} tone="rose" delay={0.05}
           hint={k.national_rank ? `of ${k.manufacturers_ranked?.toLocaleString("en-IN")} manufacturers with an NSQ alert — more alerts than ${k.more_alerts_than_pct}% of them. A lower number is worse.` : "No attributable alerts — not ranked"} />
-        <Stat label="Molecules within reach" value={good} icon={<Sparkles size={18} />} tone="brand" delay={0.1} hint={`strategic or core fit · ${opp.ready_within_5y} available within 5 years`} />
-        <Stat label="EU-ready or close" value={(eu.verdicts.ready ?? 0) + (eu.verdicts.close ?? 0)} icon={<Globe2 size={18} />} tone="indigo" delay={0.15} hint={eu.eu_gmp_sites.length ? `EU GMP site: ${eu.eu_gmp_sites.join(", ")}` : "No EU GMP certified site"} />
+        <Stat label="Molecules within reach" value={good} icon={<Sparkles size={18} />} tone="brand" delay={0.1} hint={`of ${opp.molecules?.length ?? "the"} tracked molecules: strategic or core plant fit · ${opp.ready_within_5y} open within 5 years`} />
+        <Stat label="EU-ready or close" value={(eu.verdicts.ready ?? 0) + (eu.verdicts.close ?? 0)} icon={<Globe2 size={18} />} tone="indigo" delay={0.15} hint={`of ${eu.checked ?? "all"} tracked molecules · ` + (eu.eu_gmp_sites.length ? `EU GMP site: ${eu.eu_gmp_sites.join(", ")}` : "no EU GMP certified site")} />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
@@ -56,11 +56,11 @@ export function OrgOverview() {
                 <Link to={`/o/${slug}/opportunities/${m.molecule_key}`} className="flex items-center justify-between gap-3 py-3 transition hover:translate-x-0.5">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">{m.api_name}</div>
-                    <div className="text-xs text-ink-muted">{m.therapeutic_area} · {m.available_now ? "off-patent now" : `LOE in ${m.years_to_loe} y`} · {m.best_plant?.name ?? "no plant"}</div>
+                    <div className="text-xs text-ink-muted">{m.therapeutic_area} · {m.available_now ? "off-patent in India" : m.india_status === "unknown" ? "India patent status unknown" : `India: LOE in ${m.years_to_loe} y`} · {m.best_plant?.name ?? "no plant"}</div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TIER_STYLE[m.fit_tier]}`}>{titleCase(m.fit_tier)}</span>
-                    <span className="w-10 text-right font-display text-sm font-bold tabular-nums">{Math.round(m.fit_score)}</span>
+                    <span className="w-10 text-right font-display text-sm font-bold tabular-nums" title={`Combined score ${Math.round(m.total_score)} (patent status, regulatory, demand, plant fit) · plant fit ${Math.round(m.fit_score)}`}>{Math.round(m.total_score)}</span>
                   </div>
                 </Link>
               </motion.li>

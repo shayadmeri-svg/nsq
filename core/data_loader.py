@@ -549,6 +549,7 @@ def _load_and_preprocess() -> pd.DataFrame:
         df = df.copy()
         df["Product_Name_Canonical"] = canonical_col
         df["Product_Ontology_Key"] = key_col
+        _display_by_group(df)
 
     return df
 
@@ -715,3 +716,15 @@ def fuzzy_search_products(df: pd.DataFrame, query: str, threshold: int = 70) -> 
 
     hits.sort(key=lambda t: (-t[1], t[2]))
     return hits
+
+
+def _display_by_group(df: pd.DataFrame) -> None:
+    """Name each product group from all its alerts (no brand, no strength) — see product_display_name."""
+    from company_ontology import product_display_name
+
+    if "Product_Ontology_Key" not in df.columns or df.empty:
+        return
+    keyed = df["Product_Ontology_Key"].fillna("").astype(str)
+    names = df.groupby(keyed)["Name of Product"].agg(list).map(product_display_name)
+    disp = keyed.map(names)
+    df["Product_Name_Canonical"] = disp.where(keyed != "", df["Product_Name_Canonical"])

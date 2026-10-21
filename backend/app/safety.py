@@ -13,8 +13,9 @@ A signal follows Evans et al. (2001): PRR ≥ 2, chi-squared ≥ 4 and a ≥ 3.
 "This drug" means reports that list it as a *suspect* drug
 (patient.drug.drugcharacterization:1), not every concomitant mention. openFDA
 can't tie the two conditions to the same drug entry of a report, so a report
-where the drug is concomitant and another drug is suspect can still match; the
-name match also includes combination products that contain the molecule.
+where the drug is concomitant and another drug is suspect can still match. The
+name match is exact (single-ingredient products), so combination products — e.g.
+opioid/acetaminophen tablets — do not count as this molecule.
 Deaths are reports flagged seriousnessdeath:1.
 FAERS is spontaneous reporting: counts reflect reporting, not incidence, and a
 signal is a hypothesis, not proof of causation.
@@ -70,13 +71,18 @@ def disproportionality(a: int, drug_total: int, reaction_total: int, all_total: 
             "signal": prr >= 2 and chi2 >= 4 and a >= 3}
 
 
-def signals(name: str, top: int = 25) -> dict[str, Any]:
-    key = f"{name.lower()}:{top}"
+def signals(name: str, top: int = 25, alts: tuple[str, ...] = ()) -> dict[str, Any]:
+    """`alts`: other exact generic names of the same single ingredient (its salts, e.g. AMLODIPINE BESYLATE)."""
+    key = f"exact:{name.lower()}:{'|'.join(a.lower() for a in alts)}:{top}"
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < TTL:
         return hit[1]
     term = name.upper().replace('"', "")
-    drug_q = f'patient.drug.openfda.generic_name:"{term}" AND patient.drug.drugcharacterization:1'
+    # .exact: the product's whole generic name is this molecule — combination products ("HYDROCODONE BITARTRATE AND
+    # ACETAMINOPHEN") no longer count as this drug, which used to put opioid reactions on paracetamol.
+    names = list(dict.fromkeys([term, *(a.upper().replace('"', "") for a in alts if a)]))
+    who = " OR ".join(f'patient.drug.openfda.generic_name.exact:"{n}"' for n in names)
+    drug_q = f"({who}) AND patient.drug.drugcharacterization:1"
     drug_total = _total(drug_q)
     if not drug_total:
         out = {"name": name, "found": False, "reports": 0, "search_term": term, "query": drug_q,
@@ -101,6 +107,7 @@ def signals(name: str, top: int = 25) -> dict[str, Any]:
            "method": "Reports with this drug as suspect; PRR / ROR against all FAERS reports; signal = PRR ≥ 2, χ² ≥ 4, n ≥ 3 (Evans 2001)",
            "source": "FDA FAERS via openFDA", "source_url": "https://open.fda.gov/apis/drug/event/",
            "caveat": "Spontaneous reports: counts reflect reporting, not how often it happens, and a signal is not proof of causation. "
-                     "The name match includes combination products; openFDA can't confirm the suspect flag belongs to this drug entry."}
+                     "Single-ingredient products only (exact generic name); a report can still list other suspect drugs, and openFDA can't "
+                     "confirm the suspect flag belongs to this drug entry."}
     _cache[key] = (time.time(), out)
     return out

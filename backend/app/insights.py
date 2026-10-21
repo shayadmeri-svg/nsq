@@ -441,9 +441,12 @@ def org_issue_detail(ontology_keys: list[str], issue_id: str) -> Optional[dict[s
     row = hit.iloc[0]
     diag = build_diagnosis(row, df)
     same_product = df[df["Product_Name_Canonical"] == row.get("Product_Name_Canonical")]
+    from . import evidence
+
     return {
         "issue": issue_row(row),
         "diagnosis": json_safe(diag),
+        "evidence": json_safe(evidence.for_alert(str(row.get("Name of Product") or ""), str(row.get("Failure_Category_Primary") or ""))),
         "history": [issue_row(r) for _, r in same_product.sort_values("Parsed_Date", ascending=False).head(20).iterrows()],
     }
 
@@ -468,6 +471,7 @@ def plant_profile(plant) -> dict[str, Any]:
         })
     other = sorted(t for t in plant.capabilities if t not in in_catalog)
     d = plant.model_dump(mode="json")
+    d["display_name"] = plant_label(plant)
     d["sections"] = sections
     d["other_capabilities"] = [{"token": t, "label": _label(t), "basis": basis.get(t, "derived"), "why": why.get(t)} for t in other]
     d["certifications_active_norm"] = sorted(plant_active_certifications(plant))
@@ -478,6 +482,14 @@ def plant_profile(plant) -> dict[str, Any]:
         "user": sum(1 for v in basis.values() if v == "user"),
     }
     return d
+
+
+def plant_label(plant) -> str:
+    """A demo profile is a copy of a real, cited site: say whose, so it is never read as the organisation's own plant."""
+    ref = plant.reference or {}
+    if ref.get("demo") and ref.get("company"):
+        return f"{plant.site_name} (demo profile modelled on {ref['company']}, {ref.get('site') or ref.get('location') or ''})".replace(", )", ")")
+    return plant.site_name
 
 
 def org_plants(plant_ids: list[str]) -> list:
@@ -564,7 +576,12 @@ def _org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] 
             "eu": patent.estimated_loe_eu.isoformat() if patent.estimated_loe_eu else None,
             "us": patent.estimated_loe_us.isoformat() if patent.estimated_loe_us else None,
         }
-        earliest = patent.earliest_loe()
+        # Availability is about India (where the platform's users make medicines): its status is sourced or derived
+        # by core/patent_terms.py; "unknown" stays unknown instead of counting as available.
+        india = next((g for g in patent.geo_coverage if g.country_code == "IN"), None)
+        in_status = india.market_status if india else "unknown"
+        in_date = india.loe_date if india else None
+        open_markets = [g.country_code for g in patent.geo_coverage if g.market_status == "off_patent"]
         row = {
             "molecule_key": key,
             "api_name": patent.api_name,
@@ -575,8 +592,11 @@ def _org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] 
             "market_size_usd_bn": patent.market_size_usd_bn,
             "fto_risk": patent.fto_risk,
             "loe": loe,
-            "years_to_loe": _years(earliest, today),
-            "available_now": earliest is None or earliest <= today,
+            "years_to_loe": _years(in_date, today) if in_status in ("loe_pending", "patented") else None,
+            "available_now": in_status == "off_patent",
+            "india_status": in_status,
+            "india_basis": india.basis if india else "unknown",
+            "open_markets": open_markets,
             "modality": complexity.modality,
             "drug_form": complexity.drug_form,
             "sterile": complexity.sterility_required,
@@ -612,7 +632,9 @@ def _org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] 
                 u["molecules"].append(patent.api_name)
                 u["market_usd_bn"] += patent.market_size_usd_bn or 0
 
-    rows.sort(key=lambda r: (-r["fit_score"], -r["total_score"]))
+    # The combined score separates molecules (patent status, regulatory, demand, plant); plant fit alone is the same for
+    # every molecule of a dosage form.
+    rows.sort(key=lambda r: (-r["total_score"], -r["fit_score"]))
     unlocks = sorted(unlock.values(), key=lambda u: (-len(u["molecules"]), -u["market_usd_bn"]))
     for u in unlocks:
         u["market_usd_bn"] = round(u["market_usd_bn"], 1)
@@ -620,7 +642,8 @@ def _org_opportunities(plant_ids: list[str], ontology_keys: Optional[list[str]] 
     tiers: dict[str, int] = {}
     for r in rows:
         tiers[r["fit_tier"]] = tiers.get(r["fit_tier"], 0) + 1
-    ready_soon = [r for r in rows if r["fit_tier"] in ("strategic", "core") and (r["years_to_loe"] is None or r["years_to_loe"] <= 5)]
+    ready_soon = [r for r in rows if r["fit_tier"] in ("strategic", "core")
+                  and (r["available_now"] or (r["years_to_loe"] is not None and r["years_to_loe"] <= 5))]
     return {
         "has_plants": bool(plants),
         "molecules": rows,
@@ -677,8 +700,9 @@ def org_eu_export(ontology_keys: list[str], plant_ids: list[str], molecule_keys:
     verdicts: dict[str, int] = {}
     for a in out:
         verdicts[a["verdict"]] = verdicts.get(a["verdict"], 0) + 1
-    eu_certified = [p.site_name for p in plants if "eu_gmp" in plant_active_certifications(p)]
+    eu_certified = [plant_label(p) for p in plants if "eu_gmp" in plant_active_certifications(p)]
     return {
+        "checked": len(out),
         "assessments": out,
         "blockers": sorted(blocker_counts.values(), key=lambda b: -b["molecules"]),
         "verdicts": verdicts,
@@ -704,5 +728,6 @@ def org_overview(org) -> dict[str, Any]:
             "tiers": opp["tiers"], "ready_within_5y": opp["ready_within_5y"],
             "top": opp["molecules"][:5], "unlocks": opp["unlocks"][:3],
         },
-        "eu": {"verdicts": eu["verdicts"], "top": eu["assessments"][:5], "blockers": eu["blockers"][:3], "eu_gmp_sites": eu["eu_gmp_sites"]},
+        "eu": {"verdicts": eu["verdicts"], "top": eu["assessments"][:5], "blockers": eu["blockers"][:3], "eu_gmp_sites": eu["eu_gmp_sites"],
+               "checked": eu["checked"]},
     }

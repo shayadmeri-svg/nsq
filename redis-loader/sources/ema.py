@@ -91,7 +91,8 @@ def parse(payload: Any) -> dict[str, dict[str, Any]]:
         authorised = "authorised" in status and "not" not in status and "withdrawn" not in status
         generic = _yes(r.get("generic")) or _yes(r.get("generic_or_hybrid"))
         biosimilar = _yes(r.get("biosimilar"))
-        decided = _date(r.get("european_commission_decision_date") or r.get("marketing_authorisation_date"))
+        # The first marketing authorisation, not the latest Commission decision (renewals and variations also get one).
+        decided = _date(r.get("marketing_authorisation_date") or r.get("european_commission_decision_date"))
         holder = str(r.get("marketing_authorisation_developer_applicant_holder") or r.get("marketing_authorisation_holder_company_name") or "").strip()
         name = str(r.get("name_of_medicine") or r.get("medicine_name") or "").strip()
         area = str(r.get("therapeutic_area_mesh") or r.get("therapeutic_area") or "").strip()

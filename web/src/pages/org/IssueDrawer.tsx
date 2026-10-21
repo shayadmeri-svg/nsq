@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Beaker, BookOpenCheck, ClipboardCheck, History, Microscope, TrendingUp } from "lucide-react";
+import { AlertTriangle, Beaker, BookOpenCheck, ClipboardCheck, ExternalLink, History, Microscope, ShieldAlert, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { Badge, Drawer, ErrorNote, Skeleton } from "../../components/ui";
@@ -7,22 +7,6 @@ import { RankBars } from "../../components/charts";
 import { api } from "../../lib/api";
 import { fmtMonth } from "../../lib/format";
 import { useMe } from "../../lib/session";
-
-const TIER: Record<string, { label: string; tone: "brand" | "indigo" | "amber" | "slate" | "sky" }> = {
-  monograph: { label: "Monograph", tone: "brand" },
-  ich_guideline: { label: "ICH", tone: "indigo" },
-  regulatory_registry: { label: "Regulatory registry", tone: "sky" },
-  patent: { label: "Patent", tone: "sky" },
-  empirical_cohort: { label: "NSQ cohort", tone: "indigo" },
-  expert_corridor: { label: "Expert corridor", tone: "amber" },
-  uncited: { label: "Uncited", tone: "slate" },
-};
-
-function Prov({ p }: { p?: any }) {
-  if (!p?.authority_tier) return null;
-  const t = TIER[p.authority_tier] ?? { label: p.authority_tier, tone: "slate" as const };
-  return <span title={[p.source_ref, p.notes].filter(Boolean).join(" — ")}><Badge tone={t.tone}>{t.label}{p.source_ref ? ` · ${p.source_ref}` : ""}</Badge></span>;
-}
 
 function Section({ icon, title, children, i }: { icon: ReactNode; title: string; children: ReactNode; i: number }) {
   return (
@@ -34,10 +18,19 @@ function Section({ icon, title, children, i }: { icon: ReactNode; title: string;
 }
 
 const ORDER: Record<string, string[]> = {
-  QA: ["why", "pattern", "cause", "corridor", "methods", "capa", "history"],
-  Regulatory: ["why", "methods", "capa", "cause", "pattern", "corridor", "history"],
-  Executive: ["why", "pattern", "capa", "cause", "history", "methods", "corridor"],
+  QA: ["why", "pattern", "cause", "corridor", "recalls", "methods", "capa", "history"],
+  Regulatory: ["why", "methods", "capa", "cause", "recalls", "pattern", "corridor", "history"],
+  Executive: ["why", "pattern", "capa", "cause", "recalls", "history", "methods", "corridor"],
 };
+
+function Src({ label, url }: { label: string; url?: string | null }) {
+  return url
+    ? <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-700 hover:underline">{label} <ExternalLink size={10} /></a>
+    : <span className="text-[11px] text-ink-muted">{label}</span>;
+}
+
+const PK_LABEL: Record<string, string> = { half_life_h: "Half-life (h)", vd_l: "Volume of distribution (L)", vd_l_kg: "Volume of distribution (L/kg)",
+  f_pct: "Bioavailability (%)", tmax_h: "Tmax (h)", cl: "Clearance" };
 
 export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: string; issueId?: string; onClose: () => void;
   /** national use (Playground · Investigate): the alert URL, and whose alerts these are */ endpoint?: string; who?: string }) {
@@ -49,7 +42,7 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
   });
   const d = data?.diagnosis;
   const issue = data?.issue;
-  const drug = d?.drug;
+  const ev = data?.evidence;
 
   const blocks: Record<string, ReactNode> = d ? {
     why: (
@@ -86,82 +79,79 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
       </Section>
     ),
     cause: (
-      <Section key="cause" i={2} icon={<Microscope size={15} />} title="Probable root causes">
-        {drug ? (
+      <Section key="cause" i={2} icon={<Microscope size={15} />} title={ev?.molecule ? `What the national record shows for ${ev.molecule.name}` : "What the national record shows"}>
+        {ev?.nsq?.alerts ? (
           <>
-            <div className="mb-2 text-xs text-ink-muted">Curated profile: <b>{drug.name}</b> · {drug.dosage_form} <Prov p={drug.common_alerts_prov} /></div>
-            <ul className="space-y-2">
-              {drug.common_alerts.map((a: string) => <li key={a} className="flex gap-2 text-sm"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />{a}</li>)}
-            </ul>
-            {drug.vigibase_risks?.length > 0 && (
-              <div className="mt-4 rounded-xl bg-rose-50/60 p-3">
-                <div className="label mb-1.5 text-rose-700">Patient-safety consequence</div>
-                {drug.vigibase_risks.map((r: any) => <div key={r.hazard} className="text-sm"><b>{r.hazard}.</b> <span className="text-ink-soft">{r.desc}</span></div>)}
+            <p className="text-sm">{ev.nsq.alerts} CDSCO alerts name single-ingredient {ev.molecule.name} products{ev.nsq.manufacturers ? `, from ${ev.nsq.manufacturers} manufacturers` : ""}; <b>{ev.nsq.this_category_pct}%</b> of them are {issue.category} failures.</p>
+            <div className="mt-3"><RankBars rows={ev.nsq.categories.map((c: any) => ({ name: c.name, count: c.count, sub: `${c.pct}%` }))} color="#e11d48" /></div>
+            {ev.nsq.similar?.length > 0 && (
+              <div className="mt-4">
+                <div className="label mb-1.5">Similar {issue.category} alerts, as CDSCO published them</div>
+                <ul className="space-y-1.5">{ev.nsq.similar.map((q: any, i: number) => <li key={i} className="rounded-lg bg-slate-50 px-3 py-2 text-xs"><span className="text-ink-soft">“{q.result}”</span> <span className="text-ink-faint">— {q.product} · {q.lab} · {fmtMonth(q.month)}</span></li>)}</ul>
               </div>
             )}
+            <div className="mt-2"><Src label={ev.nsq.source.label} url={ev.nsq.source.url} /></div>
           </>
-        ) : (
-          <div className="space-y-2 text-sm text-ink-soft">
-            <p>No curated molecule profile for this product yet — showing the generic standards.</p>
-            {d.generic_text && Object.values(d.generic_text).map((t: any, i) => <p key={i} className="rounded-xl bg-slate-50 p-3 text-xs leading-relaxed">{t}</p>)}
-          </div>
-        )}
-        {d.synthesis_gap && <p className="mt-3 text-xs text-ink-muted">Synthesis-route data is not in the knowledge base yet, so route-related causes are not assessed.</p>}
+        ) : <p className="text-sm text-ink-soft">{ev?.note ?? "No other single-ingredient alerts for this molecule."}</p>}
+        <p className="mt-3 text-xs text-ink-muted">Public records show patterns, not the root cause of this batch: that needs the batch record, the method and the retained sample.</p>
       </Section>
     ),
-    corridor: drug ? (
-      <Section key="corridor" i={3} icon={<Beaker size={15} />} title="GMP process corridor">
-        <div className="mb-3 text-sm">Optimal process: <b>{drug.optimal_process}</b> <Prov p={drug.optimal_process_prov} /></div>
-        <div className="space-y-4">
-          {Object.entries(drug.ideal_parameters ?? {}).map(([k, p]: [string, any]) => {
-            const pos = ((p.ideal - p.min) / (p.max - p.min || 1)) * 100;
-            return (
-              <div key={k}>
-                <div className="mb-1 flex justify-between text-xs"><span className="font-medium">{p.label}</span><span className="text-ink-muted">{p.min}–{p.max} {p.unit} · ideal {p.ideal}</span></div>
-                <div className="relative h-2 rounded-full bg-gradient-to-r from-amber-200 via-brand-200 to-amber-200">
-                  <motion.div className="absolute -top-1 h-4 w-1.5 rounded-full bg-brand-700" initial={{ left: "0%" }} animate={{ left: `calc(${pos}% - 3px)` }} transition={{ duration: 0.8 }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {drug.ideal_excipients?.length > 0 && (
-          <table className="mt-5 w-full text-xs">
-            <thead><tr className="text-left text-ink-muted"><th className="pb-1.5 font-medium">Excipient</th><th className="pb-1.5 font-medium">Role</th><th className="pb-1.5 text-right font-medium">% w/w</th></tr></thead>
-            <tbody>{drug.ideal_excipients.map((e: any) => <tr key={e.name} className="border-t border-line" title={e.description}><td className="py-1.5 font-medium">{e.name}</td><td>{e.role}</td><td className="text-right tabular-nums">{e.ratio}</td></tr>)}</tbody>
-          </table>
+    corridor: ev?.molecule && (ev.dissolution?.methods?.length || ev.label) ? (
+      <Section key="corridor" i={3} icon={<Beaker size={15} />} title="Reference method and formulation">
+        {ev.dissolution?.methods?.length > 0 && (
+          <div className="mb-4">
+            <div className="label mb-1.5">FDA-recommended dissolution method</div>
+            <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="text-left text-ink-muted"><th className="pb-1.5 font-medium">Form</th><th className="pb-1.5 font-medium">Apparatus</th><th className="pb-1.5 font-medium">rpm</th><th className="pb-1.5 font-medium">Medium</th><th className="pb-1.5 font-medium">Volume</th><th className="pb-1.5 font-medium">Sampling (min)</th></tr></thead>
+              <tbody>{ev.dissolution.methods.map((m: any, i: number) => <tr key={i} className="border-t border-line"><td className="py-1.5 font-medium">{m.dosage_form}</td><td>{m.apparatus || "—"}</td><td>{m.rpm ?? "—"}</td><td>{m.medium}</td><td>{m.volume_ml ? `${m.volume_ml} mL` : "—"}</td><td>{m.times_text || "—"}</td></tr>)}</tbody></table></div>
+            <div className="mt-1.5"><Src label="FDA Dissolution Methods Database" url={ev.dissolution.source?.url} /></div>
+          </div>
         )}
+        {ev.label && (
+          <div>
+            <div className="label mb-1.5">US reference label{ev.label.brand ? `: ${ev.label.brand} (${ev.label.application})` : ""}</div>
+            {ev.label.inactive_ingredients?.length > 0 && <p className="text-xs"><span className="text-ink-muted">Inactive ingredients: </span>{ev.label.inactive_ingredients.join(", ")}</p>}
+            {Object.keys(ev.label.pk ?? {}).length > 0 && <ul className="mt-2 space-y-1">{Object.entries(ev.label.pk).map(([k, v]: [string, any]) => <li key={k} className="text-xs"><b>{PK_LABEL[k] ?? k}: {v.value}{v.unit ? ` ${v.unit}` : ""}</b> <span className="text-ink-faint">— “{String(v.text).slice(0, 160)}{String(v.text).length > 160 ? "…" : ""}”</span></li>)}</ul>}
+            <div className="mt-1.5"><Src label="DailyMed label" url={ev.label.url} /></div>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-ink-muted">Excipient amounts and process parameters are not public; compare these against your own validated process.</p>
       </Section>
     ) : null,
-    methods: d.method_diffs?.length ? (
-      <Section key="methods" i={4} icon={<BookOpenCheck size={15} />} title={`Pharmacopoeial differences (${d.nsq_relevant_method_diffs} relevant)`}>
-        <div className="space-y-3">
-          {d.method_diffs.filter((m: any) => m.significance === "NSQ_RELEVANT").map((m: any) => (
-            <div key={m.section} className="rounded-xl bg-slate-50 p-3">
-              <div className="flex items-center justify-between"><span className="text-sm font-semibold capitalize">{m.section.replace(/_/g, " ")}</span><Badge tone="amber">{m.rationale}</Badge></div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                {Object.entries(m.methods).map(([k, v]: [string, any]) => (
-                  <div key={k} className="rounded-lg bg-white p-2.5 text-[11.5px] ring-1 ring-line">
-                    <div className="mb-1 font-semibold">{v?.pharmacopeia ?? k.replace("Pharmacopeia.", "")}</div>
-                    <div className="text-ink-soft">{v?.raw_text ?? <span className="text-ink-faint">No monograph</span>}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+    recalls: ev?.recalls?.items?.length ? (
+      <Section key="recalls" i={4} icon={<ShieldAlert size={15} />} title={`FDA recalls naming ${ev.molecule.name}`}>
+        <p className="mb-2 text-xs text-ink-muted">{ev.recalls.total} FDA enforcement reports; {ev.recalls.matching_category} for a reason like this alert's ({issue.category}).</p>
+        <ul className="divide-y divide-line text-xs">{ev.recalls.items.map((r: any) => <li key={r.recall_number} className="py-2"><div className="flex justify-between gap-3"><b>{r.reason}</b><a href={r.url} target="_blank" rel="noreferrer" className="shrink-0 text-brand-700 hover:underline">{r.recall_number}</a></div><div className="text-ink-faint">{r.firm} · {r.class} · {r.date?.slice(0, 4)}-{r.date?.slice(4, 6)}</div></li>)}</ul>
+        <div className="mt-1.5"><Src label={ev.recalls.source.label} url={ev.recalls.source.url} /></div>
+      </Section>
+    ) : null,
+    methods: ev?.patents ? (
+      <Section key="methods" i={5} icon={<BookOpenCheck size={15} />} title="Patent status">
+        <div className="grid gap-2 sm:grid-cols-3">{ev.patents.markets.map((g: any) => (
+          <div key={g.code} className="rounded-xl bg-slate-50 p-3 text-xs">
+            <div className="flex items-center justify-between"><b>{g.name}</b><Badge tone={g.status === "off_patent" ? "brand" : g.status === "unknown" ? "slate" : g.status === "loe_pending" ? "amber" : "rose"}>{String(g.status).replace("_", " ")}</Badge></div>
+            <div className="mt-1 text-ink-muted">{g.basis}{g.date ? ` · ${g.date}` : ""}</div>
+            <div className="mt-1 text-ink-soft">{g.note}</div>
+            <div className="mt-1 flex flex-wrap gap-2">{(g.sources ?? []).map((x: any, i: number) => <Src key={i} label={x.label} url={x.url} />)}</div>
+          </div>))}</div>
+        {ev.patents.compound?.number && <p className="mt-3 text-xs">Compound patent: <a href={ev.patents.compound.url} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">{ev.patents.compound.number} — {ev.patents.compound.title}</a></p>}
       </Section>
     ) : null,
     capa: (
-      <Section key="capa" i={5} icon={<ClipboardCheck size={15} />} title="Corrective & preventive actions">
+      <Section key="capa" i={5} icon={<ClipboardCheck size={15} />} title="What to check (general, not specific to this batch)">
         <ol className="space-y-2.5">
           {d.mitigations.map((m: any, i: number) => (
             <li key={i} className="flex gap-3 text-sm">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">{i + 1}</span>
-              <div>{m.text} <div className="mt-1"><Prov p={m.provenance} /></div></div>
+              <div>{m.text}</div>
             </li>
           ))}
         </ol>
+        {ev?.guidance?.length > 0 && (
+          <div className="mt-4">
+            <div className="label mb-1.5">General practice — the documents these checks come from</div>
+            <ul className="space-y-1">{ev.guidance.map((g: any) => <li key={g.url}><Src label={`${g.title} (${g.issuer})`} url={g.url} /></li>)}</ul>
+          </div>
+        )}
       </Section>
     ),
     history: data.history?.length > 1 ? (

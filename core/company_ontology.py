@@ -609,6 +609,32 @@ def product_key(raw: str) -> str:
     return key
 
 
+_STRENGTH = re.compile(r"\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|g|gm|ml|iu|i\.u\.|%|w/v|w/w|v/v|lakh)\b(?:\s*/\s*\d*(?:\.\d+)?\s*(?:ml|g|gm|mg))?",
+                       re.IGNORECASE)
+_KEEP_UPPER = {"IP", "BP", "USP", "EP", "SR", "ER", "XR", "DT", "MR", "ODT", "CR", "PR", "IV", "OD", "DS", "INN"}
+
+
+def product_display_name(names) -> str:
+    """Display name for a group of alerts that share a product key.
+
+    The key ignores brand names and strengths, so a group spans brands and strengths: the name shown must too.
+    Brand names in parentheses and strengths are removed from every alert's product name and the most
+    common remaining wording wins ("Paracetamol Tablets IP", never "Paracetamol Tablets IP 650 mg (Febrex-650)")."""
+    from collections import Counter
+
+    variants: Counter = Counter()
+    for n in names:
+        t = re.sub(r"\s*\([^)]*\)?", " ", str(n or ""))
+        t = _STRENGTH.sub(" ", t)
+        t = re.sub(r"\s+", " ", t).strip(" ,.-/&")
+        if t:
+            variants[t.lower()] += 1
+    if not variants:
+        return ""
+    best = variants.most_common(1)[0][0]
+    return " ".join(w.upper() if w.upper().strip(".,") in _KEEP_UPPER else w[:1].upper() + w[1:] for w in best.split())
+
+
 def load_product_ontology(client: redis.Redis | None = None) -> dict[str, dict[str, Any]]:
     """Read every product record out of Redis. Returns
     {canonical_key: record_dict}. Falls back to the local snapshot

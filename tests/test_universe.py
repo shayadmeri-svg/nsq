@@ -44,13 +44,15 @@ def env(tmp_path, monkeypatch):
     })
     src("ema", {"amoxicillin": {"inn": "amoxicillin", "therapeutic_areas": ["Bacterial Infections"], "atc": [], "originator": None,
                                 "authorised": 0, "generics": 0, "biosimilars": 0, "orphan": False, "withdrawn": 0, "first_generic_authorised": "", "holders": [], "medicines": []}})
+    src("chembl", {"amoxicillin": {"found": True, "chembl_id": "CHEMBL1082", "first_approval": 1974, "atc": [{"code": "J01CA04", "level1": "ANTIINFECTIVES FOR SYSTEMIC USE", "level2": "ANTIBACTERIALS FOR SYSTEMIC USE"}]},
+                   "palbociclib": {"found": True, "chembl_id": "CHEMBL189963", "first_approval": 2015, "atc": [{"code": "L01EF01", "level1": "ANTINEOPLASTIC AND IMMUNOMODULATING AGENTS", "level2": "ANTINEOPLASTIC AGENTS"}]}})
     src("clinical_trials", {"amoxicillin": {"term": "amoxicillin OR amoxycillin", "total": 400, "phase3plus": 120, "recent": 40, "india": 12, "fetched_at": "2026-09-27T00:00:00+00:00"}})
     gen = tmp_path / "generated"
     gen.mkdir()
     (gen / "watchlist.json").write_text(json.dumps([{"name": "Vitamin D", "exclude": True}, {"name": "Semaglutide"}]))
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     import build_universe as bu
-    monkeypatch.setattr(bu, "nsq_stats", lambda url: {
+    monkeypatch.setattr(bu, "nsq_stats", lambda url, csv_path=None: {
         "amoxycillin": _nsq(157, 70, {"ip": 120}), "clavulanate": _nsq(118, 50), "vitamin d": _nsq(201, 90),
         "aceclofenac": _nsq(106, 60), "palbociclib": _nsq(3, 2), "tamoxifen": _nsq(12, 5),
     })
@@ -81,7 +83,18 @@ def test_universe(env):
     assert any("6936612" in x["description"] for x in pal["formulation_patents"])
     amx = pats["amoxicillin"]
     assert amx["estimated_loe_us"] == "1983-05-01" and amx["fto_risk"] == "low"
-    assert amx["estimated_loe_in"] and amx["provenance"]["loe_in"]["status"] == "derived"
+    # India: no patent API, so derived from the first approval year (ChEMBL) and the Patents Act term rule
+    geo = {g["country_code"]: g for g in amx["geo_coverage"]}
+    assert geo["IN"]["market_status"] == "off_patent" and geo["IN"]["basis"] == "derived"
+    assert "s. 53" in geo["IN"]["sources"][0]["label"]
+    assert amx["provenance"]["loe_in"]["status"] == "derived"
+    assert amx["therapeutic_area"] == "Antibacterials For Systemic Use"  # WHO ATC, not a name-suffix guess
+    # a market nothing settles is "unknown", never "patented"
+    pal_geo = {g["country_code"]: g for g in pal["geo_coverage"]}
+    assert pal_geo["IN"]["market_status"] == "unknown"
+    # curated seed values without a citation are not carried over
+    assert pal["market_size_usd_bn"] is None
+    assert all(g.get("basis") in ("sourced", "derived", "unknown") for g in pal["geo_coverage"])
     assert "amoxycillin" in amx["aliases"]
     regs = {m["molecule_key"]: m for m in json.loads((tmp / "generated" / "regulatory.json").read_text())["passports"]}
     assert regs["amoxicillin"]["te_code"] == "AB" and regs["amoxicillin"]["ip_2026_monograph"].startswith("IP")

@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 import ingredients as ing  # noqa: E402
+import patent_terms as pt  # noqa: E402
 from sources.common import data_dir, now_iso, read_normalized, write_json_atomic  # noqa: E402
 from sources.purple_book import proper_key  # noqa: E402
 
@@ -139,20 +140,32 @@ def load_seed(name: str, list_key: str) -> list[dict[str, Any]]:
     return json.loads(p.read_text(encoding="utf-8")).get(list_key, [])
 
 
-def nsq_stats(redis_url: Optional[str]) -> dict[str, dict[str, Any]]:
-    """ingredient key -> NSQ facts, with misspellings folded into the common spelling."""
+def _nsq_rows(redis_url: Optional[str], csv_path: Optional[str]):
+    """(product, manufacturer, 'Mon-YYYY') for every NSQ alert — from Redis, or from the CDSCO CSV."""
+    if csv_path:
+        import csv
+
+        with open(csv_path, encoding="utf-8", errors="replace", newline="") as f:
+            for row in csv.DictReader(f):
+                yield row.get("Name of Product"), row.get("Manufactured By"), row.get("Reporting Month & Year")
+        return
     if not redis_url:
-        return {}
+        return
     import redis
 
     r = redis.from_url(redis_url, decode_responses=True)
     ids = list(r.smembers("nsq:records"))
-    raw: dict[str, dict[str, Any]] = defaultdict(lambda: {"alerts": 0, "mfrs": set(), "forms": Counter(), "labels": Counter(),
-                                                          "last": "", "products": Counter()})
     pipe = r.pipeline(transaction=False)
     for i in ids:
         pipe.hmget(f"nsq:record:{i}", "str_product_name", "str_manufactured_by", "dt_reporting_month_year")
-    for product, mfr, month in pipe.execute():
+    yield from pipe.execute()
+
+
+def nsq_stats(redis_url: Optional[str], csv_path: Optional[str] = None) -> dict[str, dict[str, Any]]:
+    """ingredient key -> NSQ facts, with misspellings folded into the common spelling."""
+    raw: dict[str, dict[str, Any]] = defaultdict(lambda: {"alerts": 0, "mfrs": set(), "forms": Counter(), "labels": Counter(),
+                                                          "last": "", "products": Counter()})
+    for product, mfr, month in _nsq_rows(redis_url, csv_path):
         if not product:
             continue
         keys = ing.extract_ingredients(product)
@@ -238,10 +251,13 @@ class Sources:
     def __init__(self) -> None:
         self.meta: dict[str, dict[str, Any]] = {}
         self.data: dict[str, dict[str, Any]] = {}
-        for name in ("orange_book", "purple_book", "ema", "clinical_trials"):
+        for name in ("orange_book", "purple_book", "ema", "clinical_trials", "chembl", "patent_families"):
             n = read_normalized(name)
             self.data[name] = (n or {}).get("data", {}) or {}
             self.meta[name] = {k: v for k, v in (n or {}).items() if k != "data"}
+        n = read_normalized("fda_dissolution")
+        self.diss: dict[str, list[dict[str, Any]]] = (n or {}).get("data", {}) or {}
+        self.meta["fda_dissolution"] = {k: v for k, v in (n or {}).items() if k != "data"}
         # Fallback index by salt-free ingredient key ("clopidogrel bisulfate" -> "clopidogrel")
         self.folded: dict[str, dict[str, Any]] = {
             name: {fk: v for k, v in d.items() if (fk := ing.ingredient_key(k)) and fk != k}
@@ -254,6 +270,17 @@ class Sources:
                 if k and k in idx and not idx[k].get("combination_only"):
                     return idx[k]
         return None
+
+    def dissolution(self, names: list[str]) -> list[dict[str, Any]]:
+        """FDA Dissolution Methods Database rows for this single-ingredient molecule (any dosage form)."""
+        d = self.diss
+        for n in names:
+            k = ing.ingredient_key(n)
+            for cand in (k, ing.us_name(k) if k else "", k.split()[0] if k else ""):
+                if cand and cand in d:
+                    return [{x: r.get(x) for x in ("dosage_form", "apparatus", "rpm", "medium", "volume_ml", "times_min", "times_text", "updated")}
+                            for r in d[cand]][:8]
+        return []
 
     def at(self, name: str) -> str:
         return (self.meta.get(name) or {}).get("retrieved_at", "")
@@ -416,96 +443,122 @@ def build_molecule(key: str, names: list[str], origin: str, src: Sources, nsq: O
         inn = next((n for n in names if n in INN_DIFFERS), None)
         if inn:
             display = f"{_title(inn)} ({ing.us_name(inn)})"
-    area = (cur_p or {}).get("therapeutic_area") or ((ema or {}).get("therapeutic_areas") or [""])[0] or area_from_name(ing.ingredient_key(display))
-    if not cur_p:
-        prov["therapeutic_area"] = _prov("sourced", "EMA", retrieved_at=at_ema) if (ema or {}).get("therapeutic_areas") else \
-            _prov("derived", note="From the molecule's name class (e.g. -sartan ⇒ cardiovascular).") if area else _prov("unknown")
+    chem = src.data["chembl"].get(key) or {}
+    chem = chem if chem.get("found") else {}
+    fam_all = src.data["patent_families"].get(key) or None
+    fa_year = chem.get("first_approval")
+    # A family speaks for the molecule only when its anchor is the compound patent of a molecule young enough to still
+    # have one; an old molecule's Orange Book "drug substance" patents are later forms (salts, crystals, formulations).
+    young = not fa_year or TODAY.year - fa_year <= pt.TERM_YEARS + 5
+    fam = fam_all if fam_all and fam_all.get("anchor_is_compound", True) and young else None
+    # Therapeutic area: the WHO ATC class (ChEMBL), else EMA's therapeutic area. No name-suffix guessing.
+    atc = (chem.get("atc") or [{}])[0]
+    if atc.get("level2"):
+        area = _title(atc["level2"])
+        prov["therapeutic_area"] = _prov("sourced", "WHO ATC via ChEMBL", f"{atc['code']}: {atc.get('level1') or ''} › {atc['level2']}",
+                                         src.at("chembl"))
+    elif (ema or {}).get("therapeutic_areas"):
+        area = (ema or {})["therapeutic_areas"][0]
+        prov["therapeutic_area"] = _prov("sourced", "EMA", retrieved_at=at_ema)
+    else:
+        area = ""
+        prov["therapeutic_area"] = _prov("unknown", note="No WHO ATC code in ChEMBL and no EMA therapeutic area.")
+    if fa_year:
+        prov["first_approval"] = _prov("sourced", "ChEMBL", f"First approval {fa_year} ({chem.get('chembl_id')}).", src.at("chembl"))
 
-    # --- LOE ---
-    loe_us, us_rule = us_loe(ob, pb)
-    loe_eu, eu_rule, eu_status = eu_loe(ema, loe_us)
+    # --- patent status per market: core/patent_terms.py (sourced facts + cited statutes; unknown stays unknown) ---
     form_p, sec_p, barrier = _patent_entries(ob) if ob else ([], [], "none")
-    p = dict(cur_p) if cur_p else {
+    titles = {re.sub(r"\D", "", x.get("number") or ""): x for x in ((fam_all or {}).get("substance_patents") or [])}
+    for x in form_p + sec_p:
+        m = re.match(r"US (\d+)", x["description"])
+        t = titles.get(m.group(1)) if m else None
+        if t and t.get("title"):
+            x["description"] += f": {t['title']}"
+            x["url"] = t.get("url")
+    p = {
         "molecule_key": key, "brand_name": "", "api_name": display, "therapeutic_area": area, "originator": "",
         "estimated_loe_us": None, "estimated_loe_eu": None, "estimated_loe_in": None, "market_size_usd_bn": None,
         "formulation_patents": [], "process_patents": [], "secondary_patents": [], "geo_coverage": [], "fto_risk": "medium",
         "notes": "", "source_url": "",
     }
+    if cur_p:  # a curated seed contributes names only; every dated or numeric claim comes from a source below
+        p.update({k: cur_p[k] for k in ("api_name", "brand_name", "originator") if cur_p.get(k)})
     p["molecule_key"] = key
     p["origin"] = origin
-    p["therapeutic_area"] = p.get("therapeutic_area") or area
+    p["therapeutic_area"] = area
     if ob or pb:
         brand = ((ob or {}).get("rld") or {}).get("trade_name") or ((pb or {}).get("reference") or {}).get("proprietary_name") or ""
         orig = ((ob or {}).get("rld") or {}).get("applicant") or ((pb or {}).get("reference") or {}).get("applicant") or ""
-        if not cur_p:
+        if brand:
             p["brand_name"] = _title(brand)
+        if orig:
             p["originator"] = _title(orig) if orig.isupper() else orig
-        src_name = "FDA Orange Book" if ob else "FDA Purple Book"
-        src_at = at_ob if ob else at_pb
-        if loe_us or ob:
-            p["estimated_loe_us"] = _iso(loe_us)
-            prov["loe_us"] = _prov("sourced" if loe_us else "unknown", src_name, us_rule, src_at)
-        if ob:
-            p["formulation_patents"] = [x for x in (p.get("formulation_patents") or []) if x.get("jurisdiction") not in ("US",)] + form_p
-            p["secondary_patents"] = [x for x in (p.get("secondary_patents") or []) if x.get("jurisdiction") not in ("US",)] + sec_p
-            prov["patents"] = _prov("sourced", "FDA Orange Book", f"{len(form_p) + len(sec_p)} US patents in force.", at_ob)
-    elif not cur_p:
-        prov["loe_us"] = _prov("unknown", note="No Orange Book / Purple Book record.")
-    if ema and (eu_status == "sourced" or not cur_p or not p.get("estimated_loe_eu")):
-        p["estimated_loe_eu"] = _iso(loe_eu)
-        prov["loe_eu"] = _prov(eu_status, "EMA", eu_rule, at_ema)
-    elif not cur_p and loe_eu:
-        p["estimated_loe_eu"] = _iso(loe_eu)
-        prov["loe_eu"] = _prov(eu_status, note=eu_rule)
-    elif not cur_p:
-        prov["loe_eu"] = _prov("unknown", note="Not centrally authorised in the EU; national authorisations are not covered.")
-    if not cur_p:
-        us_d, eu_d = _d(p.get("estimated_loe_us")), _d(p.get("estimated_loe_eu"))
-        if us_d and eu_d and us_d < TODAY and eu_d < TODAY:
-            p["estimated_loe_in"] = _iso(min(us_d, eu_d))
-            prov["loe_in"] = _prov("derived", note="Off-patent in both the US and EU; India has no patent API, so treated as off-patent.")
-        else:
-            prov["loe_in"] = _prov("unknown", note="India has no public patent API.")
-    # FTO
+    statuses: dict[str, pt.Status] = {}
+    if ob or not pb:
+        statuses["US"] = pt.us_status(ob, today=TODAY, first_approval_year=fa_year, family=fam)
+    else:
+        loe_us, us_rule = us_loe(None, pb)
+        statuses["US"] = (pt._by_date("US", loe_us, TODAY, "sourced", us_rule,
+                                      [{"label": "FDA Purple Book", "url": "https://purplebooksearch.fda.gov/"}], "composition")
+                          if loe_us else pt.Status("US", "unknown", "unknown", None, "Purple Book record without an exclusivity date."))
+    first_eu = _d(((ema or {}).get("originator") or {}).get("authorised"))
+    eu_fam = pt.market_status("EU", today=TODAY, family=fam, first_approval_year=fa_year, first_eu_authorisation=first_eu)
+    eu_ema = pt.eu_from_ema(ema, today=TODAY)
+    if eu_fam.basis == "unknown" and eu_ema:
+        statuses["EU"] = eu_ema
+    else:
+        statuses["EU"] = eu_fam
+        if eu_ema and eu_fam.status != "off_patent":
+            eu_fam.note += f" EMA has already authorised generics ({eu_ema.note}) — authorisation can precede launch while an SPC runs."
+    for code in pt.MARKETS:
+        if code not in statuses:
+            statuses[code] = pt.market_status(code, today=TODAY, family=fam, first_approval_year=fa_year, first_eu_authorisation=first_eu)
+    p["geo_coverage"] = [statuses[c].as_geo() for c in pt.MARKETS]
+    for code, field in (("US", "estimated_loe_us"), ("EU", "estimated_loe_eu"), ("IN", "estimated_loe_in")):
+        s = statuses[code]
+        p[field] = _iso(s.date) if s.status != "unknown" and s.date else None
+        prov[f"loe_{code.lower()}"] = _prov(s.basis, ", ".join(x["label"] for x in s.sources[:2]), s.note,
+                                           src.at("patent_families") if fam and s.basis != "unknown" and code != "US" else (at_ob if code == "US" else ""))
+        prov[f"loe_{code.lower()}"]["status_value"] = s.status
+    prov["geo_coverage"] = _prov("derived", note="Per market: the publisher's own status where one exists (Orange Book, EMA, Google Patents "
+                                                 "legal status), else a statutory term rule applied to sourced dates (core/patent_terms.py), else unknown.")
     if ob:
-        ex = _d(ob.get("last_exclusivity_expiry"))
-        if barrier == "composition" or (ex and ex > TODAY + timedelta(days=365)):
-            fto = "high"
-        elif barrier in ("formulation", "secondary"):
-            fto = "medium"
-        else:
-            fto = "low"
-        p["fto_risk"] = fto
-        prov["fto_risk"] = _prov("derived", "FDA Orange Book", "high = compound patent or >1 y exclusivity left; medium = formulation/method patents only; low = none in force. US only; no claims analysis.", at_ob)
-    elif pb and not cur_p:
-        p["fto_risk"] = "high" if (loe_us and loe_us > TODAY) else "medium"
-        prov["fto_risk"] = _prov("derived", "FDA Purple Book", "Biologics: process/formulation patents usually remain after exclusivity.", at_pb)
-    elif not cur_p:
-        prov["fto_risk"] = _prov("unknown")
-    # geo coverage: replace US/EU(/IN) rows we can speak to; keep curated rows for other countries.
-    geos = {g.get("country_code"): g for g in (p.get("geo_coverage") or [])}
-    if ob or pb or not cur_p:
-        geos["US"] = geo("US", "United States", _d(p.get("estimated_loe_us")), barrier, us_rule or "No US record")
-    if ema or not cur_p:
-        geos["EU"] = geo("EU", "European Union", _d(p.get("estimated_loe_eu")), "none" if eu_status != "unknown" else "none", eu_rule or "Not centrally authorised")
-    if not cur_p:
-        geos["IN"] = geo("IN", "India", _d(p.get("estimated_loe_in")), "none", "Derived from US/EU status" if p.get("estimated_loe_in") else "Unknown")
-    p["geo_coverage"] = list(geos.values())
-    if ob or pb or ema:
-        prov["geo_coverage"] = _prov("derived", note="US from the Orange/Purple Book, EU from EMA; other countries keep curated values.")
-    if not cur_p:
-        prov["market_size_usd_bn"] = _prov("unknown", note="No free public source for sales by molecule.")
-        p["source_url"] = OB_PAGE if ob else ((ema or {}).get("originator") or {}).get("url") or ""
-        bits = []
-        if ob:
-            bits.append(f"Orange Book: {ob.get('anda_active', 0)} active ANDAs, {ob.get('nda_active', 0)} active NDAs")
-        if pb:
-            bits.append(f"Purple Book: {pb.get('biosimilars', 0)} biosimilars")
-        if ema:
-            bits.append(f"EMA: {ema.get('authorised', 0)} centrally authorised ({ema.get('generics', 0)} generics)")
-        if nsq:
-            bits.append(f"CDSCO NSQ: {nsq['alerts']} alerts across {len(nsq['mfrs'])} manufacturers")
-        p["notes"] = "Auto-built from public sources. " + "; ".join(bits) + "."
+        p["formulation_patents"] = form_p
+        p["secondary_patents"] = sec_p
+        prov["patents"] = _prov("sourced", "FDA Orange Book", f"{len(form_p) + len(sec_p)} US patents in force.", at_ob)
+    if fam:
+        a = fam.get("anchor") or {}
+        p["compound_patent"] = {**a, "international_filing": fam.get("international_filing"), "spcs": fam.get("spcs", [])[:8],
+                                "family_countries": fam.get("countries", {})}
+        prov["compound_patent"] = _prov("sourced", "Google Patents", f"{a.get('number')}: {a.get('title')}", src.at("patent_families"))
+    # FTO: from the US status, which is the only market with a complete patent listing.
+    us = statuses["US"]
+    if us.status in ("patented", "loe_pending") and us.barrier == "composition":
+        fto = "high"
+    elif us.status in ("patented", "loe_pending") or us.barrier in ("formulation", "secondary"):
+        fto = "medium"
+    elif us.status == "unknown":
+        fto = "unknown"
+    else:
+        fto = "low"
+    p["fto_risk"] = fto
+    prov["fto_risk"] = _prov("derived", "FDA Orange Book",
+                             "high = compound patent / exclusivity blocks generics; medium = only product-specific patents remain; "
+                             "low = open; US only, no claims analysis.", at_ob)
+    prov["market_size_usd_bn"] = _prov("unknown", note="No free public source gives sales by molecule; no estimate is shown.")
+    p["source_url"] = OB_PAGE if ob else ((ema or {}).get("originator") or {}).get("url") or ""
+    bits = []
+    if ob:
+        bits.append(f"Orange Book: {ob.get('anda_active', 0)} active ANDAs, {ob.get('nda_active', 0)} active NDAs")
+    if pb:
+        bits.append(f"Purple Book: {pb.get('biosimilars', 0)} biosimilars")
+    if ema:
+        bits.append(f"EMA: {ema.get('authorised', 0)} centrally authorised ({ema.get('generics', 0)} generics)")
+    if fa_year:
+        bits.append(f"ChEMBL: first approved {fa_year}")
+    if nsq:
+        bits.append(f"CDSCO NSQ: {nsq['alerts']} alerts across {len(nsq['mfrs'])} manufacturers")
+    p["notes"] = "Built from public sources. " + "; ".join(bits) + "."
     aliases = sorted({n.lower() for n in names if n} | set((nsq or {}).get("variants", set())) | {ing.ingredient_key(x) for x in (ob or {}).get("names", [])})
     p["aliases"] = [a for a in aliases if a and a != key][:20]
     forms = (ob or {}).get("dosage_forms") or [f for f, _ in ((nsq or {}).get("forms") or Counter()).most_common(4)]
@@ -523,7 +576,10 @@ def build_molecule(key: str, names: list[str], origin: str, src: Sources, nsq: O
     p["provenance"] = {**(cur_p or {}).get("provenance", {}), **prov}
 
     # --- regulatory passport ---
-    r = dict(cur_r) if cur_r else {
+    # Curated passports contributed hand-written monograph details, BCS classes and BE notes with no citation;
+    # none of that is kept. Every field below comes from the Orange Book, Purple Book, FDA's dissolution
+    # database or the monograph labels printed on CDSCO product names.
+    r = {
         "molecule_key": key, "ip_2026_monograph": "", "ph_eur_monograph": "", "usp_monograph": "", "analytical_specs": [],
         "stability_conditions": "", "bcs_class": "", "rld": "", "rld_applicant": "", "te_code": "", "te_rating": "",
         "dosage_form": "", "strength": "", "exclusivity": [], "bioequivalence_notes": "", "readiness": "placeholder",
@@ -552,7 +608,12 @@ def build_molecule(key: str, names: list[str], origin: str, src: Sources, nsq: O
         rprov["rld"] = _prov("sourced", "FDA Purple Book", retrieved_at=at_pb)
         if r.get("readiness") == "placeholder":
             r["readiness"] = "partial"
-    if nsq and not cur_r:
+    diss = src.dissolution(names)
+    if diss:
+        r["dissolution_methods"] = diss
+        rprov["dissolution_methods"] = _prov("sourced", "FDA Dissolution Methods Database",
+                                             f"{len(diss)} method(s) for this ingredient", src.at("fda_dissolution"))
+    if nsq:
         labels = nsq["labels"]
         if labels.get("ip"):
             r["ip_2026_monograph"] = f"IP (labelled 'IP' on {labels['ip']} alerted products)"
@@ -564,12 +625,14 @@ def build_molecule(key: str, names: list[str], origin: str, src: Sources, nsq: O
             rprov["monographs"] = _prov("derived", "CDSCO NSQ", "A monograph exists because Indian products are labelled IP/BP/USP; edition not checked.")
     if not r.get("dosage_form") and forms:
         r["dosage_form"] = _title(forms[0])
-    r["provenance"] = {**(cur_r or {}).get("provenance", {}), **rprov}
+    r["provenance"] = rprov
 
     # --- demand profile ---
-    d = dict(cur_d) if cur_d else {
+    # Curated demand profiles carried hand-typed prevalence, buyer-activity and momentum numbers with no source;
+    # they are not used. Demand signals are ClinicalTrials.gov counts, Orange Book competition and CDSCO breadth.
+    d = {
         "molecule_key": key, "disease_area": area, "disease_prevalence_global_millions": 0, "disease_prevalence_india_millions": 0,
-        "growth_trend": "stable", "trial_count_total": 0, "trial_count_phase_3_plus": 0, "cluster": "", "buyer_activity_score": 0,
+        "growth_trend": "", "trial_count_total": 0, "trial_count_phase_3_plus": 0, "cluster": "", "buyer_activity_score": 0,
         "competitor_anda_count": 0, "market_momentum_score": 0, "notes": "", "source_url": "",
     }
     d["molecule_key"] = key
@@ -581,26 +644,24 @@ def build_molecule(key: str, names: list[str], origin: str, src: Sources, nsq: O
         if tot >= 10:
             share = rec / tot
             d["growth_trend"] = "growing" if share >= 0.3 else "declining" if share < 0.08 else "stable"
-            d["market_momentum_score"] = round(max(0.0, min(100.0, 30 + 150 * share)), 1)
-            dprov["growth_trend"] = _prov("derived", "ClinicalTrials.gov", f"{rec} of {tot} trials started in the last 3 years.")
-            dprov["market_momentum_score"] = _prov("derived", "ClinicalTrials.gov", "30 + 150 × share of trials started in the last 3 years (0–100).")
+            dprov["growth_trend"] = _prov("derived", "ClinicalTrials.gov", f"{rec} of {tot} trials started in the last 3 years (research activity, not sales).")
     if ob:
         d["competitor_anda_count"] = int(ob.get("anda_active") or 0)
         dprov["competitor_anda_count"] = _prov("sourced", "FDA Orange Book", "Active (not discontinued) ANDAs for single-ingredient products.", at_ob)
     elif pb:
         d["competitor_anda_count"] = int(pb.get("biosimilars") or 0)
         dprov["competitor_anda_count"] = _prov("sourced", "FDA Purple Book", "Licensed biosimilars.", at_pb)
-    if nsq and not cur_d:
+    if nsq:
         m = len(nsq["mfrs"])
         d["buyer_activity_score"] = round(100 * min(1.0, math.log10(1 + m) / math.log10(61)), 1)
         dprov["buyer_activity_score"] = _prov("derived", "CDSCO NSQ", f"Indian market breadth: {m} manufacturers had alerts (log scale, 60+ = 100).")
-    if not cur_d:
+    if True:
         d["disease_area"] = area
         d["cluster"] = cluster_for(area, forms, int((ob or {}).get("anda_active") or 0), biologic)
         dprov["disease_prevalence"] = _prov("unknown", note="No automated prevalence source (IHME GBD is manual).")
         if not ct:
             dprov["trial_counts"] = _prov("unknown", note="Not queried yet — the ClinicalTrials.gov fetch walks the universe weekly.")
-    d["provenance"] = {**(cur_d or {}).get("provenance", {}), **dprov}
+    d["provenance"] = dprov
     typed = apply_entry(entry, p, r, d) if entry else []
 
     summary = {
@@ -623,12 +684,12 @@ def _json_default(o):
     raise TypeError(type(o))
 
 
-def build(redis_url: Optional[str], min_alerts: int, max_auto: int) -> dict[str, Any]:
+def build(redis_url: Optional[str], min_alerts: int, max_auto: int, csv_path: Optional[str] = None) -> dict[str, Any]:
     src = Sources()
     curated_p = {m["molecule_key"]: m for m in load_seed("patent_seed", "molecules")}
     curated_r = {m["molecule_key"]: m for m in load_seed("regulatory_seed", "passports")}
     curated_d = {m["molecule_key"]: m for m in load_seed("demand_seed", "profiles")}
-    stats = nsq_stats(redis_url)
+    stats = nsq_stats(redis_url, csv_path)
     watch, excluded = load_watchlist()
     entries = {e["key"]: e for e in load_entries() if e.get("key")}
 
@@ -727,8 +788,9 @@ def main() -> int:
     ap.add_argument("--redis-url", default=os.environ.get("REDIS_URL"))
     ap.add_argument("--min-alerts", type=int, default=int(os.environ.get("UNIVERSE_MIN_ALERTS", "5")))
     ap.add_argument("--max-auto", type=int, default=int(os.environ.get("UNIVERSE_MAX_AUTO", "250")))
+    ap.add_argument("--csv", help="Read the NSQ alerts from the CDSCO CSV instead of Redis.")
     args = ap.parse_args()
-    u = build(args.redis_url, args.min_alerts, args.max_auto)
+    u = build(args.redis_url, args.min_alerts, args.max_auto, args.csv)
     c = u["counts"]
     print(f"molecule universe: {c['molecules']} molecules "
           f"({c.get('curated', 0)} curated, {c.get('auto', 0)} auto, {c.get('manual', 0)} watchlist); "

@@ -64,44 +64,35 @@ def _tenant_df() -> pd.DataFrame:
     ])
 
 
-def test_curated_telmisartan_diagnosis():
+def test_diagnosis_carries_no_uncited_profile():
+    """The curated drug profiles (root causes, "VigiBase" risks, process corridors, monograph text) had no citations,
+    so a diagnosis no longer carries them — molecule evidence comes from public sources (backend/app/evidence.py)."""
     from diagnostics_core import build_diagnosis
     df = _tenant_df()
     d = build_diagnosis(df.iloc[0], df)
-    assert d.api_id == "telmisartan"
-    assert d.drug is not None and d.drug.name == "Telmisartan"
-    assert d.drug.optimal_process == "Direct Compression"
-    assert not d.generic_fallback
-    # Pharmacopeial diff: 3 sections, at least one NSQ-relevant for telmisartan.
-    assert len(d.method_diffs) == 3
-    assert d.nsq_relevant_method_diffs >= 1
-    # Mitigation playbook for Dissolution is curated.
+    assert d.api_id == "telmisartan"  # still recognised, for linking the evidence
+    assert d.drug is None
+    assert d.generic_text is None
+    assert d.method_diffs == [] and d.nsq_relevant_method_diffs == 0
+    # Mitigation checks (general practice) remain, without unsourced numbers.
     assert len(d.mitigations) >= 1
+    assert not any("IP 2026" in m.text or "±3%" in m.text or "n=10" in m.text for m in d.mitigations)
     # Data-informed signals over the tenant frame.
     assert d.dominant_failures[0] == ("Dissolution", 2, 50.0)
     assert d.is_dominant_failure is True
     assert d.form_span == 2
     assert d.tenant_alert_count == 4
-    assert d.synthesis_gap is True
-    # Common OOS alert for telmisartan surfaces in the curated alerts.
-    alerts_blob = " ".join(d.drug.common_alerts)
-    assert "meglumine" in alerts_blob.lower()
 
 
-def test_uncurated_fallback_diagnosis():
+def test_uncurated_product_diagnosis():
     from diagnostics_core import build_diagnosis
     df = _tenant_df()
-    d = build_diagnosis(df.iloc[1], df)  # Luliconazole — not curated
+    d = build_diagnosis(df.iloc[1], df)  # Luliconazole
     assert d.api_id is None
     assert d.drug is None
-    assert d.generic_fallback is True
-    assert d.generic_text is not None
-    assert "scientific" in d.generic_text and "regulatory" in d.generic_text
     assert d.method_diffs == []
-    assert d.nsq_relevant_method_diffs == 0
     # Description is not the dominant failure (Dissolution is).
     assert d.is_dominant_failure is False
-    assert d.synthesis_gap is True
 
 
 def test_outlier_failure_is_flagged():

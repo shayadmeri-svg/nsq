@@ -98,7 +98,7 @@ function MoleculeTab({ p }: { p: any }) {
           </div>
           {(s.flags?.length > 0) && <Card className="space-y-1 p-3 text-xs text-amber-800">{s.flags.map((f: string) => <div key={f} className="flex gap-1.5"><Info size={12} className="mt-0.5 shrink-0" />Solubility: {f}</div>)}</Card>}
           <Card className="p-4 text-xs">
-            <div className="flex items-center justify-between"><div className="label mb-2">NSQ record for this molecule</div><Pill kind="source" label="CDSCO Not of Standard Quality alerts" /></div>
+            <div className="flex items-center justify-between"><div className="label mb-2">NSQ record for this molecule</div><Pill kind="source" label="CDSCO Not of Standard Quality alerts naming this molecule (combinations included; spurious batches excluded — the named maker isn't the source)" /></div>
             <div className="flex flex-wrap gap-4"><span><b className="text-base">{p.nsq.alerts}</b> alerts</span><span><b className="text-base">{p.nsq.dissolution_pct}%</b> dissolution failures</span>{p.nsq.max_strength_mg && <span>highest tablet/capsule strength seen <b>{p.nsq.max_strength_mg} mg</b></span>}</div>
             <div className="mt-2 flex flex-wrap gap-1.5">{p.nsq.categories.map((c: any) => <Badge key={c.name}>{c.name} · {c.count}</Badge>)}</div>
             <p className="mt-2 text-ink-muted">{p.bcs.reason}</p>
@@ -147,7 +147,8 @@ function IonControls({ f, set, p }: { f: any; set: (k: string) => (v: any) => vo
 
 function Dissolution({ mkey, p }: { mkey: string; p: any }) {
   const dose0 = p.derived.dose_mg ?? null;
-  const init = { dose_mg: dose0 as number | null, d50_um: 20, gsd: 1.8, lag_min: 2, volume_ml: 900, q_pct: 75, q_time_min: 45, ph: 6.8, ionization: "auto" as Ion, pka: null as number | null };
+  // volume and pH start empty: the server fills them from FDA's dissolution method for this molecule when there is one
+  const init = { dose_mg: dose0 as number | null, d50_um: 20, gsd: 1.8, lag_min: 2, volume_ml: null as number | null, q_pct: 75, q_time_min: 45, ph: null as number | null, ionization: "auto" as Ion, pka: null as number | null };
   const [f, setF] = useState(init);
   useEffect(() => setF(init), [mkey]); // eslint-disable-line
   const df = useDebounced(f);
@@ -163,8 +164,10 @@ function Dissolution({ mkey, p }: { mkey: string; p: any }) {
           <Num label="Particle d50" unit="µm" value={f.d50_um} min={1} max={200} onChange={set("d50_um")} dflt={20} />
           <Num label="Size spread (GSD)" value={f.gsd} min={1.1} max={3} step={0.1} onChange={set("gsd")} dflt={1.8} />
           <Num label="Disintegration lag" unit="min" value={f.lag_min} min={0} max={20} step={0.5} onChange={set("lag_min")} dflt={2} />
-          <Num label="Medium volume" unit="mL" value={f.volume_ml} min={250} max={1000} step={50} onChange={set("volume_ml")} dflt={900} />
-          <IonControls f={f} set={set} p={p} />
+          <Num label="Medium volume" unit="mL" value={f.volume_ml ?? r?.inputs.medium.volume_ml ?? null} min={250} max={1000} step={50} onChange={set("volume_ml")}
+            kind={f.volume_ml == null ? r?.inputs.medium.kind : "user"} hint={r?.inputs.medium.label} />
+          {r?.fda_method && f.volume_ml == null && <div className="-mt-1 text-[10.5px] text-ink-muted">{r.inputs.medium.label}</div>}
+          <IonControls f={{ ...f, ph: f.ph ?? r?.inputs.medium.ph ?? 6.8 }} set={set} p={p} />
           <div className="text-[10.5px] text-ink-muted">Generic Q: enter the monograph's</div>
           <div className="grid grid-cols-2 gap-2"><Num label="Q" unit="%" value={f.q_pct} onChange={set("q_pct")} dflt={75} /><Num label="at" unit="min" value={f.q_time_min} onChange={set("q_time_min")} dflt={45} /></div>
         </div>
@@ -200,7 +203,9 @@ const BE_TONE: Record<string, { tone: any; box: string; label: string }> = {
 
 function Bioequivalence({ mkey, p }: { mkey: string; p: any }) {
   const dose0 = p.derived.dose_mg ?? null;
-  const init = { dose_mg: dose0 as number | null, d50_um: 60, lag_min: 5, ref_d50_um: 5, cl_l_h: 10, v_l: 50, ka_h: 1, f_abs: 1, window_h: 4, in_vivo_scale: 1, ph: 6.8, ionization: "auto" as Ion, pka: null as number | null };
+  // PK starts empty: the server takes it from the US label (quoted) where the label states it
+  const init = { dose_mg: dose0 as number | null, d50_um: 60, lag_min: 5, ref_d50_um: 5, cl_l_h: null as number | null, v_l: null as number | null, ka_h: null as number | null,
+    f_abs: null as number | null, window_h: 4, in_vivo_scale: 1, ph: null as number | null, ionization: "auto" as Ion, pka: null as number | null };
   const [f, setF] = useState(init);
   useEffect(() => setF(init), [mkey]); // eslint-disable-line
   const df = useDebounced(f, 400);
@@ -222,14 +227,17 @@ function Bioequivalence({ mkey, p }: { mkey: string; p: any }) {
           <Num label="Particle d50" unit="µm" value={f.d50_um} min={1} max={250} onChange={set("d50_um")} dflt={60} />
           <Num label="Disintegration lag" unit="min" value={f.lag_min} min={0} max={60} onChange={set("lag_min")} dflt={5} />
           <Num label="Reference d50" unit="µm" value={f.ref_d50_um} min={1} max={50} onChange={set("ref_d50_um")} dflt={5} />
-          <IonControls f={f} set={set} p={p} />
-          <div className="label pt-2">Pharmacokinetics (enter literature values)</div>
+          <IonControls f={{ ...f, ph: f.ph ?? 6.8 }} set={set} p={p} />
+          <div className="label pt-2">Pharmacokinetics (from the US label where it states them)</div>
           <div className="grid grid-cols-2 gap-2">
-            <Num label="Clearance" unit="L/h" value={f.cl_l_h} step={0.5} onChange={set("cl_l_h")} dflt={10} />
-            <Num label="Volume" unit="L" value={f.v_l} step={5} onChange={set("v_l")} dflt={50} />
-            <Num label="ka" unit="1/h" value={f.ka_h} step={0.1} onChange={set("ka_h")} dflt={1} />
-            <Num label="F (fraction)" value={f.f_abs} step={0.05} onChange={set("f_abs")} dflt={1} />
+            {([["cl_l_h", "Clearance", "L/h", 0.5], ["v_l", "Volume", "L", 5], ["ka_h", "ka", "1/h", 0.1], ["f_abs", "F (fraction)", "", 0.05]] as const).map(([k, label, unit, step]) => {
+              const src = r?.pk_inputs?.[k];
+              return <Num key={k} label={label} unit={unit || undefined} step={step} value={(f as any)[k] ?? src?.value ?? null} onChange={set(k)}
+                kind={(f as any)[k] != null ? "user" : src?.kind} hint={src?.text ? `${src.label}: “${src.text}”${src.note ? ` — ${src.note}` : ""}` : "Not stated on the US label: enter a literature value"} />;
+            })}
           </div>
+          {r?.pk_inputs && Object.values(r.pk_inputs).some((x: any) => x.kind === "source") && (() => { const s0: any = Object.values(r.pk_inputs).find((x: any) => x.kind === "source");
+            return <a href={s0.url} target="_blank" rel="noreferrer" className="text-[10.5px] text-brand-700 hover:underline">PK quoted from {s0.label} (DailyMed) — hover a value for the sentence</a>; })()}
           <Num label="Absorption window" unit="h" value={f.window_h} min={1} max={12} step={0.5} onChange={set("window_h")} dflt={4} hint="Small-intestine transit; drug dissolving after this is not absorbed" />
         </div>
         <div>

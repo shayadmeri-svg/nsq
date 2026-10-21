@@ -100,8 +100,50 @@ def ideal_mole_fraction(temp_c: float, mp_c: float, dh_fus: float) -> float:
     return min(1.0, math.exp(-dh_fus / R * (1 / t - 1 / tm)))
 
 
+@lru_cache(maxsize=512)
+def unifac_groups(cas: Optional[str]) -> Optional[tuple[tuple[int, int], ...]]:
+    """Modified UNIFAC (Dortmund) subgroups for a compound, as the Dortmund Data Bank (DDBST) assigns them.
+
+    Only published assignments are used (thermo ships the DDBST table): no automatic fragmentation, which fails
+    on most drug molecules and would be a guess."""
+    if not cas:
+        return None
+    try:
+        from thermo.unifac import UNIFAC_group_assignment_DDBST
+        g = UNIFAC_group_assignment_DDBST(cas, "MODIFIED_UNIFAC")
+    except Exception:
+        return None
+    return tuple(sorted(g.items())) if g else None
+
+
+def unifac_gamma(api_groups, solvent_groups, temp_c: float, x_api: float) -> float:
+    """Activity coefficient of the API in a binary API–solvent mixture, Modified UNIFAC (Dortmund, 2016 parameters)."""
+    from thermo.unifac import DOUFIP2016, DOUFSG, UNIFAC
+
+    x = min(max(x_api, 1e-9), 0.999)
+    m = UNIFAC.from_subgroups(T=temp_c + 273.15, xs=[x, 1 - x], chemgroups=[dict(api_groups), dict(solvent_groups)],
+                              version=1, interaction_data=DOUFIP2016, subgroups=DOUFSG)
+    return float(m.gammas()[0])
+
+
+def unifac_solubility(temp_c: float, mp_c: float, dh_fus: float, api_groups, solvent_groups) -> tuple[float, float]:
+    """Solid–liquid equilibrium x = x_ideal / γ(x), solved by fixed-point iteration. Returns (x, γ)."""
+    xi = ideal_mole_fraction(temp_c, mp_c, dh_fus)
+    x = xi
+    g = 1.0
+    for _ in range(200):
+        g = unifac_gamma(api_groups, solvent_groups, temp_c, x)
+        nx = min(xi / max(g, 1e-9), 0.95)
+        if abs(nx - x) < 1e-10 * max(x, 1e-12):
+            x = nx
+            break
+        x = 0.5 * x + 0.5 * nx
+    return x, g
+
+
 def curve(api_mw: float, mp_c: float, dh_fus: float, solvent_key: str, gamma: float = 1.0,
-          aq_mg_ml_25: Optional[float] = None, t_min: float = -10.0, t_max: float = 90.0) -> dict[str, Any]:
+          aq_mg_ml_25: Optional[float] = None, t_min: float = -10.0, t_max: float = 90.0,
+          api_cas: Optional[str] = None) -> dict[str, Any]:
     """Solubility (kg/m3 of solvent) vs temperature.
 
     Organic solvents: ideal solubility divided by an activity coefficient (1 = ideal,
@@ -111,19 +153,39 @@ def curve(api_mw: float, mp_c: float, dh_fus: float, solvent_key: str, gamma: fl
     sv = solvent(solvent_key)
     temps = np.linspace(t_min, t_max, 41)
     vals = []
+    # Modified UNIFAC when the DDBST assigns groups to both the API and the solvent and no γ was entered
+    ag, sg = unifac_groups(api_cas), unifac_groups(sv.get("cas"))
+    use_unifac = solvent_key != "water" and abs(gamma - 1.0) < 1e-9 and ag is not None and sg is not None
+    gammas = []
     for tc in temps:
         if solvent_key == "water" and aq_mg_ml_25 is not None:
             vals.append(aq_mg_ml_25 * math.exp(-dh_fus / R * (1 / (tc + 273.15) - 1 / 298.15)))
             continue
+        if use_unifac:
+            try:
+                x, g_ = unifac_solubility(tc, mp_c, dh_fus, ag, sg)
+                gammas.append(g_)
+                rho = solvent_density(solvent_key, tc)
+                vals.append(x / (1 - x) * api_mw / sv["mw"] * rho)
+                continue
+            except Exception:
+                use_unifac = False
+                vals, gammas = [], []
         x = ideal_mole_fraction(tc, mp_c, dh_fus) / max(gamma, 1e-6)
         x = min(x, 0.95)
         rho = solvent_density(solvent_key, tc)
         vals.append(x / (1 - x) * api_mw / sv["mw"] * rho)  # kg API per m3 solvent
     vals = np.array(vals)
+    if use_unifac and len(vals) != len(temps):  # UNIFAC failed part-way: recompute the whole curve as ideal
+        return curve(api_mw, mp_c, dh_fus, solvent_key, gamma, aq_mg_ml_25, t_min, t_max, api_cas=None)
     model = ("aqueous solubility at 25 °C + van 't Hoff (ΔHfus as ΔHsol)" if solvent_key == "water" and aq_mg_ml_25 is not None
+             else f"Modified UNIFAC (Dortmund, DDBST group assignments): γ {min(gammas):.2g}–{max(gammas):.2g}" if use_unifac
              else f"ideal solubility / γ={gamma:g}")
-    ideal = solvent_key != "water" and abs(gamma - 1.0) < 1e-9
-    return {"ideal": ideal,
+    ideal = solvent_key != "water" and abs(gamma - 1.0) < 1e-9 and not use_unifac
+    return {"ideal": ideal, "unifac": use_unifac,
+            "unifac_note": None if use_unifac or solvent_key == "water" else
+            ("no Modified UNIFAC group assignment for this molecule in the DDBST table, so the solvent is not modelled"
+             if ag is None else "no UNIFAC groups for this solvent"),
             "solvent_modelled": solvent_key == "water" or not ideal,"temps_c": temps.round(1).tolist(), "kg_m3": [float(f"{v:.5g}") for v in vals],
             "model": model, "solvent": sv}
 

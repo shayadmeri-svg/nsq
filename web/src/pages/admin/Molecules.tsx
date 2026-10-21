@@ -87,6 +87,7 @@ function MoleculeDrawer({ mkey, onClose, onEdit, canEdit }: { mkey?: string; onC
             </div>}
             {sig.nsq && <div className="rounded-xl border border-line p-3 text-xs"><div className="mb-1.5 flex items-center gap-1.5 font-semibold"><span className={cn("rounded px-1 text-[10px] font-bold", SOURCE_CHIP.cdsco.cls)}>NSQ</span> CDSCO alerts</div>
               <div>{sig.nsq.alerts} alerts · {sig.nsq.manufacturers} manufacturers · last {sig.nsq.last}</div>
+              <div className="mt-0.5 text-ink-faint">every alert naming the ingredient, combinations and spurious batches included (the Lab excludes spurious ones)</div>
               <div className="text-ink-muted">{Object.entries(sig.nsq.forms ?? {}).map(([k, v]) => `${k} ${v}`).join(" · ")}</div>
             </div>}
           </div>

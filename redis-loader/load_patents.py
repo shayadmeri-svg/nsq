@@ -48,6 +48,7 @@ def _parse_patent_entry(raw: dict) -> PatentEntry:
         expiry_date=expiry,
         jurisdiction=raw.get("jurisdiction", "global"),
         risk_level=raw.get("risk_level", "medium"),
+        url=raw.get("url") or "",
     )
 
 
@@ -57,11 +58,13 @@ def _parse_geo_coverage(raw: dict):
     return GeoCoverage(
         country_code=raw.get("country_code", ""),
         country_name=raw.get("country_name", ""),
-        market_status=raw.get("market_status", "patented"),
+        market_status=raw.get("market_status", "unknown"),
         loe_date=_parse_month(raw.get("loe_date")),
         export_eligible=bool(raw.get("export_eligible", False)),
         patent_barrier=raw.get("patent_barrier", "none"),
         notes=raw.get("notes", ""),
+        basis=raw.get("basis", ""),
+        sources=raw.get("sources") or [],
     )
 
 
@@ -107,6 +110,7 @@ def load(input_path: Path, redis_url: str, flush: bool) -> None:
             aliases=raw.get("aliases") or [],
             provenance=raw.get("provenance") or {},
             signals=raw.get("signals") or {},
+            compound_patent=raw.get("compound_patent") or {},
         )
         save_patent(entry, client=r)
         loaded += 1

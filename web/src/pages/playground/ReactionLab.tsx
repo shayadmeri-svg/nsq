@@ -487,19 +487,20 @@ export function ReactionLab() {
                 <div className="px-3 pb-3"><ConcChart res={d.result} points={opPoints} a0={a0} /></div></Card>
 
               <div className="grid gap-4 2xl:grid-cols-[1.25fr_1fr]">
-                <Card><CardHeader title={<span className="flex items-center gap-2">Temperature × time map
-                    <span className="ml-2 inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px]">{(["yield", "impurity"] as const).map((w) => (
-                      <button key={w} disabled={w === "impurity" && !d.map.impurity_pct} onClick={() => setWhichMap(w)} className={cn("rounded-md px-2 py-0.5 font-semibold disabled:opacity-40", whichMap === w ? "bg-white shadow-sm" : "text-ink-muted")}>{w === "yield" ? "Yield" : d.map.impurity ?? "Impurity"}</button>))}</span></span>}
-                  subtitle={d.map.best ? `Isothermal runs. Best within the data: ${d.map.best.yield_pct.toFixed(1)}% at ${d.map.best.temp_c} °C, ${d.map.best.hours} h` : "Isothermal runs. No part of this map is pinned by data."} />
+                <Card><CardHeader title={<span className="flex items-center gap-2">{d.map.mode === "map" ? "Temperature × time map" : d.map.mode === "time_only" ? "Yield vs time at the measured temperature" : "No map"}
+                    {d.map.mode !== "none" && <span className="ml-2 inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px]">{(["yield", "impurity"] as const).map((w) => (
+                      <button key={w} disabled={w === "impurity" && !d.map.impurity_pct} onClick={() => setWhichMap(w)} className={cn("rounded-md px-2 py-0.5 font-semibold disabled:opacity-40", whichMap === w ? "bg-white shadow-sm" : "text-ink-muted")}>{w === "yield" ? "Yield" : d.map.impurity ?? "Impurity"}</button>))}</span>}</span>}
+                  subtitle={d.map.mode_note} />
                   <div className="px-4 pb-4">
-                    <YieldMap map={d.map} ok={d.acceptable.ok} points={d.points ?? []} op={{ t: +cond.temp_c, h: +cond.hours }} which={whichMap} />
+                    {d.map.mode !== "none" && <YieldMap map={d.map} ok={d.acceptable.ok} points={d.points ?? []} op={{ t: +cond.temp_c, h: +cond.hours }} which={whichMap} />}
                     <div className="mt-3 rounded-lg bg-slate-50 p-2.5 text-[11.5px] text-ink-soft">
-                      <b>Operating window</b> (yield ≥ {d.acceptable.min_yield_pct}%{d.acceptable.max_impurity_pct != null ? `, ${d.map.impurity ?? "impurity"} ≤ ${d.acceptable.max_impurity_pct}%` : ""}), only where data pins the model:{" "}
-                      {d.acceptable.reason ? <span className="text-amber-800">{d.acceptable.reason}.</span>
+                      {d.map.best && <div className="mb-1">Highest model yield inside the data: <b>{d.map.best.yield_pct.toFixed(1)}%</b> at {d.map.best.temp_c} °C, {d.map.best.hours} h{d.data_source === "published" ? " (model conversion — published yields are isolated, after work-up)" : ""}.</div>}
+                      <b>Operating window</b> (yield ≥ {d.acceptable.min_yield_pct}%{d.acceptable.max_impurity_pct != null ? `, ${d.map.impurity ?? "impurity"} ≤ ${d.acceptable.max_impurity_pct}%` : ""}):{" "}
+                      {d.acceptable.reason ? <span className="text-amber-800">not drawn — {d.acceptable.reason}.</span>
                         : d.acceptable.widest ? <>widest at {d.acceptable.widest.hours} h: <b>{d.acceptable.widest.temp_from_c}–{d.acceptable.widest.temp_to_c} °C</b>.</>
-                          : <span className="text-rose-700">nothing inside the data meets both targets.</span>}
+                          : <span className="text-rose-700">nothing inside the data meets the targets.</span>}
                       {sideAssumed && whichMap === "impurity" && <div className="mt-0.5 text-amber-800">The impurity map comes from an assumed side reaction — not evidence.</div>}
-                      <div className="mt-0.5 text-ink-muted">A model-based sketch of a proven acceptable range (ICH Q8): confirm the edges with experiments.</div>
+                      <div className="mt-0.5 text-ink-muted">{d.acceptable.label}</div>
                     </div>
                   </div>
                 </Card>

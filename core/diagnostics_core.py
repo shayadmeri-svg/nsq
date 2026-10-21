@@ -132,16 +132,16 @@ def build_diagnosis(row: pd.Series, tenant_df: pd.DataFrame) -> Diagnosis:
     dom = _dominant_failures(tenant_df)
     is_dom = bool(dom) and failure_category != "—" and dom[0][0] == failure_category
 
-    # API-informed: resolve to a curated Drug. Match on the raw product name
-    # (retains the API token match_api expects), then the canonical name.
+    # The curated Drug profiles (gmp_knowledge.PRODUCT_CATALOG) carried uncited narrative — root causes, "VigiBase"
+    # risks, process corridors, excipient percentages and mislabelled patent titles — so they are no longer used.
+    # Molecule-level evidence now comes from public sources with links (backend/app/evidence.py).
     raw_name = _col(row, "Name of Product")
     api_id = match_api(raw_name) or match_api(product)
-    drug = PRODUCT_CATALOG.get(api_id) if api_id else None
-    generic_fallback = drug is None
-    generic_text = generic_standards(raw_name if raw_name != "—" else product) if generic_fallback else None
-
-    method_diffs = diff_drug(drug) if drug is not None else []
-    nq = nsq_relevant_count(drug) if drug is not None else 0
+    drug = None
+    generic_fallback = True
+    generic_text = None
+    method_diffs: list[MethodDiff] = []
+    nq = 0
 
     mitigations = mitigations_for(failure_category) if failure_category != "—" else []
 

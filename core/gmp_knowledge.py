@@ -1235,11 +1235,11 @@ _stamp_default_provenance()
 # ---------------------------------------------------------------------------
 SOLUTION_BANK: dict[str, list[str]] = {
     "Dissolution": [
-        "Tighten dissolution method transfer and validate sink conditions per USP <711> / IP 2026.",
+        "Check the dissolution method against the official one (FDA Dissolution Methods Database / the applicable pharmacopoeia) and confirm sink conditions.",
         "Use design-of-experiments to lock granule PSD and tablet hardness ranges.",
     ],
     "Assay / Content": [
-        "Implement in-process blend uniformity sampling (n=10) and NIR trend monitoring.",
+        "Add in-process blend uniformity sampling and trend it batch to batch.",
         "Re-validate HPLC sample preparation to rule out extraction variability.",
     ],
     "Related Substances": [
@@ -1256,7 +1256,7 @@ SOLUTION_BANK: dict[str, list[str]] = {
     ],
     "Uniformity of Weight": [
         "Calibrate feed frames and compression force sensors on a tighter schedule.",
-        "Set weight-control limits at ±3% with automatic reject diverters.",
+        "Set weight-control limits from the validated range, with automatic rejection.",
     ],
     "pH": [
         "Validate pH meter calibration cadence and electrode maintenance SOP.",

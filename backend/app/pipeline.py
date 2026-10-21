@@ -60,7 +60,8 @@ _SRC_NODE = {"orange_book": "ext_orange", "purple_book": "ext_purple", "ema": "e
              "pubchem": "ext_pubchem", "fda_establishments": "ext_fdasites", "fda_import_alerts": "ext_fdasites",
              "fda_recalls": "ext_fdasites", "cdsco_plants": "ext_cdsco_plants", "eudragmdp": "ext_eudragmdp",
              "fda_inspections": "ext_fda_insp", "fda_dmf": "ext_filings", "edqm_cep": "ext_filings", "ord": "ext_ord",
-             "nfhs": "ext_health", "idsp": "ext_health", "comtrade": "ext_comtrade", "cdsco_wc": "ext_cdsco_wc"}
+             "nfhs": "ext_health", "idsp": "ext_health", "comtrade": "ext_comtrade", "cdsco_wc": "ext_cdsco_wc",
+             "chembl": "ext_chembl", "patent_families": "ext_patents", "fda_labels": "ext_fdalabels", "fda_dissolution": "ext_fdalabels"}
 
 STAGES = [
     ("prepare", "Prepare", "Export the app's own edits so the builds can apply them"),
@@ -103,9 +104,13 @@ _SLOW = {"eudragmdp": "EudraGMDP opens every certificate one page at a time — 
 
 def _source_task(k: str, p: dict[str, Any]) -> Task:
     J = _jobs()
-    reads = {"gen:candidates"} if k in ("clinical_trials", "pubchem") else set()
+    reads = {"gen:candidates"} if k in J._PER_MOLECULE else set()
     if k == "ord":
         reads = {"src:pubchem"}
+    if k == "chembl":
+        reads = {"gen:candidates", "src:pubchem"}  # matched by the PubChem InChIKey
+    if k == "patent_families":
+        reads = {"gen:candidates", "src:orange_book"}
     skip = None
     if k == "ord" and not p.get("include_ord"):
         skip = "off: 1.3 GB download and ~1 h scan — tick 'Include the Open Reaction Database'"
@@ -125,7 +130,7 @@ def _source_task(k: str, p: dict[str, Any]) -> Task:
     note = f"time budget {budget // 60} min; past it the last file is kept"
     if k in J.LAPTOP and not skip:
         note = f"often refused from a server ({J.LAPTOP[k]['why']}); the last pushed file stays in use · " + note
-    return Task(f"src-{k.replace('_', '-')}", J.SOURCE_TITLES[k], "sources" if k not in ("clinical_trials", "pubchem", "ord") else "molecules",
+    return Task(f"src-{k.replace('_', '-')}", J.SOURCE_TITLES[k], "sources" if k not in (*J._PER_MOLECULE, "ord") else "molecules",
                 reads, {f"src:{k}"}, steps, soft=True, skip=skip, note=note, source=k)
 
 
@@ -172,7 +177,8 @@ def tasks(p: dict[str, Any]) -> list[Task]:
     T.append(Task("universe-candidates", "Molecule candidates", "molecules", mol_src | {"gen:entries", "file:seeds", ready}, {"gen:candidates"},
                   lambda pp: [Step("Build molecule universe (candidates for trial / structure lookups)", build)]))
     T.append(Task("universe-build", "Build molecule universe", "molecules",
-                  mol_src | {"src:clinical_trials", "gen:entries", "file:seeds", ready}, {"gen:universe"},
+                  mol_src | {"src:clinical_trials", "src:chembl", "src:patent_families", "src:fda_dissolution", "gen:entries", "file:seeds", ready},
+                  {"gen:universe"},
                   lambda pp: [Step("Build molecule universe (curated seeds + public sources + NSQ ingredients + app edits)", build)],
                   after={"universe-candidates"}))
     gen = lambda n: str(settings.data_dir / "generated" / n)  # noqa: E731

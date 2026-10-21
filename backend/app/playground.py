@@ -49,12 +49,27 @@ def base_frame() -> pd.DataFrame:
     df = data.frame()
     if df.empty:
         return df
+    hit = _base_cache.get("frame")
+    if hit is not None and hit[0] is df:
+        return hit[1]
+    src = df
     if "_src" not in df.columns:
         df = df.copy()
         df["_src"] = df["Reporting Source"].astype(str).map(_norm_source)
         df["_state"] = df["Mfg_State"].fillna("").astype(str).replace("", "Unknown")
         df["_month"] = df["Parsed_Date"].dt.strftime("%Y-%m")
+    # Precomputed frames named each product group after its first-seen alert (a brand + strength); name it from
+    # all of its alerts instead.
+    if "Product_Ontology_Key" in df.columns:
+        from data_loader import _display_by_group
+
+        df = df.copy() if df is src else df
+        _display_by_group(df)
+    _base_cache["frame"] = (src, df)
     return df
+
+
+_base_cache: dict[str, Any] = {}
 
 
 def apply_filters(df: pd.DataFrame, f: dict[str, Any]) -> pd.DataFrame:
@@ -470,7 +485,8 @@ def world(molecule: str = "") -> dict[str, Any]:
         p = m["patents"][molecule]
         per_mol = {"key": molecule, "name": p.api_name,
                    "countries": {g.country_code: {"status": g.market_status, "loe": g.loe_date.isoformat() if g.loe_date else None,
-                                                  "export_eligible": g.export_eligible, "barrier": g.patent_barrier, "notes": g.notes}
+                                                  "export_eligible": g.export_eligible, "barrier": g.patent_barrier, "notes": g.notes,
+                                                  "basis": g.basis, "sources": g.sources}
                                  for g in p.geo_coverage or []},
                    "provenance": (getattr(p, "provenance", {}) or {}).get("geo_coverage")}
     # Data-backed market facts
@@ -549,32 +565,12 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
         needs = {**needs, "record": registry_plants.fit_records(key).get(linked, {})}
     cand = score_candidate(key, p, plant, weights=weights or None, regulatory=reg, demand=dem, fit_needs=needs)
 
-    # curated knowledge for the 17 catalogue drugs
-    ob_curated, pharma = None, None
-    try:
-        import gmp_knowledge as gk
-        import pharmacopeia_diff as pdiff
-        import us_regulatory_data as usr
+    # The hand-typed IP / Ph. Eur. monograph text and its "differences" (gmp_knowledge) could not be checked against
+    # any public source, so they are gone; the FDA Dissolution Methods Database and the US label are shown instead.
+    from . import evidence
 
-        first = (p.api_name or key).split()[0].lower()
-        cat_key = key if key in gk.PRODUCT_CATALOG else (first if first in gk.PRODUCT_CATALOG else None)
-        if cat_key:
-            rec = usr.orange_book_for(cat_key)
-            ob_curated = insights.json_safe(rec.__dict__) if rec else None
-            if ob_curated and rec and rec.provenance:
-                ob_curated["provenance"] = insights.json_safe(rec.provenance.__dict__)
-            diffs = pdiff.diff_drug(gk.PRODUCT_CATALOG[cat_key])
-            pharma = []
-            for dd in diffs:
-                row = {"section": dd.section, "significance": dd.significance, "rationale": dd.rationale,
-                       "ich": dd.ich_harmonisation if isinstance(dd.ich_harmonisation, (str, type(None))) else str(dd.ich_harmonisation), "methods": {}}
-                for ph, meth in dd.methods.items():
-                    row["methods"][getattr(ph, "value", str(ph))] = None if meth is None else {
-                        k: getattr(meth, k) for k in ("apparatus", "medium", "medium_ph", "rpm", "timepoints", "q_limit_pct",
-                                                       "impurity_name", "impurity_limit_pct", "detection", "column", "mobile_phase", "raw_text")}
-                pharma.append(row)
-    except Exception:
-        pass
+    ob_curated, pharma = None, None
+    label = evidence.label_block(key)
 
     # national NSQ record for this molecule
     idx = insights.tracked_index()
@@ -603,6 +599,7 @@ def workbench(key: str, weights: Optional[dict[str, float]], plant_ids: list[str
         "selected_plant": _selected_plant(key, plant, cand, linked, reg_plant is not None) if plant else None,
         "fit_needs": needs,
         "orange_book_curated": ob_curated,
+        "label": label,
         "pharmacopeia": pharma,
         "nsq": nsq,
     })

@@ -364,6 +364,82 @@ def _molecules() -> dict[str, Any]:
 
 # --- simulations ---------------------------------------------------------------------------------------
 
+def _source_rec(name: str, key: str) -> dict[str, Any]:
+    """A per-molecule record from a source file, by molecule key or its US name / ingredient key."""
+    import ingredients as ing
+
+    from . import signals
+
+    data_ = (signals._load(name).get("data") or {})
+    rec = structures().get(key) or {}
+    cands = [key, ing.ingredient_key(rec.get("name") or ""), ing.us_name(ing.ingredient_key(rec.get("name") or key.replace("_", " ")))]
+    for c in cands:
+        if c and c in data_:
+            return data_[c]
+        if c and c.split()[0] in data_:
+            return data_[c.split()[0]]
+    return {}
+
+
+def fda_method(key: str) -> Optional[dict[str, Any]]:
+    """FDA Dissolution Methods Database: the immediate-release tablet / capsule method for this molecule, if FDA gives one."""
+    rows = _source_rec("fda_dissolution", key)
+    rows = rows if isinstance(rows, list) else []
+    for form in ("Tablet", "Capsule", "Tablet (Film Coated)", "Tablet, Film Coated"):
+        for r in rows:
+            if (r.get("dosage_form") or "").strip().lower() == form.lower():
+                ph = re.search(r"pH\s*(\d+(?:\.\d+)?)", r.get("medium") or "", re.I)
+                hcl = re.search(r"(0\.1|0\.01)\s*N\s*HCl", r.get("medium") or "", re.I)
+                return {**r, "ph": float(ph.group(1)) if ph else (1.2 if hcl and hcl.group(1) == "0.1" else 2.0 if hcl else None),
+                        "source": "FDA Dissolution Methods Database",
+                        "url": "https://www.accessdata.fda.gov/scripts/cder/dissolution/index.cfm"}
+    return None
+
+
+def label_pk(key: str) -> dict[str, Any]:
+    """PK inputs from the US label (openFDA), each with the sentence it came from. Missing values stay missing."""
+    rec = _source_rec("fda_labels", key)
+    pk_ = (rec or {}).get("pk") or {}
+    lab = (rec or {}).get("pk_label") or {}
+    out: dict[str, Any] = {}
+    cite = {"label": f"US label: {lab.get('brand') or ''} ({lab.get('application_number') or ''})", "url": lab.get("url")}
+    t_half = (pk_.get("half_life_h") or {}).get("value")
+    vd = (pk_.get("vd_l") or {}).get("value")
+    vd_note = ""
+    if vd is None and (pk_.get("vd_l_kg") or {}).get("value") is not None:
+        vd, vd_note = float(pk_["vd_l_kg"]["value"]) * 70.0, " (label gives L/kg; × 70 kg adult)"
+    cl_stated = None
+    if (pk_.get("cl") or {}).get("value") is not None:
+        unit, v_ = pk_["cl"].get("unit", ""), float(pk_["cl"]["value"])
+        per_kg = "/kg" in unit
+        cl_stated = (v_ * 0.06 if unit.lower().startswith("ml/min") else v_) * (70.0 if per_kg else 1.0)
+    if vd:
+        out["v_l"] = {"value": round(float(vd), 2), "text": (pk_.get("vd_l") or pk_.get("vd_l_kg"))["text"], **cite, "note": vd_note.strip()}
+    if cl_stated:  # a stated clearance beats one derived from the terminal half-life (which understates it for multi-phase drugs)
+        out["cl_l_h"] = {"value": round(cl_stated, 3), "text": pk_["cl"]["text"], **cite,
+                         "note": f"stated clearance {pk_['cl']['value']:g} {pk_['cl'].get('unit', '')}" + (" × 70 kg" if "/kg" in pk_["cl"].get("unit", "") else "")}
+    elif t_half and vd:
+        out["cl_l_h"] = {"value": round(math.log(2) / float(t_half) * float(vd), 3), "text": pk_["half_life_h"]["text"], **cite,
+                         "note": f"CL = ln2 / t½ × V (t½ {t_half:g} h, V {vd:g} L; terminal half-life, so a lower bound for multi-phase drugs)"}
+    if "cl_l_h" in out and vd:
+        ke = out["cl_l_h"]["value"] / float(vd)
+        tmax = (pk_.get("tmax_h") or {}).get("value")
+        if tmax and ke > 0:
+            from scipy.optimize import brentq
+
+            f = lambda ka: math.log(ka / ke) / (ka - ke) - float(tmax)  # noqa: E731 — one-compartment Tmax
+            try:
+                ka = brentq(f, ke * 1.0001, 50.0) if f(ke * 1.0001) > 0 > f(50.0) else None
+            except ValueError:
+                ka = None
+            if ka:
+                out["ka_h"] = {"value": round(ka, 3), "text": pk_["tmax_h"]["text"], **cite,
+                               "note": f"ka solved from Tmax = ln(ka/ke)/(ka−ke) with Tmax {tmax:g} h"}
+    if (pk_.get("f_pct") or {}).get("value"):
+        out["f_abs"] = {"value": round(float(pk_["f_pct"]["value"]) / 100, 3), "text": pk_["f_pct"]["text"], **cite}
+    return out
+
+
 # Inputs the UI shows as "assumed" unless the user changed them; the model can't know them.
 DISSOLUTION_DEFAULTS = {"d50_um": 20.0, "gsd": 1.8, "lag_min": 2.0, "volume_ml": 900.0, "q_pct": 75.0, "q_time_min": 45.0, "density": 1.3}
 
@@ -409,22 +485,42 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
         else:
             why = d["pka"].get("why_not") or "pKa unknown"
             withheld.append(f"weak {d['ionisable'][0]} ({why}): enter the pKa, since solubility depends on pH")
+    # FDA's recommended method sets the medium volume, pH and sampling window unless the user changed them.
+    meth = fda_method(key)
+    volume = float(p["volume_ml"]) if p.get("volume_ml") not in (None, "") else float((meth or {}).get("volume_ml") or 900)
+    ph = float(p["ph"]) if p.get("ph") not in (None, "") else float((meth or {}).get("ph") or 6.8)
+    t_end = float(p["t_end_min"]) if p.get("t_end_min") not in (None, "") else max(60.0, max((meth or {}).get("times_min") or [60.0]))
     res = product.dissolution(dose_mg=dose, cs_mg_ml=cs, diff_cm2_s=float(p.get("diffusivity") or d["diffusivity_cm2_s"]),
                               d50_um=float(p.get("d50_um", 20)), gsd=float(p.get("gsd", 1.8)), density_g_cm3=float(p.get("density", 1.3)),
-                              volume_ml=float(p.get("volume_ml", 900)), lag_min=float(p.get("lag_min", 2)), q_pct=float(p.get("q_pct", 75)),
-                              q_time_min=float(p.get("q_time_min", 45)), t_end_min=float(p.get("t_end_min", 60)),
-                              ionization=ion, pka=pka, ph=float(p.get("ph", 6.8)))
+                              volume_ml=volume, lag_min=float(p.get("lag_min", 2)), q_pct=float(p.get("q_pct", 75)),
+                              q_time_min=float(p.get("q_time_min", 45)), t_end_min=t_end,
+                              ionization=ion, pka=pka, ph=ph)
     if withheld:
         res = {**res, "verdict": "withheld", "why": [f"Verdict withheld: {w}." for w in withheld] + res["why"]}
-    assumed = [k for k, v in DISSOLUTION_DEFAULTS.items() if float(p.get(k, v)) == v]
+    def _given(k: str, dflt: float) -> float:
+        v_ = p.get(k)
+        return dflt if v_ in (None, "") else float(v_)
+
+    assumed = [k for k, v in DISSOLUTION_DEFAULTS.items() if _given(k, v) == v and not (k == "volume_ml" and meth and meth.get("volume_ml"))]
+    sol_label = sol.get("model")
+    if cs_kind != "user":
+        sol_label = (f"{cs:.3g} mg/mL at 37 °C, extrapolated from {sol.get('display_mg_ml')} mg/mL at 25 °C ({sol.get('model')}) "
+                     "with the van 't Hoff equation and ΔHfus")
     return {**res, "withheld": withheld,
             "verdict_basis": "model result under the assumed particle size" + (" and generic Q" if {"q_pct", "q_time_min"} & set(assumed) else ""),
             "inputs": {"dose_mg": {"value": dose, "kind": dose_kind, "label": prof["provenance"]["dose"]["label"] if dose_kind == "source" else None},
-                       "solubility_mg_ml": {"value": float(f"{cs:.3g}"), "kind": cs_kind, "label": sol.get("model"), "url": sol.get("url")},
+                       "solubility_mg_ml": {"value": float(f"{cs:.3g}"), "kind": cs_kind if cs_kind == "user" else "estimate", "label": sol_label,
+                                            "url": sol.get("url")},
+                       "medium": {"volume_ml": volume, "ph": ph, "t_end_min": t_end,
+                                  "kind": "source" if meth and not any(p.get(x) not in (None, "") for x in ("volume_ml", "ph")) else ("user" if any(p.get(x) not in (None, "") for x in ("volume_ml", "ph")) else "assumption"),
+                                  "label": (f"FDA method: {meth.get('dosage_form')}, {meth.get('apparatus')} {meth.get('rpm_text') or ''} rpm, "
+                                            f"{meth.get('medium')}, {meth.get('volume_text')} mL, sampling {meth.get('times_text')} min") if meth else
+                                           "no FDA method with a medium for this tablet/capsule: USP-style 900 mL, pH 6.8 assumed",
+                                  "url": (meth or {}).get("url")},
                        "pka": {"value": pka, "kind": pka_kind, "ionization": ion, "label": d["pka"].get("source") if pka_kind in ("source", "estimate") else None,
                                "url": d["pka"].get("url")},
                        "diffusivity": {"value": d["diffusivity_cm2_s"], "kind": "estimate", "label": d["diffusivity_note"]}},
-            "assumed": assumed}
+            "assumed": assumed, "fda_method": meth}
 
 
 def engines() -> dict[str, Any]:
@@ -456,7 +552,8 @@ def crystallize(key: str, p: dict[str, Any]) -> dict[str, Any]:
     mp = float(p.get("mp_c") or fus["mp_c"])
     dh = float(p.get("dh_fus") or fus["dh_fus"])
     aq = prof["solubility"]["mg_per_ml"] if solvent == "water" else None
-    curve = thermo_props.curve(prof["descriptors"]["mw"], mp, dh, solvent, gamma=gamma, aq_mg_ml_25=aq)
+    curve = thermo_props.curve(prof["descriptors"]["mw"], mp, dh, solvent, gamma=gamma, aq_mg_ml_25=aq,
+                               api_cas=prof["thermal"].get("cas"))
     prog = {"t0_c": float(p.get("t0_c", 50)), "t1_c": float(p.get("t1_c", 5)), "cool_min": float(p.get("cool_min", 120)),
             "hold_min": float(p.get("hold_min", 30))}
     sv = curve["solvent"]
@@ -468,8 +565,11 @@ def crystallize(key: str, p: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"Temperatures must satisfy {curve['temps_c'][0]:g} ≤ end < start ≤ {curve['temps_c'][-1]:g} °C.")
     notes = []
     if curve.get("ideal"):
-        notes.append("Ideal solubility (γ = 1): the solvent choice is not modelled, only its molar mass and density. "
-                     "Enter an activity coefficient (or measured solubility) for solvent-specific results.")
+        notes.append("Ideal solubility (γ = 1): " + (curve.get("unifac_note") or "the solvent is not modelled") +
+                     ". Only its molar mass and density enter. Enter an activity coefficient (or measured solubility) for solvent-specific results.")
+    elif curve.get("unifac"):
+        notes.append("Solvent modelled with Modified UNIFAC (Dortmund), using the Dortmund Data Bank's published group assignment "
+                     "for this molecule; typical accuracy for drug solubility is within a factor of 2–3.")
     if solvent == "water" and prof["solubility"]["kind"] == "estimate":
         notes.append("Water curve starts from the structure-based 25 °C estimate (±1 log unit).")
     if fus.get("dh_kind") == "estimate" and not p.get("dh_fus"):
@@ -562,29 +662,39 @@ def bioequivalence(key: str, p: dict[str, Any]) -> dict[str, Any]:
     d = prof["derived"]
     window_h = float(p.get("window_h", 4.0))
     base = {"dose_mg": p.get("dose_mg") or d["dose_mg"], "solubility_mg_ml": p.get("solubility_mg_ml"),
-            "ionization": p.get("ionization"), "pka": p.get("pka"), "ph": p.get("ph", 6.8), "volume_ml": p.get("volume_ml", 900),
+            "ionization": p.get("ionization"), "pka": p.get("pka"), "ph": p.get("ph"), "volume_ml": p.get("volume_ml"),
             "t_end_min": max(60.0, window_h * 60 + 30)}
     test = dissolution(key, {**base, "d50_um": p.get("d50_um", 20), "gsd": p.get("gsd", 1.8), "lag_min": p.get("lag_min", 2)})
     ref = dissolution(key, {**base, "d50_um": p.get("ref_d50_um", 5), "gsd": 1.5, "lag_min": p.get("ref_lag_min", 1)})
     dose = float(test["inputs"]["dose_mg"]["value"])
-    kw = dict(dose_mg=dose, cl_l_h=float(p.get("cl_l_h", 10)), v_l=float(p.get("v_l", 50)), ka_h=float(p.get("ka_h", 1.0)),
-              f_abs=float(p.get("f_abs", 1.0)), window_h=window_h, in_vivo_scale=float(p.get("in_vivo_scale", 1.0)))
+    # PK inputs: what the user typed, else what the US label states (quoted), else a placeholder flagged as assumed.
+    lab = label_pk(key)
+    pk_in: dict[str, Any] = {}
+    for k_, dflt in PK_DEFAULTS.items():
+        if p.get(k_) not in (None, "") and float(p[k_]) != dflt:
+            pk_in[k_] = {"value": float(p[k_]), "kind": "user"}
+        elif k_ in lab:
+            pk_in[k_] = {**lab[k_], "kind": "source"}
+        else:
+            pk_in[k_] = {"value": dflt, "kind": "assumption"}
+    kw = dict(dose_mg=dose, cl_l_h=pk_in["cl_l_h"]["value"], v_l=pk_in["v_l"]["value"], ka_h=pk_in["ka_h"]["value"],
+              f_abs=pk_in["f_abs"]["value"], window_h=window_h, in_vivo_scale=float(p.get("in_vivo_scale", 1.0)))
     pt, pr = pk.simulate(test["times_min"], test["pct"], **kw), pk.simulate(ref["times_min"], ref["pct"], **kw)
     cmp = pk.compare(pt, pr)
-    pk_assumed = [k for k, v in PK_DEFAULTS.items() if float(p.get(k, v)) == v]
+    pk_assumed = [k_ for k_, v in pk_in.items() if v["kind"] == "assumption"]
     if test["withheld"] and cmp["risk"] != "not_assessable":
         cmp = {**cmp, "risk": "withheld", "message": "Verdict withheld: " + "; ".join(test["withheld"]) + ". Ratios shown for exploration only."}
     return {"test": {"dissolution": {k: test[k] for k in ("times_min", "pct", "at_q", "t85", "sink_index")}, "pk": pt},
             "reference": {"dissolution": {k: ref[k] for k in ("times_min", "pct", "at_q", "t85")}, "pk": pr},
             "compare": cmp, "inputs": {**kw, "ref_d50_um": p.get("ref_d50_um", 5), "dose": test["inputs"]["dose_mg"],
                                          "solubility": test["inputs"]["solubility_mg_ml"], "pka": test["inputs"]["pka"]},
-            "pk_assumed": pk_assumed,
+            "pk_assumed": pk_assumed, "pk_inputs": pk_in,
             "assumptions": [
                 "One-compartment PK with first-order absorption of dissolved drug; absorption stops after the absorption window (small-intestine transit)",
                 "In-vivo dissolution = the in-vitro profile (time-scaling factor adjustable); no permeability, gut-wall or first-pass effects beyond F",
                 "Reference = the same molecule with fine particles (d50 %g µm) dissolving fast, not the innovator product" % float(p.get("ref_d50_um", 5)),
-                ("Clearance, volume, ka and F are ASSUMED placeholders (" + ", ".join(pk_assumed) + "): Tmax and half-life follow from them, not from this molecule. Enter literature values."
-                 if pk_assumed else "Clearance, volume, ka and F as entered"),
+                ("PK from the US label where it states a value (half-life, volume, bioavailability, Tmax — quoted); "
+                 + ("still ASSUMED: " + ", ".join(pk_assumed) + " (the label doesn't state it — enter a literature value)" if pk_assumed else "nothing assumed")),
                 "The AUC ratio depends only on how much dissolves inside the absorption window, not on clearance or volume",
             ]}
 
@@ -596,8 +706,9 @@ def safety(key: str) -> dict[str, Any]:
     import ingredients as ing
     parent = ing.ingredient_key(name) or name  # FAERS uses the parent generic name (no salt)
     term = ing.us_name(parent) if hasattr(ing, "us_name") else parent
+    alts = tuple(x for x in {name, ing.us_name(name) if hasattr(ing, "us_name") else name} if x and x.lower() != term.lower())
     try:
-        out = faers.signals(term)
+        out = faers.signals(term, alts=alts)
     except requests.RequestException as exc:
         raise ValueError(f"openFDA is unreachable from the server ({exc.__class__.__name__}). Try again later.")
     return {**out, "query_name": out.get("search_term") or term.upper(), "local_name": parent}

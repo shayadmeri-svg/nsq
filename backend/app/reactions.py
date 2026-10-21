@@ -257,31 +257,58 @@ def run(p: dict[str, Any]) -> dict[str, Any]:
     builtin = reaction.builtin(req)
     result, cross = _pharmapy_check(req, builtin, notes, p.get("engine", "auto"))
 
-    # ---- temperature × time map; the window and the "best" only where data pins the model
+    # ---- temperature × time map, drawn only as far as the data reaches.
+    # One temperature (Ea assumed): only yield vs time at the measured temperature(s) — no temperature axis, because
+    # the whole temperature trend would be the assumed Ea. No data at all: no map. A "best" point and an operating
+    # window need more points than fitted parameters (a fit through exactly as many points has no error estimate).
     t_op, h_op = req["program"]["t1_c"], req["hours"]
-    temps = sorted({round(t_op + d) for d in range(-40, 45, 5)} | {round(t_op)} | {round(x) for x in (env["temps"] if env else [])})
-    temps = [t for t in temps if -30 <= t <= 250]
+    n_par = len(fitres["fitted"]) if fitres else 0
+    spare = bool(fitres) and fitres["n"] > n_par
     hours = sorted({round(h_op * f, 2) for f in (0.1, 0.2, 0.3, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4)} | {h_op})
+    if not fitres:
+        temps, mode = [round(t_op)], "none"
+    elif ea_fitted:
+        temps = sorted({round(t_op + d) for d in range(-40, 45, 5)} | {round(t_op)} | {round(x) for x in env["temps"]})
+        temps, mode = [t for t in temps if -30 <= t <= 250], "map"
+    else:
+        temps, mode = sorted({round(x) for x in env["temps"]}), "time_only"
     ymap = reaction.yield_map(req, temps, hours)
     cells = [[_cell(env, t, h) for h in hours] for t in temps]
     ymap["cell_basis"] = cells
+    ymap["mode"] = mode
+    ymap["mode_note"] = {
+        "none": "No measured points behind this step, so no map: every number would come from template defaults. Add your own lab runs "
+                "(temperature, time, yield) or pick a step with published points.",
+        "time_only": "Points at one temperature only: the rate is fitted, the activation energy is not, so only yield vs time at the "
+                     "measured temperature is shown. A second temperature ≥ 10 °C away lets Ea be fitted and the map extend.",
+        "map": "Rate and activation energy both fitted from points at two or more temperatures; hatched cells are outside the data.",
+    }[mode]
     inside = np.array(cells) == "i"
     tg = p.get("targets") or {}
-    if inside.any():
+    measured_max = max((float(x["value_pct"]) for x in pts), default=None)
+    if inside.any() and spare:
         arr = np.where(inside, np.array(ymap["yield_pct"]), -1)
         i, j = np.unravel_index(int(np.argmax(arr)), arr.shape)
         ymap["best"] = {"temp_c": temps[i], "hours": hours[j], "yield_pct": float(arr[i, j]), "within_data": True}
     else:
         ymap["best"] = None
-    min_y = float(tg.get("min_yield_pct") or max(0.0, round((ymap["best"] or {"yield_pct": 0})["yield_pct"] - 5)))
-    max_imp = tg.get("max_impurity_pct")
+    if src == "published" and measured_max is not None and inside.any() and float(np.max(np.where(inside, np.array(ymap["yield_pct"]), -1))) > measured_max + 5:
+        notes.append(f"The model predicts more than the highest published yield ({measured_max:g}%). Published yields are isolated "
+                     "(after work-up losses), so higher model values are reaction conversion, not evidence that more product can be isolated.")
+    min_y = float(tg.get("min_yield_pct") or (measured_max if measured_max is not None else 0.0))
+    max_imp = tg.get("max_impurity_pct") if req["impurities"] else None
     max_imp = float(max_imp) if max_imp not in (None, "") else (0.5 if req["impurities"] else None)
-    par = reaction.acceptable_range({**ymap, "yield_pct": np.where(inside, np.array(ymap["yield_pct"]), -1).tolist()}, min_y, max_imp) \
-        if inside.any() else {"ok": np.zeros_like(inside, dtype=int).tolist(), "share_pct": 0.0, "widest": None,
-                              "reason": "no part of the map is pinned by data — needs measured points"
-                                        + ("" if ea_fitted or not fitres else " at a second temperature (≥ 10 °C apart) to fit Ea")}
+    if inside.any() and spare and mode == "map":
+        par = reaction.acceptable_range({**ymap, "yield_pct": np.where(inside, np.array(ymap["yield_pct"]), -1).tolist()}, min_y, max_imp)
+    else:
+        why = ("no part of the map is pinned by data — needs measured points" if not inside.any() else
+               "as many fitted parameters as points: the fit has no error estimate, so no window is drawn — add one more point"
+               if not spare else "the temperature trend is not fitted (one temperature), so no window across temperatures")
+        par = {"ok": np.zeros_like(inside, dtype=int).tolist(), "share_pct": 0.0, "widest": None, "reason": why}
+    par["label"] = ("Model-predicted window. Not a proven acceptable range: under ICH Q8(R2) that needs experiments at its edges.")
     ci_ea = (fitres.get("ci95") or {}).get("ea") if fitres else None
-    band = reaction.ea_band(req, temps, h_op, round((ci_ea[1] - ci_ea[0]) / 2, 1) if ci_ea else float(p.get("ea_delta", 15)))
+    band_temps = [t for t in sorted({round(t_op + d) for d in range(-40, 45, 5)} | {round(t_op)}) if -30 <= t <= 250]
+    band = reaction.ea_band(req, band_temps, h_op, round((ci_ea[1] - ci_ea[0]) / 2, 1) if ci_ea else float(p.get("ea_delta", 15)))
     band["from_ci"] = bool(ci_ea)
     if ea_fitted and not (25 <= fitres["ea"] <= 150):
         notes.append(f"Fitted Ea = {fitres['ea']:.0f} kJ/mol is outside the usual 25–150 kJ/mol for solution reactions: the points "
@@ -316,7 +343,8 @@ def run(p: dict[str, Any]) -> dict[str, Any]:
         ("Rate constant fitted to " + (f"{fitres['n']} of your measured points" if src == "lab" else f"{fitres['n']} published example(s) of this transformation")
          + (f" at {len(env['temps'])} temperatures (Ea fitted too)" if ea_fitted else "; Ea not fitted (one temperature)") if fitres
          else "No data behind the rate constants: every number is illustrative"),
-        *(["Published yields are isolated yields (after work-up), so the fitted rate is a lower bound"] if src == "published" else []),
+        *(["Published yields are isolated yields (after work-up), so the fitted rate is a lower bound and the model's yield is "
+           "conversion, not isolated product"] if src == "published" else []),
         *(["Examples from different patents differ in solvent and concentration: their scatter is part of the fit's error"]
           if src == "published" and len({x.get("patent") for x in pts}) > 1 else []),
         *(["An ORD 'ambient' temperature is taken as 22 °C"] if any(x.get("temp_basis") == "ambient" for x in pts) else []),

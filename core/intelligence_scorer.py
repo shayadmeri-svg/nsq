@@ -55,62 +55,44 @@ def _days_until(target: Optional[date]) -> int:
 
 
 def score_patent(patent: Optional[PatentIntelligence]) -> tuple[float, dict[str, Any]]:
-    """Return a 0–100 score and explanation dict for the patent pillar.
+    """Return a 0–100 patent-readiness score and explanation, or (nan, ...) when nothing is known.
 
-    Logic:
-    - Base 40 points for having any patent record at all.
-    - Up to 30 points for proximity to LOE (closer = better for a CDMO wanting
-      to prepare early, but not too close that launch prep is impossible).
-    - Up to 20 points for low FTO risk.
-    - Up to 10 points for market size.
+    Inputs are the per-market statuses built by core/patent_terms.py (each sourced or derived from a cited rule):
+    - US status, up to 45: open 45; LOE in 2–5 y 40 (prep window); 1–2 y 30; < 1 y 20; > 5 y 10; unknown 0.
+    - India status, up to 35 (the home market of the platform's users): open 35; LOE ≤ 5 y 20; unknown 10; patented 0.
+    - FTO (US claims coverage), up to 20: low 20, medium 12, high 0, unknown 6.
+    No market-size points: no public source gives sales by molecule.
     """
     if patent is None:
-        return 0.0, {
-            "summary": "No patent intelligence available.",
-            "loe_window": "unknown",
-            "fto": "unknown",
-        }
+        return float("nan"), {"summary": "Not scored: no patent record.", "loe_window": "unknown", "fto": "unknown"}
 
-    explanation: dict[str, Any] = {
-        "summary": "",
-        "loe_window": "",
-        "fto": patent.fto_risk,
-        "patent_count": patent.patent_count(),
-    }
+    explanation: dict[str, Any] = {"summary": "", "loe_window": "", "fto": patent.fto_risk, "patent_count": patent.patent_count()}
+    geo = {g.country_code: g for g in patent.geo_coverage}
+    us, india = geo.get("US"), geo.get("IN")
+    parts: dict[str, float] = {}
 
-    score = 40.0
+    def years_left(g) -> Optional[float]:
+        return (g.loe_date - date.today()).days / 365.25 if g and g.loe_date else None
 
-    earliest = patent.earliest_loe()
-    if earliest:
-        days = _days_until(earliest)
-        if days < 0:
-            explanation["loe_window"] = f"off-patent since {earliest.isoformat()} ({-days / 365.25:.1f} years) in at least one market"
-        else:
-            explanation["loe_window"] = f"{days} days until earliest LOE ({earliest.isoformat()})"
-        # Ideal prep window: 2–5 years out (730–1825 days)
-        if days < 0:
-            score += 25  # already off-patent = high readiness
-        elif 730 <= days <= 1825:
-            score += 30  # sweet spot
-        elif 365 <= days < 730:
-            score += 20  # tight but actionable
-        elif days < 365:
-            score += 10  # very tight
-        else:
-            score += 15  # far out, long wait
+    st = us.market_status if us else "unknown"
+    y = years_left(us)
+    if st == "off_patent":
+        parts["us"] = 45
+        explanation["loe_window"] = "open for generics in the US" + (f" since {us.loe_date.isoformat()}" if us and us.loe_date else "")
+    elif st in ("loe_pending", "patented") and y is not None:
+        parts["us"] = 40 if 2 <= y <= 5 else 30 if 1 <= y < 2 else 20 if y < 1 else 10
+        explanation["loe_window"] = f"US protection ends {us.loe_date.isoformat()} ({y:.1f} years)"
     else:
-        explanation["loe_window"] = "no LOE date available"
-
-    fto_bonus = {"low": 20, "medium": 12, "high": 0}.get(patent.fto_risk, 10)
-    score += fto_bonus
-
-    if patent.market_size_usd_bn:
-        # Cap at 10 points for >= $5B
-        score += min(10, patent.market_size_usd_bn * 2)
-        explanation["market_size"] = f"${patent.market_size_usd_bn:.1f}B peak sales"
-
-    score = max(0.0, min(100.0, score))
-    explanation["summary"] = f"Patent readiness {score:.0f}/100 — {patent.fto_risk} FTO risk, {explanation['loe_window']}"
+        parts["us"] = 0
+        explanation["loe_window"] = "US status unknown"
+    ist = india.market_status if india else "unknown"
+    parts["india"] = {"off_patent": 35, "loe_pending": 20, "unknown": 10}.get(ist, 0)
+    explanation["india"] = f"India: {ist.replace('_', ' ')}" + (f" ({india.basis})" if india and india.basis else "")
+    parts["fto"] = {"low": 20, "medium": 12, "high": 0}.get(patent.fto_risk, 6)
+    score = max(0.0, min(100.0, sum(parts.values())))
+    explanation["parts"] = parts
+    explanation["summary"] = (f"Patent readiness {score:.0f}/100 — {explanation['loe_window']}; {explanation['india']}; "
+                              f"{patent.fto_risk} FTO risk (US)")
     return score, explanation
 
 
@@ -140,15 +122,11 @@ def score_regulatory(
     - Up to 30 points for pharmacopeia monograph coverage (10 each).
     - 25 points for A TE rating; 10 for B; 15 if none / unknown.
     - Up to 15 points for export-eligible geography count.
-    - 10 points for BCS class + stability conditions present.
+    - 10 points when FDA's Dissolution Methods Database gives a method (the BE path is defined).
     - -20 penalty if active regulatory exclusivity remains.
     """
     if regulatory is None:
-        return 50.0, {
-            "summary": "Regulatory clarity placeholder (50/100) — no regulatory passport loaded.",
-            "detail": "Run `just load-regulatory` to populate cdmo:regulatory:* keys.",
-            "readiness": "placeholder",
-        }
+        return float("nan"), {"summary": "Not scored: no regulatory record.", "detail": "", "readiness": "unknown"}
 
     score = 20.0
     details: list[str] = []
@@ -179,9 +157,11 @@ def score_regulatory(
     score += geo_bonus
     details.append(f"{eligible_count} export-eligible geographies")
 
-    if regulatory.bcs_class and regulatory.stability_conditions:
+    methods = [m for m in (regulatory.dissolution_methods or []) if m.get("apparatus") or "usp" in (m.get("medium") or "").lower()]
+    if methods:
         score += 10
-        details.append(f"BCS class {regulatory.bcs_class} and stability conditions documented")
+        details.append(f"FDA recommends a dissolution method ({methods[0].get('dosage_form')}: "
+                       f"{methods[0].get('apparatus') or methods[0].get('medium')})")
 
     if _exclusivity_active(regulatory.exclusivity):
         score -= 20
@@ -215,11 +195,7 @@ def score_demand(
     - Up to 15 points for buyer activity / market momentum proxy.
     """
     if demand is None:
-        return 50.0, {
-            "summary": "Demand attractiveness placeholder (50/100) — no demand profile loaded.",
-            "detail": "Run `just load-demand` to populate cdmo:demand:* keys.",
-            "trend": "stable",
-        }
+        return float("nan"), {"summary": "Not scored: no demand record.", "detail": "", "trend": "unknown"}
 
     score = 10.0
     details: list[str] = []
@@ -270,10 +246,10 @@ def score_demand(
     score += cluster_score
     details.append(f"{demand.cluster} cluster +{cluster_score}")
 
-    momentum = (demand.buyer_activity_score + demand.market_momentum_score) / 2.0
-    momentum_score = min(15.0, momentum * 0.15)
-    score += momentum_score
-    details.append(f"buyer/momentum proxy {momentum:.0f} → {momentum_score:.0f} pts")
+    breadth = demand.buyer_activity_score  # CDSCO: how many Indian manufacturers make it (log scale)
+    breadth_score = min(15.0, breadth * 0.15)
+    score += breadth_score
+    details.append(f"Indian market breadth (CDSCO NSQ makers) {breadth:.0f} → {breadth_score:.0f} pts")
 
     score = max(0.0, min(100.0, score))
     summary = f"Demand attractiveness {score:.0f}/100 — {demand.cluster or 'unknown cluster'}"
@@ -719,11 +695,11 @@ def score_customer_profile_fit(
     gmp_readiness_score = sum(pillar_scores) / len(pillar_scores) if pillar_scores else 100.0
 
     # Commercial fit tier.
+    # Talent depth has no public source (the demo profiles' values are estimates), so it is shown but not scored.
     overall = (
-        infrastructure_score * 0.40
-        + talent_score * 0.25
-        + certification_score * 0.20
-        + gmp_readiness_score * 0.15
+        infrastructure_score * 0.50
+        + certification_score * 0.30
+        + gmp_readiness_score * 0.20
     )
 
     if overall >= 80:
@@ -740,8 +716,7 @@ def score_customer_profile_fit(
         gaps.append(f"Missing capabilities: {', '.join(sorted(missing))}")
     if cert_missing:
         gaps.append(f"Missing certifications: {', '.join(sorted(cert_missing))}")
-    if talent_score < 50:
-        gaps.append("Talent depth below threshold for the modality/form")
+
     if gmp_readiness_score < 50:
         gaps.append("GMP pillar readiness below threshold for the molecule")
 
@@ -1094,20 +1069,29 @@ def score_candidate(
     else:
         plant_score, plant_exp = score_plant_fit(molecule_class, patent, plant)
 
-    total = (
-        w["patent"] * patent_score
-        + w["regulatory"] * regulatory_score
-        + w["demand"] * demand_score
-        + w["plant"] * plant_score
-    )
+    # A pillar with no data is left out and the others are renormalised — never scored as a neutral 50.
+    import math as _m
+    pillar = {"patent": patent_score, "regulatory": regulatory_score, "demand": demand_score, "plant": plant_score}
+    if plant is None:
+        pillar["plant"] = float("nan")
+    scored = {k: v for k, v in pillar.items() if not _m.isnan(v)}
+    wsum = sum(w[k] for k in scored) or 1.0
+    w = {k: (w[k] / wsum if k in scored else 0.0) for k in w}
+    total = sum(w[k] * scored[k] for k in scored)
+    patent_score, regulatory_score, demand_score, plant_score = (0.0 if _m.isnan(v) else v for v in
+                                                                 (patent_score, regulatory_score, demand_score, pillar["plant"]))
 
     warnings: list[str] = [f"Plant: {w}" for w in fit_warnings]
     if plant is None:
-        warnings.append("No plant asset selected; plant-fit score is zero.")
+        warnings.append("No plant selected; plant fit is not part of this score.")
+    unscored = [k for k, v in w.items() if v == 0.0]
+    if unscored:
+        warnings.append(f"Not scored for lack of data: {', '.join(unscored)} (weights renormalised over the rest).")
     if patent and patent.fto_risk == "high":
-        warnings.append("High FTO risk — defensive patent thicket may delay launch.")
-    if patent and patent.earliest_loe() and 0 <= _days_until(patent.earliest_loe()) < 365:
-        warnings.append("LOE window is less than 1 year; launch preparation is urgent.")
+        warnings.append("High FTO risk: a US compound patent or exclusivity still blocks generics.")
+    us_geo = next((g for g in (patent.geo_coverage if patent else []) if g.country_code == "US"), None)
+    if us_geo and us_geo.market_status in ("loe_pending", "patented") and us_geo.loe_date and 0 <= _days_until(us_geo.loe_date) < 365:
+        warnings.append("US protection ends within a year; launch preparation is urgent.")
     if regulatory and _exclusivity_active(regulatory.exclusivity):
         warnings.append("Active regulatory exclusivity blocks immediate generic launch.")
 

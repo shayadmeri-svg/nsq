@@ -77,7 +77,7 @@ export function Explorer({ f, set }: { f: Filters; set: (f: Filters) => void }) 
     { id: "forms", title: "Dosage forms", hint: "Click to filter", icon: <Pill size={14} />, rows: d.forms, color: "#f59e0b", onClick: (n: string) => set({ ...f, form: toggle(f.form, n) }) },
     { id: "classes", title: "Therapeutic class", hint: "Click to filter", icon: <Stethoscope size={14} />, rows: d.drug_types, color: "#10b996", onClick: (n: string) => set({ ...f, drug_type: toggle(f.drug_type, n) }) },
     { id: "makers", title: "Most-flagged manufacturers", hint: "Click to search", icon: <Factory size={14} />, rows: d.top_manufacturers, color: "#f59e0b", onClick: (n: string) => set({ ...f, q: n }) },
-    { id: "products", title: "Most-flagged products", hint: "Brand and strength as labelled", icon: <Package size={14} />, rows: d.top_products, color: "#8b5cf6", onClick: undefined },
+    { id: "products", title: "Most-flagged products", hint: "Generic name — all brands and strengths combined", icon: <Package size={14} />, rows: d.top_products, color: "#8b5cf6", onClick: undefined },
     { id: "labs", title: "Testing labs", hint: "Who found them", icon: <FlaskConical size={14} />, rows: d.labs, color: "#0ea5e9", onClick: undefined },
   ], [d, f, set]);
 

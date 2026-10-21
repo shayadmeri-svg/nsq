@@ -183,6 +183,7 @@ def _universe_steps(p: dict[str, Any]):
         # Newly added molecules get trial counts and a structure before the build, so one pass is complete
         Step("Trial counts for new molecules (ClinicalTrials.gov)", [PY, "fetch_source.py", "clinical_trials", "--missing-only"], allow_fail=True, ok_codes={3}),
         Step("Structures for new molecules (PubChem)", [PY, "fetch_source.py", "pubchem", "--missing-only"], allow_fail=True, ok_codes={3}),
+        Step("Approval year and ATC class for new molecules (ChEMBL)", [PY, "fetch_source.py", "chembl", "--missing-only"], allow_fail=True, ok_codes={3}),
         Step("Build molecule universe (curated seeds + public sources + NSQ ingredients)", build),
         Step("Load patents", [PY, "load_patents.py", "--input", _gen("patents.json"), "--redis-url", _local(), "--flush"]),
         Step("Load regulatory passports", [PY, "load_regulatory.py", "--input", _gen("regulatory.json"), "--redis-url", _local(), "--flush"]),
@@ -199,11 +200,11 @@ def _source_steps(keys: list[str], p: dict[str, Any]):
 
 
 def _sync_all_steps(p: dict[str, Any]):
-    first = [k for k in SOURCE_TITLES if k not in ("clinical_trials", "pubchem") and k not in _NOT_ON_SERVER]
+    first = [k for k in SOURCE_TITLES if k not in _PER_MOLECULE and k not in _NOT_ON_SERVER]
     steps = _source_steps(first, p)
     # candidates.json must exist before ClinicalTrials.gov is queried
     steps.append(Step("Build molecule universe (candidates for trial lookups)", [PY, "build_universe.py", "--redis-url", _local()]))
-    steps += _source_steps(["clinical_trials", "pubchem"], p)
+    steps += _source_steps(list(_PER_MOLECULE), p)
     steps += _universe_steps(p)
     if p.get("backup") and _upstash():
         steps.append(Step("Back up to Upstash", [PY, "pull_upstash.py", "--source", _local(), "--target", _upstash()]))
@@ -228,6 +229,10 @@ SOURCE_TITLES = {
     "fda_recalls": "openFDA recalls (India)",
     "clinical_trials": "ClinicalTrials.gov trial counts",
     "pubchem": "PubChem structures & measured properties",
+    "chembl": "ChEMBL (approval year, WHO ATC class)",
+    "fda_labels": "FDA drug labels (excipients, pharmacokinetics)",
+    "fda_dissolution": "FDA Dissolution Methods Database",
+    "patent_families": "Google Patents (compound patent families)",
     "cdsco_plants": "CDSCO plant registry (WHO-GMP + SUGAM)",
     "cdsco_wc": "CDSCO Written Confirmations (API exports to EU)",
     "eudragmdp": "EU GMP certificates (EudraGMDP, India)",
@@ -245,6 +250,10 @@ _SOURCE_JOB_DESC = {
     "ema": "EU central authorisations, generics/biosimilars and therapeutic areas. Rebuilds the molecule universe after.",
     "clinical_trials": "Trial totals, phase 3+, recent starts and India sites per molecule (60 molecules per run, oldest first; each is re-checked weekly).",
     "pubchem": "SMILES, XLogP3 and the published (cited) melting point, water solubility, pKa and log P per molecule for the Lab (80 per run; each re-checked monthly — tick 'Re-download' to refresh all now, running it twice for more than 80 molecules).",
+    "chembl": "First approval year, development phase, molecule type and WHO ATC therapeutic class per molecule (by PubChem InChIKey, else name) — the therapeutic area and the patent age rule. 120 per run; each re-checked every 60 days.",
+    "fda_labels": "Single-ingredient US labels (openFDA): the inactive ingredients and the PK values each label states (half-life, volume, bioavailability, Tmax, clearance), quoted with the DailyMed link — Lab bioequivalence inputs and Investigate evidence.",
+    "fda_dissolution": "FDA's recommended dissolution method for every drug product (apparatus, rpm, medium, volume, sampling times) — Lab dissolution inputs and Investigate evidence.",
+    "patent_families": "For each molecule's Orange Book drug-substance patents: title, assignee and dates from Google Patents, the compound patent's international (PCT) filing date, each family member's legal status per country and SPCs — the per-market patent status (core/patent_terms.py). Pages cached 30 days, one per second.",
     "fda_establishments": "Every FDA-registered establishment in India (FEI, DUNS, operations) — feeds the site directory.",
     "cdsco_plants": "CDSCO's approved manufacturing sites (SUGAM) and WHO-GMP certified units with what each is permitted to make — the plant registry. CDSCO often refuses cloud servers: run it on a laptop in India, or upload the WHO-GMP PDF here.",
     "cdsco_wc": "CDSCO International Cell: every Written Confirmation for API exports to the EU (~700 letters since 2013) with its PDF — Playground · Written confirmations. Runs on the server: the index every time, then only letters not yet held, newest first, while the disk keeps WC_MIN_FREE_GB free (first full download ~1.5 GB, spread over runs by the time budget). If CDSCO refuses the server, set INDIA_PROXY in .env — or run just fetch-cdsco-wc on a laptop and just push-wc.",
@@ -259,7 +268,9 @@ _SOURCE_JOB_DESC = {
     "fda_import_alerts": "Indian firms on the drug-GMP red list — feeds the site directory.",
     "fda_recalls": "US recalls of drugs made by Indian firms — feeds the site directory.",
 }
-_MOLECULE_SOURCES = {"orange_book", "purple_book", "ema", "clinical_trials"}
+_MOLECULE_SOURCES = {"orange_book", "purple_book", "ema", "clinical_trials", "chembl", "patent_families", "fda_dissolution"}
+# Sources that query per molecule, so they need the molecule candidates first
+_PER_MOLECULE = ("clinical_trials", "pubchem", "chembl", "fda_labels", "patent_families")
 
 # Sources the server cannot fetch (the publisher refuses cloud networks, needs a key, or the download is too big for
 # the server): run the recipe on a laptop, then push the file. The server's daily sync skips the heavy ones.
@@ -383,7 +394,7 @@ def _one_source(k: str):
         if (p.get("file") or "").strip():
             s[0].cmd += ["--from-file", str(upload_path(p["file"]))]
             s[0].label += " (from uploaded file)"
-        if k in ("clinical_trials", "pubchem"):
+        if k in _PER_MOLECULE:
             s.insert(0, Step("Refresh molecule candidates", [PY, "build_universe.py", "--redis-url", _local()]))
         if k in _MOLECULE_SOURCES:
             s += _universe_steps(p)
