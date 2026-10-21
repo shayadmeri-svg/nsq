@@ -123,7 +123,9 @@ def market_status(code: str, *, today: date, family: Optional[dict[str, Any]] = 
     gp_src = ({"label": f"Google Patents {anchor.get('number')}", "url": anchor.get("url")} if anchor.get("url") else None)
 
     # 1. The country's own family member, as Google Patents reports its legal status.
-    member = (fam.get("countries") or {}).get(code if code != "EU" else "EP")
+    countries = fam.get("countries") or {}
+    # a European patent is validated in the UK, so the EP record stands for GB when there is no national one
+    member = countries.get("EP") if code == "EU" else countries.get(code) or (countries.get("EP") if code == "GB" else None)
     if member and member.get("status"):
         st = member["status"].lower()
         src = [{"label": f"Google Patents {member['number']} ({member['status']})", "url": member.get("url", "")}]
@@ -137,6 +139,16 @@ def market_status(code: str, *, today: date, family: Optional[dict[str, Any]] = 
                         f"first EU authorisation{f' ({first_eu_authorisation.isoformat()})' if first_eu_authorisation else ''}, so protection ends by "
                         f"{ceiling.isoformat()} (+6 months if a paediatric extension was granted).")
                 return _by_date(code, ceiling, today, "derived", note, src + [statute(code)] + [{"label": f"SPC {s['number']}", "url": s.get("url", "")} for s in spc[:3]])
+            # "Expired - Lifetime" is the base term; a pharmaceutical term extension (JP, KR, AU, CA, CN, MX) is registered
+            # separately and Google's status does not show it, so stay conservative until the extension window has passed.
+            m_filing = _date(member.get("filing")) or filing
+            if "lifetime" in st and code not in ("EU", "GB") and j.max_extension_years and m_filing:
+                latest = add_years(m_filing, TERM_YEARS + j.max_extension_years)
+                if latest >= today:
+                    return _by_date(code, latest, today, "derived",
+                                    f"{member['number']}: base term expired (Google Patents), but {j.name} allows a term extension for a "
+                                    f"medicine ({j.rule}) that is registered separately, so protection may last until {latest.isoformat()}.",
+                                    src + [statute(code)])
             return Status(code, "off_patent", "sourced", exp, f"{member['number']}: {member['status']} (Google Patents legal status).", src)
         if exp:
             return _by_date(code, exp, today, "sourced", f"{member['number']}: {member['status']}, expires {exp.isoformat()} (Google Patents).", src)

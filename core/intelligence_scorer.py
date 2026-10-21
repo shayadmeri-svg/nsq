@@ -163,7 +163,8 @@ def score_regulatory(
         details.append(f"FDA recommends a dissolution method ({methods[0].get('dosage_form')}: "
                        f"{methods[0].get('apparatus') or methods[0].get('medium')})")
 
-    if _exclusivity_active(regulatory.exclusivity):
+    # Once generics are open in the US, remaining exclusivities belong to specific products (a new form, a new use)
+    if _exclusivity_active(regulatory.exclusivity) and not (patent and patent.status_in("US") == "off_patent"):
         score -= 20
         details.append("Active FDA/regulatory exclusivity blocks immediate generic launch")
 
@@ -1092,7 +1093,7 @@ def score_candidate(
     us_geo = next((g for g in (patent.geo_coverage if patent else []) if g.country_code == "US"), None)
     if us_geo and us_geo.market_status in ("loe_pending", "patented") and us_geo.loe_date and 0 <= _days_until(us_geo.loe_date) < 365:
         warnings.append("US protection ends within a year; launch preparation is urgent.")
-    if regulatory and _exclusivity_active(regulatory.exclusivity):
+    if regulatory and _exclusivity_active(regulatory.exclusivity) and not (patent and patent.status_in("US") == "off_patent"):
         warnings.append("Active regulatory exclusivity blocks immediate generic launch.")
 
     return CandidateScore(

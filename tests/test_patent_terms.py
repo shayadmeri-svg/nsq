@@ -47,6 +47,18 @@ def test_country_member_status_is_sourced():
     assert jp.status == "loe_pending" and jp.basis == "sourced" and jp.date == date(2028, 7, 1)
 
 
+def test_lifetime_expiry_respects_term_extension_window():
+    fam = {**SEMAGLUTIDE, "countries": {"JP": {"number": "JP5209463B2", "status": "Expired - Lifetime", "expiration": None,
+                                               "filing": "2006-03-20", "url": "u"}}}
+    jp = pt.market_status("JP", today=TODAY, family=fam, first_approval_year=2017)
+    assert jp.status in ("loe_pending", "patented") and jp.basis == "derived" and jp.date == date(2031, 3, 20)
+
+
+def test_uk_uses_the_european_patent():
+    gb = pt.market_status("GB", today=TODAY, family=SEMAGLUTIDE, first_approval_year=2017, first_eu_authorisation=date(2018, 2, 8))
+    assert gb.basis != "unknown"
+
+
 def test_eu_spc_keeps_protection_after_the_patent_lapses():
     eu = pt.market_status("EU", today=TODAY, family=SEMAGLUTIDE, first_approval_year=2017, first_eu_authorisation=date(2018, 2, 8))
     # SPC ceiling: min(filing + 25 y, first EU authorisation + 15 y) = 2031-03-20
