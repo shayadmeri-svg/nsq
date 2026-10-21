@@ -116,7 +116,30 @@ def _loop() -> None:
                 tick()
         except Exception as exc:  # never let the thread die
             log.warning("scheduler tick failed: %s", exc)
+        _prune_live_hourly()
         _stop.wait(30)
+
+
+_last_prune = 0.0
+
+
+def _prune_live_hourly() -> None:
+    """Plant data retention: drop live machine readings older than PLANT_LIVE_RETAIN_H (default 24 h), hourly."""
+    global _last_prune
+    import time as _t
+
+    if _t.monotonic() - _last_prune < 3600:
+        return
+    _last_prune = _t.monotonic()
+    try:
+        from .routers.plant_data import prune_live
+
+        with SessionLocal() as db:
+            n = prune_live(db)
+        if n:
+            log.info("plant data retention: pruned %d live stream(s)", n)
+    except Exception as exc:  # retention must never stop the scheduler
+        log.warning("plant data retention failed: %s", exc)
 
 
 def start() -> None:

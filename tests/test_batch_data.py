@@ -21,12 +21,17 @@ def _load(fmt: str):
     return det, mapping, bd.aggregate(df, det, mapping), df
 
 
+BATCH_TAGGED = [f["id"] for f in bd.FORMATS if f["id"] not in ("batch_schedule", "timeseries")]
+
+
 @pytest.mark.parametrize("fmt", [f["id"] for f in bd.FORMATS])
 def test_every_sample_file_is_recognised_and_fully_mapped(fmt):
-    det, mapping, batches, df = _load(fmt)
+    df = bd.read_table(bd.sample_csv(fmt).encode(), f"{fmt}.csv")
+    det, mapping = bd.detect_format(list(df.columns))
     assert det == fmt
     assert set(mapping.values()) == set(df.columns)
-    assert len(batches) == 10
+    if fmt in BATCH_TAGGED:  # the schedule and the timestamp-only export are linked by time instead (tested below)
+        assert len(bd.aggregate(df, det, mapping)) == 10
 
 
 def test_plant_headers_with_units_and_abbreviations():
@@ -51,7 +56,7 @@ def test_derived_values_follow_their_equations():
 
 
 def test_merged_files_find_the_two_example_excursions():
-    a = bd.analyse(bd.merge([{"name": f["id"], "batches": _load(f["id"])[2]} for f in bd.FORMATS]))
+    a = bd.analyse(bd.merge([{"name": f, "batches": _load(f)[2]} for f in BATCH_TAGGED]))
     diag = {d["batch"]: d for d in a["diagnoses"]}
     assert set(diag) == {"EX007", "EX009"}
     # each failed batch's most deviant linked parameter is the one the example was built with
@@ -77,3 +82,30 @@ def test_calibration_feeds_the_twin():
     assert (p["lo"], p["hi"]) == (lo, hi) and p["plant"]
     # outside run() the generic ranges are back
     assert twin._pb()["pressure_mpa"].lo == twin.P_BY_ID["pressure_mpa"].lo
+
+
+def test_time_series_without_batch_numbers_is_linked_by_the_schedule():
+    sch = bd.read_table(bd.sample_csv("batch_schedule").encode(), "s.csv")
+    fmt, m = bd.detect_format(list(sch.columns))
+    assert fmt == "batch_schedule"
+    wins = bd.schedule_windows(sch, m)
+    ts = bd.read_table(bd.sample_csv("timeseries").encode(), "t.csv")
+    fmt, m = bd.detect_format(list(ts.columns))
+    assert fmt == "timeseries" and "batch_no" not in m
+    df, mp, stats = bd.link(ts, m, wins)
+    assert stats["batches"] == 10 and stats["outside"] > 0  # idle readings between batches belong to none
+    linked = bd.aggregate(df, fmt, mp)
+    tagged = _load("fbd")[2]
+    for b in ("EX001", "EX009"):  # the same values as the batch-tagged dryer log
+        assert linked[b]["values"]["drying_min"] == tagged[b]["values"]["drying_min"]  # from the dryer, not the press
+        assert linked[b]["values"]["lod_pct"] == pytest.approx(tagged[b]["values"]["lod_pct"])
+
+
+def test_link_respects_machine_and_time_zone():
+    import pandas as pd
+
+    wins = [{"batch": "A", "machine": "FBD-1", "start": pd.Timestamp("2026-08-02 08:00"), "end": pd.Timestamp("2026-08-02 09:00")},
+            {"batch": "B", "machine": "PRESS-1", "start": pd.Timestamp("2026-08-02 08:00"), "end": pd.Timestamp("2026-08-02 09:00")}]
+    df = pd.DataFrame({"t": ["2026-08-02 08:30", "2026-08-02 08:30", "2026-08-02T02:45:00+00:00"], "m": ["FBD 1", "press-1", "FBD-1"]})
+    out, _, stats = bd.link(df, {"timestamp": "t", "machine": "m"}, wins)
+    assert out["_batch"].tolist() == ["A", "B", "A"]  # same moment, different machines; 02:45 UTC = 08:15 IST

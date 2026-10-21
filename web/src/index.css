@@ -20,6 +20,11 @@
   .font-display.font-extrabold { font-weight: 700; }
   .num { font-variant-numeric: tabular-nums; }
   .gold-rule { background: linear-gradient(90deg, #06a7c4, #10b996 55%, rgba(16,185,150,0)); height: 2px; border-radius: 2px; }
+  /* range input over a drawn track (so a band can show behind it) */
+  input[type="range"].range { -webkit-appearance: none; appearance: none; background: transparent; height: 18px; cursor: pointer; }
+  input[type="range"].range::-webkit-slider-runnable-track { height: 6px; background: transparent; }
+  input[type="range"].range::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -5px; width: 16px; height: 16px; border-radius: 9999px; background: #fff; border: 2px solid #06a7c4; box-shadow: 0 1px 3px rgba(11,19,36,.25); }
+  input[type="range"].range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 9999px; background: #fff; border: 2px solid #06a7c4; }
   .no-scrollbar { scrollbar-width: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }

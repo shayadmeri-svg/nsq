@@ -85,6 +85,7 @@ services:
       # Plant data demo: the connector the plant-sim service streams with (both empty = no demo connector)
       - PLANT_SIM_TOKEN=${PLANT_SIM_TOKEN:-}
       - PLANT_SIM_ORG=${PLANT_SIM_ORG:-}
+      - PLANT_LIVE_RETAIN_H=${PLANT_LIVE_RETAIN_H:-24}
     volumes:
       # Seeds, snapshot and CSV uploads. Read-write: the snapshot and
       # refresh jobs write here.
@@ -107,8 +108,9 @@ services:
     networks: [nsq-net]
 
   plant-sim:
-    # Simulated dryer + tablet press (OPC UA) read by the real edge agent and streamed to the API, for demos of
-    # Playground → Plant data → Live. Off unless asked for: docker compose --profile demo up -d plant-sim
+    # Simulated granulator, dryer, blender and tablet press (OPC UA) read by the real edge agent and streamed to the
+    # API, for demos of Playground → Plant data → Live; tuned from the Sim engine panel there.
+    # Off unless asked for: docker compose --profile demo up -d plant-sim
     # Needs PLANT_SIM_TOKEN in .env (any long random string, e.g. evd_ + openssl rand -hex 24). It streams into a
     # "Eurveda demo plant" organisation the API creates, or into PLANT_SIM_ORG (an organisation slug) if set.
     profiles: ["demo"]
@@ -119,10 +121,10 @@ services:
     environment:
       - EURVEDA_TOKEN=${PLANT_SIM_TOKEN:-}
       - EURVEDA_URL=http://api:8001
-      - SIM_SPEED=${SIM_SPEED:-30}
-      - SIM_FAULT=${SIM_FAULT:-short-dry}
-      - SIM_FAULT_EVERY=${SIM_FAULT_EVERY:-3}
-    mem_limit: 320m
+    mem_limit: 384m
+    logging:  # the agent logs every push: keep at most ~10 MB
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
     depends_on:
       api: { condition: service_healthy }
     restart: unless-stopped

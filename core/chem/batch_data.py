@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import re
 from typing import Any, Optional
 
@@ -62,6 +63,9 @@ _f("time_min", "Sampling time", "min", "meta", ("sampling time", "time point", "
 _f("vessel", "Vessel / unit", "", "meta", ("vessel no", "jar", "unit", "position", "bowl"))
 _f("sample_no", "Sample number", "", "meta", ("sample", "sample no", "tablet no", "tablet", "s no", "sr no"))
 _f("api_lot", "API lot", "", "meta", ("api batch", "api lot no", "raw material lot", "ar no"))
+_f("machine", "Machine", "", "meta", ("machine name", "equipment", "equipment id", "equipment name", "asset", "machine id"))
+_f("batch_start", "Batch start", "", "meta", ("start", "start time", "batch start", "started", "start date time", "from time"))
+_f("batch_end", "Batch end", "", "meta", ("end", "end time", "batch end", "finished", "end date time", "to time"))
 
 # twin parameters
 _f("api_potency_pct", "API assay (CoA)", "%", "param", ("api assay", "api potency", "assay of api", "api purity", "coa assay"))
@@ -112,41 +116,51 @@ _f("friability_pct", "Friability", "%", "cqa", ("friability", "friability %"),
 # --- formats ------------------------------------------------------------------------------------------------------
 
 FORMATS: list[dict[str, Any]] = [
-    {"id": "batch_summary", "label": "Batch record summary", "apparatus": "BMR / batch summary sheet", "shape": "per batch",
+    {"id": "batch_summary", "kind": "batch", "label": "Batch record summary", "apparatus": "BMR / batch summary sheet", "shape": "per batch",
      "what": "One row per batch with any process settings and QC results you already tabulate.",
      "required": ["batch_no"],
      "fields": ["batch_no", "product", "mfg_date", "api_potency_pct", "api_d50_um", "granulation_liquid_pct", "inlet_c", "dew_point_c",
                 "air_m3_h", "drying_min", "blend_min", "pressure_mpa", "weight_rsd_pct", "assay_pct", "av", "dissolution_pct",
                 "disintegration_min", "lod_pct", "friability_pct"]},
-    {"id": "rmg", "label": "Rapid mixer granulator", "apparatus": "RMG / high-shear granulator printout", "shape": "per batch",
+    {"id": "rmg", "kind": "batch", "label": "Rapid mixer granulator", "apparatus": "RMG / high-shear granulator printout", "shape": "per batch",
      "what": "Binder and dry-mix quantities, wet-mixing time and the impeller power at the end point.",
      "required": ["batch_no"], "fields": ["batch_no", "mfg_date", "dry_mix_kg", "binder_kg", "granulation_liquid_pct", "wet_mix_min", "impeller_kw"]},
-    {"id": "fbd", "label": "Fluid-bed dryer log", "apparatus": "FBD / FBP trend export (SCADA or printout)", "shape": "time series",
+    {"id": "fbd", "kind": "timeseries", "label": "Fluid-bed dryer log", "apparatus": "FBD / FBP trend export (SCADA or printout)", "shape": "time series",
      "what": "One row per reading: inlet / outlet / product temperature, inlet humidity or dew point, air flow, and LOD checks.",
-     "required": ["batch_no"], "fields": ["batch_no", "mfg_date", "elapsed_min", "inlet_c", "outlet_c", "product_c", "inlet_rh_pct", "dew_point_c",
+     "required": [], "fields": ["batch_no", "timestamp", "mfg_date", "elapsed_min", "inlet_c", "outlet_c", "product_c", "inlet_rh_pct", "dew_point_c",
                                           "air_m3_h", "lod_pct"]},
-    {"id": "blender", "label": "Blender / lubrication", "apparatus": "Octagonal / bin / V-blender record", "shape": "per batch",
+    {"id": "blender", "kind": "batch", "label": "Blender / lubrication", "apparatus": "Octagonal / bin / V-blender record", "shape": "per batch",
      "what": "Lubricated blend time and speed per batch.", "required": ["batch_no"], "fields": ["batch_no", "mfg_date", "blend_min", "blender_rpm"]},
-    {"id": "press", "label": "Tablet press log", "apparatus": "Compression machine report (Cadmach, Karnavati, ACG, Fette, Korsch…)", "shape": "time series",
+    {"id": "press", "kind": "timeseries", "label": "Tablet press log", "apparatus": "Compression machine report (Cadmach, Karnavati, ACG, Fette, Korsch…)", "shape": "time series",
      "what": "One row per reading or sample: main compression force, punch diameter, tablet weight.",
-     "required": ["batch_no"], "fields": ["batch_no", "mfg_date", "timestamp", "force_kn", "precompression_kn", "punch_diameter_mm", "tablet_weight_mg", "press_rpm"]},
-    {"id": "ipqc", "label": "In-process checks", "apparatus": "IPQC: balance, hardness tester, vernier, friabilator, DT apparatus", "shape": "per tablet",
+     "required": [], "fields": ["batch_no", "mfg_date", "timestamp", "force_kn", "precompression_kn", "punch_diameter_mm", "tablet_weight_mg", "press_rpm"]},
+    {"id": "ipqc", "kind": "batch", "label": "In-process checks", "apparatus": "IPQC: balance, hardness tester, vernier, friabilator, DT apparatus", "shape": "per tablet",
      "what": "One row per tablet sampled: weight, hardness, thickness, diameter; friability and disintegration per batch.",
      "required": ["batch_no"], "fields": ["batch_no", "mfg_date", "sample_no", "tablet_weight_mg", "hardness_n", "thickness_mm", "punch_diameter_mm",
                                           "friability_pct", "disintegration_min"]},
-    {"id": "dissolution", "label": "Dissolution tester export", "apparatus": "Dissolution apparatus (Electrolab, LabIndia, Agilent, Distek…)", "shape": "per vessel × time",
+    {"id": "dissolution", "kind": "batch", "label": "Dissolution tester export", "apparatus": "Dissolution apparatus (Electrolab, LabIndia, Agilent, Distek…)", "shape": "per vessel × time",
      "what": "One row per vessel and time point: % dissolved.", "required": ["batch_no", "pct_dissolved"],
      "fields": ["batch_no", "mfg_date", "vessel", "time_min", "pct_dissolved"]},
-    {"id": "qc_release", "label": "QC release results", "apparatus": "Certificate of analysis / LIMS export", "shape": "per batch",
+    {"id": "qc_release", "kind": "batch", "label": "QC release results", "apparatus": "Certificate of analysis / LIMS export", "shape": "per batch",
      "what": "Finished-product results per batch.", "required": ["batch_no"],
      "fields": ["batch_no", "product", "mfg_date", "assay_pct", "av", "dissolution_pct", "disintegration_min", "lod_pct", "related_subs_pct", "friability_pct"]},
-    {"id": "api_coa", "label": "API certificate of analysis", "apparatus": "API supplier CoA / incoming QC", "shape": "per batch",
+    {"id": "api_coa", "kind": "batch", "label": "API certificate of analysis", "apparatus": "API supplier CoA / incoming QC", "shape": "per batch",
      "what": "For each product batch, the API lot used and its assay, particle size and water.", "required": ["batch_no"],
      "fields": ["batch_no", "api_lot", "api_potency_pct", "api_d50_um", "api_water_pct"]},
+    {"id": "batch_schedule", "kind": "reference", "label": "Batch schedule", "apparatus": "BMR / production log: when each batch ran on each machine",
+     "shape": "per batch × machine", "required": ["batch_no", "batch_start", "batch_end"],
+     "what": "The reference that turns time-series data into batches: for each batch, the machine and its start and end time.",
+     "fields": ["batch_no", "machine", "batch_start", "batch_end", "product"]},
+    {"id": "timeseries", "kind": "timeseries", "label": "Time-series export", "apparatus": "SCADA historian / HMI trend / data logger export",
+     "shape": "time series", "required": ["timestamp"],
+     "what": "One row per reading: a timestamp, optionally the machine, and any readings. No batch column needed: a batch schedule links it.",
+     "fields": ["timestamp", "machine", "inlet_c", "outlet_c", "product_c", "inlet_rh_pct", "dew_point_c", "air_m3_h", "lod_pct",
+                "force_kn", "precompression_kn", "punch_diameter_mm", "tablet_weight_mg", "press_rpm", "impeller_kw", "blender_rpm"]},
 ]
 FORMAT_BY_ID = {f["id"]: f for f in FORMATS}
 
 PARAM_IDS = [p.id for p in twin.PARAMS]
+DRYER_FIELDS = ("inlet_c", "outlet_c", "product_c", "inlet_rh_pct", "dew_point_c", "air_m3_h", "air_cfm", "lod_pct")
 CQA_FIELDS = {k: v["cqa"] for k, v in F.items() if v["kind"] == "cqa" and v["cqa"]}
 
 
@@ -225,7 +239,7 @@ def detect_format(headers: list[str]) -> tuple[str, dict[str, str]]:
     best = ("batch_summary", {}, -1.0)
     for fm in FORMATS:
         m = match_headers(headers, fm["fields"])
-        if "batch_no" not in m:
+        if "batch_no" not in m and "timestamp" not in m:
             continue
         score = len(m) - 0.01 * len(fm["fields"])
         if score > best[2]:
@@ -252,17 +266,106 @@ def tensile_mpa(force_n: float, diameter_mm: float, thickness_mm: float) -> floa
     return 2 * force_n / (math.pi * diameter_mm * thickness_mm)
 
 
+LOCAL_TZ = os.environ.get("PLANT_TZ", "Asia/Kolkata")  # plant records are in local time; agents send UTC with an offset
+
+
 def to_date(v: Any) -> Optional[pd.Timestamp]:
-    """ISO dates as written; anything else read day-first (Indian records: 05/08/2026 is 5 August)."""
-    s = str(v or "").strip()
-    if not s:
+    """ISO dates as written; anything else read day-first (Indian records: 05/08/2026 is 5 August). A time with an
+    offset (an agent's UTC) is converted to plant local time; all results are naive local times, so they compare."""
+    if isinstance(v, pd.Timestamp):
+        d = v
+    else:
+        s = str(v or "").strip()
+        if not s or s.lower() in ("nan", "nat", "none"):
+            return None
+        try:
+            d = pd.to_datetime(s, errors="coerce", format="ISO8601") if re.match(r"^\d{4}-\d{1,2}-\d{1,2}", s) else pd.to_datetime(s, errors="coerce", dayfirst=True)
+        except (ValueError, TypeError):
+            return None
+    if pd.isna(d):
         return None
-    d = pd.to_datetime(s, errors="coerce", format="ISO8601") if re.match(r"^\d{4}-\d{1,2}-\d{1,2}", s) else pd.to_datetime(s, errors="coerce", dayfirst=True)
-    return None if pd.isna(d) else d
+    if d.tzinfo is not None:
+        d = d.tz_convert(LOCAL_TZ).tz_localize(None)
+    return d
 
 
 def _batch_key(v: Any) -> str:
     return re.sub(r"\s+", "", str(v or "")).upper()
+
+
+# --- time series → batches ---------------------------------------------------------------------------------------
+#
+# A reading with a timestamp and no batch number belongs to the batch that was on its machine at that moment. The
+# reference windows (batch, machine, start, end) come from a batch schedule, or from data that carries both a batch
+# number and a timestamp (a SCADA stream reads the machine's batch tag with every reading).
+
+def machine_key(v: Any) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(v or "").upper())
+
+
+def schedule_windows(df: pd.DataFrame, mapping: dict[str, str]) -> list[dict[str, Any]]:
+    out = []
+    for _, r in df.iterrows():
+        b = _batch_key(r.get(mapping.get("batch_no", ""), ""))
+        st, en = to_date(r.get(mapping.get("batch_start", ""))), to_date(r.get(mapping.get("batch_end", "")))
+        if b and st is not None and en is not None and en >= st:
+            out.append({"batch": b, "machine": str(r.get(mapping.get("machine", ""), "") or "").strip(), "start": st, "end": en, "source": "schedule"})
+    return out
+
+
+def tagged_windows(df: pd.DataFrame, mapping: dict[str, str], machine: str = "") -> list[dict[str, Any]]:
+    """First and last timestamp of each batch in data that has both a batch number and a timestamp."""
+    if "batch_no" not in mapping or "timestamp" not in mapping:
+        return []
+    d = pd.DataFrame({"b": df[mapping["batch_no"]].map(_batch_key), "t": [to_date(x) for x in df[mapping["timestamp"]]],
+                      "m": df[mapping["machine"]].astype(str) if "machine" in mapping else machine})
+    d = d[(d["b"] != "") & d["t"].notna()]
+    return [{"batch": b, "machine": m, "start": g["t"].min(), "end": g["t"].max(), "source": "batch tag"} for (b, m), g in d.groupby(["b", "m"])]
+
+
+def link(df: pd.DataFrame, mapping: dict[str, str], windows: list[dict[str, Any]], machine: str = "") -> tuple[pd.DataFrame, dict[str, str], dict[str, Any]]:
+    """Give each timestamped row the batch whose window on the same machine contains it, and the minutes since that
+    window started (`elapsed_min`, when the file has none). Returns the table with `_batch` / `_elapsed` columns, the
+    mapping pointing at them, and how many rows were linked."""
+    if "timestamp" not in mapping:
+        raise ValueError("map a column to 'Timestamp' (or one to 'Batch number')")
+    ts = pd.to_datetime(pd.Series([to_date(x) for x in df[mapping["timestamp"]]], index=df.index, dtype=object), errors="coerce")
+    rows_m = df[mapping["machine"]].map(machine_key) if "machine" in mapping else pd.Series(machine_key(machine), index=df.index)
+    batch = pd.Series("", index=df.index, dtype=object)
+    start = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+    used: dict[str, int] = {}
+    for w in sorted(windows, key=lambda w: w["start"]):
+        st, en = to_date(w["start"]), to_date(w["end"])
+        wm = machine_key(w.get("machine"))
+        m = (batch == "") & ts.between(st, en) & ((rows_m == "") | (wm == "") | (rows_m == wm))
+        if m.any():
+            batch[m], start[m] = w["batch"], st
+            used[w["batch"]] = used.get(w["batch"], 0) + int(m.sum())
+    out = df.copy()
+    out["_batch"] = batch
+    mp = {**mapping, "batch_no": "_batch"}
+    if "elapsed_min" not in mapping:
+        out["_elapsed"] = ((ts - start).dt.total_seconds() / 60).round(3).astype(str).replace("nan", "")
+        mp["elapsed_min"] = "_elapsed"
+    stats = {"rows": int(len(df)), "no_time": int(ts.isna().sum()), "linked": int((batch != "").sum()),
+             "outside": int(((batch == "") & ts.notna()).sum()), "batches": len(used), "windows": len(windows)}
+    return out, mp, stats
+
+
+def schedule_batches(df: pd.DataFrame, mapping: dict[str, str]) -> dict[str, dict[str, Any]]:
+    """A schedule's own contribution per batch: the manufacturing date (earliest start) and the product."""
+    out: dict[str, dict[str, Any]] = {}
+    for _, r in df.iterrows():
+        b = _batch_key(r.get(mapping.get("batch_no", "")))
+        if not b:
+            continue
+        cur = out.setdefault(b, {"values": {}, "meta": {}, "derived": {}})
+        st = to_date(r.get(mapping.get("batch_start", "")))
+        if st is not None and st.date().isoformat() < cur["meta"].get("mfg_date", "9999"):
+            cur["meta"]["mfg_date"] = st.date().isoformat()
+        if "product" in mapping and str(r.get(mapping["product"]) or "").strip():
+            cur["meta"].setdefault("product", str(r[mapping["product"]]).strip())
+    return out
 
 
 def aggregate(df: pd.DataFrame, fmt_id: str, mapping: dict[str, str], q_time_min: float = 45.0) -> dict[str, dict[str, Any]]:
@@ -287,7 +390,8 @@ def aggregate(df: pd.DataFrame, fmt_id: str, mapping: dict[str, str], q_time_min
             if col.empty or c in ("elapsed_min", "time_min", "pct_dissolved", "tablet_weight_mg", "hardness_n", "hardness_kp", "thickness_mm"):
                 continue
             if c in ("lod_pct",) and series:
-                order = g.sort_values("elapsed_min") if "elapsed_min" in g else g
+                order = g[g["lod_pct"].notna()]
+                order = order.sort_values("elapsed_min") if "elapsed_min" in order else order
                 vals[c] = float(order[c].dropna().iloc[-1])
                 how[c] = "last reading of the batch"
             elif c in ("friability_pct", "disintegration_min") and len(col) > 1:
@@ -298,9 +402,12 @@ def aggregate(df: pd.DataFrame, fmt_id: str, mapping: dict[str, str], q_time_min
                 if len(col) > 1:
                     how[c] = f"mean of {len(col)} readings"
         # fluid-bed dryer: drying time from the log, dew point from RH
-        if "elapsed_min" in g and g["elapsed_min"].notna().any() and "drying_min" not in vals:
-            vals["drying_min"] = float(g["elapsed_min"].max())  # an elapsed-time reading counts from the start of drying
-            how["drying_min"] = "last elapsed-time reading of the dryer log"
+        # drying time and the final LOD come from the dryer's own readings (a multi-machine export also holds the press)
+        dry = [c for c in DRYER_FIELDS if c in g]
+        g_dry = g[g[dry].notna().any(axis=1)] if dry else g.iloc[0:0]
+        if "elapsed_min" in g_dry and g_dry["elapsed_min"].notna().any() and "drying_min" not in vals:
+            vals["drying_min"] = float(g_dry["elapsed_min"].max())  # elapsed time counts from the start of drying
+            how["drying_min"] = "last elapsed-time reading of the dryer"
         elif "timestamp" in g and fmt_id == "fbd" and "drying_min" not in vals:
             ts = pd.Series([to_date(t) for t in g["timestamp"]]).dropna()
             if len(ts) >= 2:
@@ -594,6 +701,28 @@ def sample_csv(fmt_id: str) -> str:
         elif fmt_id == "api_coa":
             rows.append({"batch_no": b["batch_no"], "api_lot": f"API-{2400 + int(b['batch_no'][2:]) // 3}", "api_potency_pct": r2(b["api_potency_pct"]),
                          "api_d50_um": r2(b["api_d50_um"], 1), "api_water_pct": r2(abs(rng.normal(0.2, 0.05)))})
+        elif fmt_id == "batch_schedule":
+            day = b["mfg_date"]
+            t0 = pd.Timestamp(f"{day} 08:00")
+            rows.append({"batch_no": b["batch_no"], "machine": "FBD-1", "batch_start": t0.strftime("%Y-%m-%d %H:%M"),
+                         "batch_end": (t0 + pd.Timedelta(minutes=round(b["drying_min"]))).strftime("%Y-%m-%d %H:%M"), "product": b["product"]})
+            rows.append({"batch_no": b["batch_no"], "machine": "PRESS-1", "batch_start": f"{day} 11:00", "batch_end": f"{day} 13:00", "product": b["product"]})
+        elif fmt_id == "timeseries":
+            # a historian export: timestamps and readings only, with idle readings between batches
+            t0, end = pd.Timestamp(f"{b['mfg_date']} 08:00"), int(round(b["drying_min"]))
+            for t in [-30, -15, *range(0, end, 5), end, end + 15, end + 30]:
+                run = 0 <= t <= end
+                rows.append({"timestamp": (t0 + pd.Timedelta(minutes=t)).strftime("%Y-%m-%d %H:%M"), "machine": "FBD-1",
+                             "inlet_c": r2((b["inlet_c"] if run else 31) + rng.normal(0, 0.5), 1),
+                             "outlet_c": r2((30 + 0.25 * t if run else 29) + rng.normal(0, 0.4), 1),
+                             "product_c": r2((28 + 0.27 * t if run else 28) + rng.normal(0, 0.4), 1),
+                             "inlet_rh_pct": r2((b["inlet_rh_pct"] if run else 55) + rng.normal(0, 0.6), 1),
+                             "air_m3_h": r2((b["air_m3_h"] if run else 0) + (rng.normal(0, 25) if run else 0), 0),
+                             "lod_pct": r2(b["lod_pct"] + max(0, 1 - t / end) * 18, 2) if run and (t % 20 == 0 or t == end) else ""})
+            for k in range(13):
+                rows.append({"timestamp": (pd.Timestamp(f"{b['mfg_date']} 11:00") + pd.Timedelta(minutes=10 * k)).strftime("%Y-%m-%d %H:%M"),
+                             "machine": "PRESS-1", "force_kn": r2(b["force_kn"] + rng.normal(0, 0.4)), "punch_diameter_mm": 12.0,
+                             "tablet_weight_mg": r2(rng.normal(650, 6.5), 1), "press_rpm": 30})
         else:
             raise KeyError(fmt_id)
     cols = FORMAT_BY_ID[fmt_id]["fields"]

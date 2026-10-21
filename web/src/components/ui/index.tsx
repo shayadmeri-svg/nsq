@@ -1,4 +1,5 @@
 import { animate, AnimatePresence, motion, useInView, useMotionValue, useTransform } from "motion/react";
+import { createPortal } from "react-dom";
 import { LoadingEdge } from "./Loading";
 import { X } from "lucide-react";
 import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
@@ -206,8 +207,9 @@ export function Drawer({ open, onClose, title, subtitle, children, width = 720 }
   );
 }
 
-export function Modal({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode }) {
-  return (
+export function Modal({ open, onClose, title, children, footer, width = 512 }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; width?: number }) {
+  // portalled: inside a transformed parent (a drawer) `fixed` would be positioned relative to that parent
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div key="modal" className="fixed inset-0 z-50 grid place-items-center bg-night-900/40 p-4 backdrop-blur-sm" variants={overlay} initial="closed" animate="open" exit="closed" transition={{ duration: 0.18 }} onMouseDown={onClose}>
@@ -215,18 +217,20 @@ export function Modal({ open, onClose, title, children, footer }: { open: boolea
             onMouseDown={(e) => e.stopPropagation()}
             variants={{ open: { opacity: 1, scale: 1, y: 0 }, closed: { opacity: 0, scale: 0.97, y: 8 } }}
             transition={{ type: "spring", damping: 26, stiffness: 340 }}
-            className="w-full max-w-lg rounded-2xl bg-white shadow-lift"
+            className="flex max-h-[90vh] w-full min-w-0 flex-col rounded-2xl bg-white shadow-lift"
+            style={{ maxWidth: width }}
           >
             <div className="flex items-center justify-between border-b border-line px-6 py-4">
               <div className="font-display text-lg font-semibold">{title}</div>
               <button onClick={onClose} className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100"><X size={18} /></button>
             </div>
-            <div className="px-6 py-5">{children}</div>
+            <div className="scrollbar-thin overflow-y-auto px-6 py-5">{children}</div>
             {footer && <div className="flex justify-end gap-2 border-t border-line bg-slate-50/60 px-6 py-3.5">{footer}</div>}
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 

@@ -263,3 +263,15 @@ class PlantConnector(Base):
     created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PlantSimConfig(Base):
+    """Settings of the plant simulator streaming into an organisation (edge-agent/simulator.py reads them through
+    its connector token): run/pause, speed, and per machine each signal's setpoint, noise, range and pattern."""
+
+    __tablename__ = "plant_sim_configs"
+
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), primary_key=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_by: Mapped[str] = mapped_column(String(254), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())

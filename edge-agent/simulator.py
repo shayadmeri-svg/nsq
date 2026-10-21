@@ -1,117 +1,191 @@
-"""Plant simulator for testing the Eurveda edge agent without a plant: an OPC UA server with a fluid-bed dryer (FBD1)
-and a tablet press (PRESS1) running batch after batch, and optionally the same press over Modbus TCP.
+"""Plant simulator for testing the Eurveda edge agent without a plant: an OPC UA server with four machines running
+batches in sequence — rapid mixer granulator (RMG1) → fluid-bed dryer (FBD1) → blender (BLEND1) → tablet press
+(PRESS1) — and optionally the press over Modbus TCP.
 
-    python simulator.py                                    OPC UA on opc.tcp://0.0.0.0:4840/eurveda-sim/
-    python simulator.py --speed 60 --fault short-dry --fault-every 3
-    python simulator.py --modbus 5020                      also serve PRESS1 over Modbus TCP on port 5020
+    python simulator.py                                       defaults from sim_defaults.json
+    python simulator.py --config-url http://api:8001/api/ingest/plant-data/sim-config   settings from Eurveda (Sim engine)
+    python simulator.py --modbus 5020                         also serve PRESS1 over Modbus TCP on port 5020
 
-Simulated time runs `--speed` times faster than real time (default 30: a 60-minute drying takes 2 minutes). The dryer
-dries batch N while the press compresses batch N-1. Every `--fault-every`-th batch carries the chosen fault:
+Every signal is setpoint + pattern + noise, clamped to its instrument range (min/max). Patterns:
 
-    short-dry       the dryer stops at 39 min instead of 60 (loss on drying ends high)
-    over-compress   main compression force 18.5 kN instead of 13 (slow disintegration)
-    humid-air       inlet air at 25 %RH instead of 8 (less drying capacity)
+    steady   setpoint ± noise
+    drift    + amplitude per batch (e.g. compression force creeping up as punches wear)
+    sine     + amplitude · sin(2π · minutes / period_min)
+    step     + amplitude on every `every`-th batch (a recurring fault: every 3rd batch dried 21 min short)
+    spikes   + amplitude on about one reading (or batch) in `every`
+    ramp     rises by amplitude over each batch to the setpoint (e.g. impeller power as granules build)
 
-The numbers are illustrative, for exercising the pipeline; they are not a model of any real machine.
+Per-batch signals ("per": "batch") are drawn once when the batch starts (drying time, binder added, blend time).
+The dryer's temperatures and LOD respond to the other inputs — more binder means more water to dry; short drying,
+humid or cold air leave the LOD high — through illustrative couplings, not a model of any real machine.
+
+With --config-url the settings are read from Eurveda every few seconds (Playground → Plant data → Live → Sim engine)
+using the connector token in $EURVEDA_TOKEN; without it they come from sim_defaults.json.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
+import json
 import logging
 import math
+import os
 import random
 import struct
 import time
+import urllib.request
+from pathlib import Path
+from typing import Any
 
 from asyncua import Server, ua
 
 log = logging.getLogger("sim")
-
-FBD_TAGS = {"InletTemp": 60.0, "OutletTemp": 30.0, "ProductTemp": 28.0, "InletRH": 8.0, "AirFlow": 3000.0, "LOD": 20.0, "ElapsedMin": 0.0}
-PRESS_TAGS = {"ForceKN": 13.0, "PrecompKN": 2.0, "TabletWeightMg": 650.0, "PunchDiameterMm": 12.0, "TurretRPM": 30.0}
-# Modbus holding registers for PRESS1 (float32, big-endian words): 0 ForceKN, 2 PrecompKN, 4 TabletWeightMg,
-# 6 PunchDiameterMm, 8 TurretRPM; 20..27 batch number as ASCII (16 characters)
-MODBUS_MAP = {"ForceKN": 0, "PrecompKN": 2, "TabletWeightMg": 4, "PunchDiameterMm": 6, "TurretRPM": 8}
+HERE = Path(__file__).resolve().parent
+ORDER = ["RMG-1", "FBD-1", "BLENDER-1", "PRESS-1"]  # the order a batch goes through the plant
+OBJECT = {"RMG-1": "RMG1", "FBD-1": "FBD1", "BLENDER-1": "BLEND1", "PRESS-1": "PRESS1"}
+# OPC UA variable names (NodeId ns=2;s=<OBJECT>.<name>)
+TAGS = {
+    "RMG-1": {"dry_mix_kg": "DryMixKg", "binder_kg": "BinderKg", "wet_mix_min": "WetMixMin", "impeller_kw": "ImpellerKW"},
+    "FBD-1": {"inlet_c": "InletTemp", "outlet_c": "OutletTemp", "product_c": "ProductTemp", "inlet_rh_pct": "InletRH",
+              "air_m3_h": "AirFlow", "lod_pct": "LOD", "elapsed_min": "ElapsedMin"},
+    "BLENDER-1": {"blend_min": "BlendMin", "blender_rpm": "SpeedRPM"},
+    "PRESS-1": {"force_kn": "ForceKN", "precompression_kn": "PrecompKN", "tablet_weight_mg": "TabletWeightMg",
+                "punch_diameter_mm": "PunchDiameterMm", "press_rpm": "TurretRPM"},
+}
+# Modbus holding registers for PRESS1 (float32, big-endian words); batch number as ASCII at 20..27
+MODBUS_MAP = {"force_kn": 0, "precompression_kn": 2, "tablet_weight_mg": 4, "punch_diameter_mm": 6, "press_rpm": 8}
 MODBUS_BATCH = 20
 
 
-class Plant:
-    def __init__(self, fault: str, every: int, seed: int):
+def defaults() -> dict[str, Any]:
+    return json.loads((HERE / "sim_defaults.json").read_text(encoding="utf-8"))
+
+
+def merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
+    out = copy.deepcopy(base)
+    for k, v in (over or {}).items():
+        out[k] = merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+class Engine:
+    def __init__(self, cfg: dict[str, Any], seed: int = 7):
+        self.cfg = cfg
         self.rng = random.Random(seed)
-        self.fault, self.every = fault, every
-        self.n = 1
-        self.prefix = time.strftime("B%d%H%M-")  # batch numbers stay unique across restarts: B220024-001, B220024-002…
-        self.fbd_t = 0.0
-        self.press_batch = ""
-        self.press_t = 0.0
-        self._new_fbd_batch()
+        self.prefix = time.strftime("B%d%H%M-")  # batch numbers stay unique across restarts
+        self.clock = 0.0  # simulated minutes since start
+        self.n = 0  # newest batch started (index)
+        self.t = 0.0  # minutes into the current takt
+        self.draws: dict[int, dict[str, dict[str, float]]] = {}
+        self.origin: dict[tuple[str, str], int] = {}  # where a drift pattern started
+        self._takt()
 
-    def _faulty(self, n: int) -> bool:
-        return self.fault != "none" and self.every > 0 and n % self.every == 0
+    # --- configuration ---
+    def apply(self, cfg: dict[str, Any]) -> None:
+        for m, a in cfg.get("apparatus", {}).items():
+            for f, s in a.get("signals", {}).items():
+                was = self.cfg.get("apparatus", {}).get(m, {}).get("signals", {}).get(f, {}).get("pattern")
+                if s.get("pattern") == "drift" and was != "drift":
+                    self.origin[(m, f)] = self.n
+        self.cfg = cfg
 
-    def _new_fbd_batch(self) -> None:
-        f = self._faulty(self.n)
-        self.fbd_batch = f"{self.prefix}{self.n:03d}"
-        self.fbd_target = (39.0 if f and self.fault == "short-dry" else self.rng.gauss(60, 1.5))
-        self.fbd_rh = 25.0 if f and self.fault == "humid-air" else self.rng.gauss(8, 0.8)
-        self.fbd_final = 1.6 + 0.09 * max(0.0, 60 - self.fbd_target) + 0.06 * max(0.0, self.fbd_rh - 8) + self.rng.gauss(0, 0.12)
-        self.fbd_t = 0.0
+    def sig(self, m: str, f: str) -> dict[str, Any]:
+        return self.cfg["apparatus"][m]["signals"][f]
 
-    def step(self, sim_min: float) -> tuple[dict[str, float], dict[str, float]]:
-        r = self.rng
-        self.fbd_t += sim_min
-        if self.fbd_t >= self.fbd_target:  # drying done: this batch goes to the press, the next one starts drying
-            self.press_batch, self.press_t = self.fbd_batch, 0.0
-            self.press_force = 18.5 if self._faulty(self.n) and self.fault == "over-compress" else 13.0
-            self.n += 1
-            self._new_fbd_batch()
-        t, T = self.fbd_t, self.fbd_target
-        fbd = {"InletTemp": r.gauss(60, 0.6), "OutletTemp": 30 + 0.25 * t + r.gauss(0, 0.4), "ProductTemp": 28 + 0.27 * t + r.gauss(0, 0.4),
-               "InletRH": self.fbd_rh + r.gauss(0, 0.5), "AirFlow": r.gauss(3000, 25),
-               "LOD": self.fbd_final + max(0.0, 1 - t / T) * 18 + r.gauss(0, 0.05), "ElapsedMin": round(t, 2)}
-        self.press_t += sim_min
-        press = {"ForceKN": (self.press_force if self.press_batch else 0.0) + r.gauss(0, 0.35), "PrecompKN": r.gauss(2.0, 0.12),
-                 "TabletWeightMg": r.gauss(650, 6.5), "PunchDiameterMm": 12.0, "TurretRPM": 30.0}
-        return fbd, press
+    def value(self, m: str, f: str, b: int, progress: float = 1.0) -> float:
+        s = self.sig(m, f)
+        sp, amp, every = float(s["setpoint"]), float(s.get("amplitude", 0)), max(1, int(s.get("every", 3)))
+        v, p = sp, s.get("pattern", "steady")
+        if p == "drift":
+            v += amp * (b - self.origin.get((m, f), b))
+        elif p == "sine":
+            v += amp * math.sin(2 * math.pi * self.clock / max(1.0, float(s.get("period_min", 60))))
+        elif p == "step" and b % every == 0:
+            v += amp
+        elif p == "ramp":
+            v -= amp * (1 - min(1.0, max(0.0, progress)))
+        elif p == "spikes" and self.rng.random() < 1 / every:
+            v += amp
+        v += self.rng.gauss(0, float(s.get("noise", 0)))
+        return min(float(s.get("max", v)), max(float(s.get("min", v)), v))
+
+    # --- batches ---
+    def _draw(self, b: int) -> None:
+        d: dict[str, dict[str, float]] = {}
+        for m, a in self.cfg["apparatus"].items():
+            d[m] = {f: self.value(m, f, b, 0.0) for f, s in a["signals"].items() if s.get("per") == "batch"}
+        rmg = d.get("RMG-1", {})
+        liquid = 100 * rmg.get("binder_kg", 25) / max(1e-6, rmg.get("dry_mix_kg", 100))
+        fbd = self.cfg["apparatus"]["FBD-1"]["signals"]
+        T = d["FBD-1"]["drying_min"]
+        need = 60 * liquid / 25  # minutes the water load needs at the reference air
+        d["FBD-1"]["_final_lod"] = max(0.4, 1.6 + 0.09 * max(0.0, need - T) + 0.06 * max(0.0, float(fbd["inlet_rh_pct"]["setpoint"]) - 8)
+                                       + 0.05 * max(0.0, 60 - float(fbd["inlet_c"]["setpoint"])) + 0.0006 * max(0.0, 3000 - float(fbd["air_m3_h"]["setpoint"]))
+                                       + self.rng.gauss(0, 0.1))
+        d["FBD-1"]["_liquid"] = liquid
+        self.draws[b] = d
+        for old in [k for k in self.draws if k < b - 8]:
+            del self.draws[old]
+
+    def duration(self, m: str, b: int) -> float:
+        a = self.cfg["apparatus"][m]
+        if m == "FBD-1":
+            return self.draws[b]["FBD-1"]["drying_min"]
+        if m == "BLENDER-1":
+            return max(float(a.get("duration_min", 10)), self.draws[b]["BLENDER-1"]["blend_min"])
+        return float(a.get("duration_min", 30))
+
+    def _takt(self) -> None:
+        self.n += 1
+        self._draw(self.n)
+        live = [self.duration(m, self.n - k) for k, m in enumerate(ORDER)
+                if self.cfg["apparatus"][m].get("enabled", True) and self.n - k >= 1]
+        self.takt = max(live or [10.0]) + float(self.cfg.get("handling_min", 5))
+        self.t = 0.0
+
+    def step(self, sim_min: float) -> None:
+        if not self.cfg.get("running", True):
+            return
+        self.clock += sim_min
+        self.t += sim_min
+        if self.t >= self.takt:
+            self._takt()
+
+    def readings(self) -> dict[str, tuple[str, dict[str, float]]]:
+        """{machine: (batch number, or "" when idle, {field: value})}"""
+        out = {}
+        for k, m in enumerate(ORDER):
+            b = self.n - k
+            a = self.cfg["apparatus"][m]
+            running = a.get("enabled", True) and b >= 1 and self.t <= self.duration(m, b)
+            if not running:
+                out[m] = ("", self._idle(m))
+                continue
+            pr = self.t / max(1e-6, self.duration(m, b))
+            d = self.draws[b][m]
+            vals = {f: (d[f] if s.get("per") == "batch" else self.value(m, f, b, pr)) for f, s in a["signals"].items()}
+            if m == "FBD-1":
+                T, t, inlet = d["drying_min"], self.t, vals["inlet_c"]
+                vals = {"inlet_c": inlet, "inlet_rh_pct": vals["inlet_rh_pct"], "air_m3_h": vals["air_m3_h"],
+                        "outlet_c": inlet / 60 * (30 + 0.25 * t) + self.rng.gauss(0, 0.4), "product_c": inlet / 60 * (28 + 0.27 * t) + self.rng.gauss(0, 0.4),
+                        "lod_pct": d["_final_lod"] + max(0.0, 1 - t / T) * 18 * d["_liquid"] / 25 + self.rng.gauss(0, 0.05), "elapsed_min": round(t, 2)}
+            out[m] = (f"{self.prefix}{b:03d}", {f: v for f, v in vals.items() if f in TAGS[m]})
+        return out
+
+    @staticmethod
+    def _idle(m: str) -> dict[str, float]:
+        return {"FBD-1": {"inlet_c": 31.0, "outlet_c": 29.0, "product_c": 28.0, "inlet_rh_pct": 55.0, "air_m3_h": 0.0, "lod_pct": 0.0, "elapsed_min": 0.0},
+                "PRESS-1": {"force_kn": 0.0, "precompression_kn": 0.0, "tablet_weight_mg": 0.0, "punch_diameter_mm": 12.0, "press_rpm": 0.0},
+                "RMG-1": {"dry_mix_kg": 0.0, "binder_kg": 0.0, "wet_mix_min": 0.0, "impeller_kw": 0.0},
+                "BLENDER-1": {"blend_min": 0.0, "blender_rpm": 0.0}}[m]
 
 
-async def main(a: argparse.Namespace) -> None:
-    server = Server()
-    await server.init()
-    server.set_endpoint(f"opc.tcp://0.0.0.0:{a.port}/eurveda-sim/")
-    server.set_server_name("Eurveda plant simulator")
-    idx = await server.register_namespace("urn:eurveda:sim")
-    objs = server.nodes.objects
-    nodes: dict[str, dict[str, object]] = {"FBD1": {}, "PRESS1": {}}
-    for machine, tags in (("FBD1", FBD_TAGS), ("PRESS1", PRESS_TAGS)):
-        obj = await objs.add_object(ua.NodeId(machine, idx), ua.QualifiedName(machine, idx))
-        for tag, v in tags.items():
-            nodes[machine][tag] = await obj.add_variable(ua.NodeId(f"{machine}.{tag}", idx), ua.QualifiedName(tag, idx), float(v))
-        nodes[machine]["BatchNo"] = await obj.add_variable(ua.NodeId(f"{machine}.BatchNo", idx), ua.QualifiedName("BatchNo", idx), "")
-
-    regs = await start_modbus(a.modbus) if a.modbus else None
-    plant = Plant(a.fault, a.fault_every, a.seed)
-    tick = 1.0
-    async with server:
-        log.info("OPC UA on opc.tcp://localhost:%d/eurveda-sim/ (namespace %d)%s; %gx speed, fault=%s every %d",
-                 a.port, idx, f", Modbus on :{a.modbus}" if a.modbus else "", a.speed, a.fault, a.fault_every)
-        while True:
-            fbd, press = plant.step(tick * a.speed / 60.0)
-            for k, v in fbd.items():
-                await nodes["FBD1"][k].write_value(float(v))
-            await nodes["FBD1"]["BatchNo"].write_value(plant.fbd_batch)
-            for k, v in press.items():
-                await nodes["PRESS1"][k].write_value(float(v))
-            await nodes["PRESS1"]["BatchNo"].write_value(plant.press_batch)
-            if regs is not None:
-                for k, at in MODBUS_MAP.items():
-                    hi, lo = struct.unpack(">HH", struct.pack(">f", press[k]))
-                    regs.setValues(3, at, [hi, lo])
-                b = plant.press_batch.encode("ascii").ljust(16, b"\x00")[:16]
-                regs.setValues(3, MODBUS_BATCH, list(struct.unpack(">8H", b)))
-            await asyncio.sleep(tick)
+def fetch_config(url: str, token: str) -> dict[str, Any]:
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "x-nsq-client": "simulator"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode())["config"]
 
 
 class Registers:
@@ -120,7 +194,7 @@ class Registers:
     def __init__(self, n: int = 64):
         self.r = [0] * n
 
-    def setValues(self, _fc: int, at: int, values: list[int]) -> None:  # noqa: N802 — same call shape as pymodbus
+    def set(self, at: int, values: list[int]) -> None:
         self.r[at:at + len(values)] = values
 
 
@@ -131,18 +205,15 @@ async def start_modbus(port: int) -> Registers:
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             while True:
-                head = await reader.readexactly(7)
-                tid, _proto, length, unit = struct.unpack(">HHHB", head)
+                tid, _proto, length, unit = struct.unpack(">HHHB", await reader.readexactly(7))
                 pdu = await reader.readexactly(length - 1)
                 fc = pdu[0]
                 if fc == 3 and len(pdu) >= 5:
                     at, count = struct.unpack(">HH", pdu[1:5])
-                    if at + count > len(regs.r) or count == 0:
-                        body = struct.pack(">BB", fc | 0x80, 2)  # illegal data address
-                    else:
-                        body = struct.pack(">BB", fc, 2 * count) + struct.pack(f">{count}H", *regs.r[at:at + count])
+                    body = (struct.pack(">BB", fc | 0x80, 2) if at + count > len(regs.r) or count == 0
+                            else struct.pack(">BB", fc, 2 * count) + struct.pack(f">{count}H", *regs.r[at:at + count]))
                 else:
-                    body = struct.pack(">BB", fc | 0x80, 1)  # illegal function
+                    body = struct.pack(">BB", fc | 0x80, 1)
                 writer.write(struct.pack(">HHHB", tid, 0, len(body) + 1, unit) + body)
                 await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError):
@@ -152,13 +223,68 @@ async def start_modbus(port: int) -> Registers:
     return regs
 
 
+async def main(a: argparse.Namespace) -> None:
+    base = defaults()
+    if a.speed:
+        base["speed"] = a.speed
+    sig = base["apparatus"]
+    if a.fault != "short-dry":
+        sig["FBD-1"]["signals"]["drying_min"]["pattern"] = "steady"
+    if a.fault == "over-compress":
+        sig["PRESS-1"]["signals"]["force_kn"].update(pattern="step", amplitude=5.5, every=a.fault_every)
+    elif a.fault == "humid-air":
+        sig["FBD-1"]["signals"]["inlet_rh_pct"].update(pattern="step", amplitude=17, every=a.fault_every)
+    elif a.fault == "short-dry":
+        sig["FBD-1"]["signals"]["drying_min"]["every"] = a.fault_every
+    eng = Engine(base, a.seed)
+
+    server = Server()
+    await server.init()
+    server.set_endpoint(f"opc.tcp://0.0.0.0:{a.port}/eurveda-sim/")
+    server.set_server_name("Eurveda plant simulator")
+    idx = await server.register_namespace("urn:eurveda:sim")
+    nodes: dict[str, dict[str, Any]] = {}
+    for m, obj_name in OBJECT.items():
+        obj = await server.nodes.objects.add_object(ua.NodeId(obj_name, idx), ua.QualifiedName(obj_name, idx))
+        nodes[m] = {f: await obj.add_variable(ua.NodeId(f"{obj_name}.{tag}", idx), ua.QualifiedName(tag, idx), 0.0) for f, tag in TAGS[m].items()}
+        nodes[m]["_batch"] = await obj.add_variable(ua.NodeId(f"{obj_name}.BatchNo", idx), ua.QualifiedName("BatchNo", idx), "")
+    regs = await start_modbus(a.modbus) if a.modbus else None
+    token = os.environ.get(a.token_env, "")
+    last_fetch = 0.0
+    async with server:
+        log.info("OPC UA on opc.tcp://localhost:%d/eurveda-sim/ (namespace %d)%s; settings from %s", a.port, idx,
+                 f", Modbus on :{a.modbus}" if a.modbus else "", a.config_url or "sim_defaults.json")
+        while True:
+            if a.config_url and token and time.monotonic() - last_fetch > a.config_every:
+                last_fetch = time.monotonic()
+                try:
+                    cfg = await asyncio.get_running_loop().run_in_executor(None, fetch_config, a.config_url, token)
+                    eng.apply(merge(base, cfg))
+                except Exception as exc:  # noqa: BLE001 — keep simulating with the last settings
+                    log.warning("could not read settings from Eurveda: %s", exc)
+            eng.step(float(eng.cfg.get("speed", 30)) / 60.0)
+            for m, (batch, vals) in eng.readings().items():
+                for f, v in vals.items():
+                    await nodes[m][f].write_value(float(v))
+                await nodes[m]["_batch"].write_value(batch)
+                if regs is not None and m == "PRESS-1":
+                    for f, at in MODBUS_MAP.items():
+                        regs.set(at, list(struct.unpack(">HH", struct.pack(">f", float(vals.get(f, 0.0))))))
+                    regs.set(MODBUS_BATCH, list(struct.unpack(">8H", batch.encode("ascii").ljust(16, b"\x00")[:16])))
+            await asyncio.sleep(1.0)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=4840)
     ap.add_argument("--modbus", type=int, default=0, help="also serve PRESS1 over Modbus TCP on this port")
-    ap.add_argument("--speed", type=float, default=30.0, help="simulated seconds per real second")
-    ap.add_argument("--fault", choices=["none", "short-dry", "over-compress", "humid-air"], default="short-dry")
+    ap.add_argument("--speed", type=float, default=0, help="simulated seconds per real second (default from the settings: 30)")
+    ap.add_argument("--fault", choices=["none", "short-dry", "over-compress", "humid-air"], default="short-dry",
+                    help="starting pattern without --config-url (default: every 3rd batch dried 21 min short)")
     ap.add_argument("--fault-every", type=int, default=3)
+    ap.add_argument("--config-url", default="", help="read settings from Eurveda (…/api/ingest/plant-data/sim-config)")
+    ap.add_argument("--config-every", type=float, default=5.0, help="seconds between reads of the settings")
+    ap.add_argument("--token-env", default="EURVEDA_TOKEN")
     ap.add_argument("--seed", type=int, default=7)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("asyncua").setLevel(logging.WARNING)

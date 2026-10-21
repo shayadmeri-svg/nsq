@@ -40,6 +40,29 @@ machines:
       punch_diameter_mm: "ns=2;s=PRESS1.PunchDiameterMm"
       press_rpm: "ns=2;s=PRESS1.TurretRPM"
 
+  # Rapid mixer granulator and blender (the simulator has them too)
+  - name: RMG-1
+    format: rmg
+    protocol: opcua
+    endpoint: opc.tcp://localhost:4840/eurveda-sim/
+    poll_s: 5
+    batch: {node: "ns=2;s=RMG1.BatchNo"}
+    tags:
+      dry_mix_kg: "ns=2;s=RMG1.DryMixKg"
+      binder_kg: "ns=2;s=RMG1.BinderKg"
+      wet_mix_min: "ns=2;s=RMG1.WetMixMin"
+      impeller_kw: "ns=2;s=RMG1.ImpellerKW"
+
+  - name: BLENDER-1
+    format: blender
+    protocol: opcua
+    endpoint: opc.tcp://localhost:4840/eurveda-sim/
+    poll_s: 5
+    batch: {node: "ns=2;s=BLEND1.BatchNo"}
+    tags:
+      blend_min: "ns=2;s=BLEND1.BlendMin"
+      blender_rpm: "ns=2;s=BLEND1.SpeedRPM"
+
   # The same press over Modbus TCP (for machines without OPC UA). Register addresses come from the machine's manual.
   # - name: PRESS-1
   #   format: press

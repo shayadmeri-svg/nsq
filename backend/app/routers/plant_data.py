@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import os
 import re
 import secrets
 from collections import defaultdict
@@ -28,7 +30,7 @@ from chem import batch_data as bd
 from .. import features, insights, lab
 from ..audit import audit
 from ..db import get_db
-from ..models import BatchDataset, PlantConnector, User
+from ..models import BatchDataset, PlantConnector, PlantSimConfig, User
 from ..security import current_user, org_for_user
 
 router = APIRouter(prefix="/api/plant-data/{slug}", tags=["plant-data"], dependencies=[Depends(features.gate)])
@@ -37,6 +39,7 @@ DEMO_ORG = "eurveda-demo"  # the plant simulator's organisation unless PLANT_SIM
 LIVE = "live:"  # filename prefix of datasets fed by a connector: live:<connector id>:<machine>
 MAX_LIVE_ROWS = 3_000  # raw tail kept per live stream; older batches keep their per-batch values
 MAX_LIVE_BATCHES = 300
+RETAIN_H = float(os.environ.get("PLANT_LIVE_RETAIN_H", "24"))  # live readings and batches older than this are dropped
 _live_cache: dict[tuple, tuple[dict[str, Any], dict[str, Any]]] = {}
 ONLINE_S = 90
 
@@ -95,7 +98,9 @@ def _summary(d: BatchDataset) -> dict[str, Any]:
     return {"id": d.id, "name": d.name, "format": d.format, "format_label": fm.get("label", d.format), "filename": d.filename,
             "rows": len(d.raw or []), "batches": len(d.batches or {}), "fields": fields, "mapping": d.mapping, "columns": d.columns,
             "molecule_key": d.molecule_key, "uploaded_by": d.uploaded_by, "created_at": d.created_at.isoformat() if d.created_at else None,
-            "live": (d.filename or "").startswith(LIVE)}
+            "live": (d.filename or "").startswith(LIVE), "kind": fm.get("kind", "batch"),
+            "timestamps": "timestamp" in (d.mapping or {}), "linked_by_time": "timestamp" in (d.mapping or {}) and "batch_no" not in (d.mapping or {}),
+            "link": (d.mapping or {}).get("_link"), "machine": _machine_of(d)}
 
 
 @router.get("/formats")
@@ -114,10 +119,54 @@ def sample(slug: str, fmt: str, user: User = Depends(current_user), db: Session 
                     headers={"Content-Disposition": f'attachment; filename="eurveda-sample-{fmt}.csv"'})
 
 
+# --- reference windows: which batch was on which machine when ---------------------------------------------------
+
+def _machine_of(d: BatchDataset) -> str:
+    return d.name.removeprefix("Live · ") if (d.filename or "").startswith(LIVE) else str((d.mapping or {}).get("_machine") or "")
+
+
+def _fields(mapping: dict[str, Any]) -> dict[str, str]:
+    return {k: v for k, v in (mapping or {}).items() if k in bd.F and isinstance(v, str)}
+
+
+def _windows(rows: list[BatchDataset]) -> list[dict[str, Any]]:
+    """From batch schedules, and from data holding both a batch number and a timestamp on a known machine (a SCADA
+    stream reads the machine's batch tag with every reading)."""
+    out = []
+    for d in rows:
+        m = _fields(d.mapping)
+        if not d.raw:
+            continue
+        if d.format == "batch_schedule":
+            out += bd.schedule_windows(pd.DataFrame(d.raw).fillna("").astype(str), m)
+        elif "batch_no" in m and "timestamp" in m and ("machine" in m or _machine_of(d)):
+            out += bd.tagged_windows(pd.DataFrame(d.raw).fillna("").astype(str), m, _machine_of(d))
+    return out
+
+
+def _link_and_aggregate(df: pd.DataFrame, fmt: str, m: dict[str, str], wins: list[dict[str, Any]], machine: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    linked, mp, stats = bd.link(df, m, wins, machine)
+    return bd.aggregate(linked, fmt, mp), stats
+
+
+def _relink(db: Session, org_id: int) -> None:
+    """Re-read every timestamp-only file against the current windows (after a schedule is added or removed)."""
+    rows = _datasets(db, org_id)
+    wins = _windows(rows)
+    for d in rows:
+        m = _fields(d.mapping)
+        if "batch_no" in m or "timestamp" not in m or not d.raw:
+            continue
+        batches, stats = _link_and_aggregate(pd.DataFrame(d.raw).fillna("").astype(str), d.format, m, wins, _machine_of(d))
+        d.batches = batches
+        d.mapping = {**m, "_machine": _machine_of(d), "_link": stats}
+    db.commit()
+
+
 @router.post("/preview")
 async def preview(slug: str, file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), format: Optional[str] = Form(None),
-                  user: User = Depends(current_user), db: Session = Depends(get_db)):
-    org_for_user(db, slug, user)
+                  machine: str = Form(""), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    org = org_for_user(db, slug, user)
     df, name = await _table(file, text)
     headers = list(df.columns)
     if format and format in bd.FORMAT_BY_ID:
@@ -125,15 +174,22 @@ async def preview(slug: str, file: Optional[UploadFile] = File(None), text: Opti
     else:
         fmt, mapping = bd.detect_format(headers)
     extra = {k: h for k, h in bd.match_headers([h for h in headers if h not in mapping.values()]).items() if k not in mapping}
-    return {"filename": name, "format": fmt, "headers": headers, "mapping": {**mapping, **extra}, "rows": len(df),
-            "preview": df.head(8).fillna("").to_dict(orient="records"), "unmapped": [h for h in headers if h not in {**mapping, **extra}.values()],
-            "molecule_guess": _molecule_guess(df, {**mapping, **extra}), "batches": int(df[mapping["batch_no"]].nunique()) if "batch_no" in mapping else 0}
+    full = {**mapping, **extra}
+    wins = _windows(_datasets(db, org.id))
+    link = None
+    if "batch_no" not in full and "timestamp" in full and fmt != "batch_schedule":
+        link = bd.link(df, full, wins, machine)[2] if wins else {"rows": len(df), "linked": 0, "windows": 0}
+    return {"filename": name, "format": fmt, "headers": headers, "mapping": full, "rows": len(df),
+            "preview": df.head(8).fillna("").to_dict(orient="records"), "unmapped": [h for h in headers if h not in full.values()],
+            "molecule_guess": _molecule_guess(df, full), "batches": int(df[mapping["batch_no"]].nunique()) if "batch_no" in mapping else (link or {}).get("batches", 0),
+            "link": link, "machines": sorted({w["machine"] for w in wins if w["machine"]}),
+            "windows": len(wins)}
 
 
 @router.post("/datasets")
 async def create(slug: str, request: Request, file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None),
                  format: str = Form(...), mapping: str = Form("{}"), name: str = Form(""), molecule_key: str = Form(""),
-                 user: User = Depends(current_user), db: Session = Depends(get_db)):
+                 machine: str = Form(""), user: User = Depends(current_user), db: Session = Depends(get_db)):
     org = org_for_user(db, slug, user)
     if format not in bd.FORMAT_BY_ID:
         raise HTTPException(400, "Unknown format.")
@@ -142,19 +198,40 @@ async def create(slug: str, request: Request, file: Optional[UploadFile] = File(
         m = {k: v for k, v in json.loads(mapping or "{}").items() if k in bd.F and v in df.columns}
     except ValueError as exc:
         raise HTTPException(400, "Bad column mapping.") from exc
-    if "batch_no" not in m:
-        raise HTTPException(400, "Map a column to 'Batch number': batches are joined on it.")
-    try:
-        batches = bd.aggregate(df, format, m)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    if not batches:
-        raise HTTPException(400, "No rows with a batch number.")
+    stored: dict[str, Any] = dict(m)
+    if format == "batch_schedule":
+        missing = [f for f in ("batch_no", "batch_start", "batch_end") if f not in m]
+        if missing:
+            raise HTTPException(400, f"A batch schedule needs {', '.join(bd.F[f]['label'] for f in missing)}.")
+        if not bd.schedule_windows(df.fillna("").astype(str), m):
+            raise HTTPException(400, "No row has a batch number with a readable start and end time.")
+        batches = bd.schedule_batches(df.fillna("").astype(str), m)
+    elif "batch_no" in m:
+        try:
+            batches = bd.aggregate(df, format, m)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not batches:
+            raise HTTPException(400, "No rows with a batch number.")
+    elif "timestamp" in m:
+        wins = _windows(_datasets(db, org.id))
+        if not wins:
+            raise HTTPException(400, "This file has timestamps but no batch numbers. Add a batch schedule first (which batch ran on which "
+                                     "machine, from when to when): the readings are assigned to batches by time.")
+        batches, stats = _link_and_aggregate(df.fillna("").astype(str), format, m, wins, machine)
+        if not stats["linked"]:
+            raise HTTPException(400, f"None of the {stats['rows']} readings falls inside a batch window"
+                                     f"{' on ' + machine if machine else ''}: check the machine and the time zone of the schedule.")
+        stored.update(_machine=machine, _link=stats)
+    else:
+        raise HTTPException(400, "Map a column to 'Batch number', or to 'Timestamp' (with a batch schedule).")
     ds = BatchDataset(org_id=org.id, name=(name or re.sub(r"\.[a-z]+$", "", fname))[:200], format=format, filename=fname[:240],
-                      columns=list(df.columns), mapping=m, raw=df.fillna("").to_dict(orient="records"), batches=batches,
+                      columns=list(df.columns), mapping=stored, raw=df.fillna("").to_dict(orient="records"), batches=batches,
                       molecule_key=molecule_key[:160], uploaded_by=user.email)
     db.add(ds)
     db.commit()
+    if format == "batch_schedule":
+        _relink(db, org.id)
     audit(db, "batches.upload", user, "batch_dataset", ds.id, {"org": org.slug, "format": format, "rows": len(df), "batches": len(batches)}, request)
     return _summary(ds)
 
@@ -172,10 +249,53 @@ def delete(slug: str, ds_id: int, request: Request, user: User = Depends(current
     ds = db.get(BatchDataset, ds_id)
     if ds is None or ds.org_id != org.id:
         raise HTTPException(404, "Dataset not found.")
+    was_reference = ds.format == "batch_schedule" or "timestamp" in _fields(ds.mapping)
     db.delete(ds)
     db.commit()
+    if was_reference:
+        _relink(db, org.id)
     audit(db, "batches.delete", user, "batch_dataset", ds_id, {"org": org.slug, "name": ds.name}, request)
     return {"ok": True}
+
+
+@router.get("/timeline/{ds_id}")
+def timeline(slug: str, ds_id: int, field: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """How a time series became one row per batch: its readings over time, the batch windows they were assigned to,
+    and each batch's resulting value."""
+    org = org_for_user(db, slug, user)
+    ds = db.get(BatchDataset, ds_id)
+    if ds is None or ds.org_id != org.id:
+        raise HTTPException(404, "Dataset not found.")
+    m = _fields(ds.mapping)
+    if "timestamp" not in m or not ds.raw:
+        return {"mode": "none", "reason": "This file has no timestamps: each row already belongs to a batch."}
+    df = pd.DataFrame(ds.raw).fillna("").astype(str)
+    machine = _machine_of(ds)
+    linked_by = "schedule" if "batch_no" not in m else "batch column"
+    if "batch_no" not in m:
+        df, mp, _ = bd.link(df, m, _windows(_datasets(db, org.id)), machine)
+    else:
+        mp = m
+    numeric = [k for k in mp if bd.F.get(k, {}).get("kind") in ("param", "raw", "cqa")]
+    field = field if field in numeric else next((k for k in ("inlet_c", "force_kn", "lod_pct") if k in numeric), numeric[0] if numeric else "")
+    ts = [bd.to_date(x) for x in df[mp["timestamp"]]]
+    val = pd.to_numeric(df[mp[field]].str.replace(",", "", regex=False), errors="coerce") if field else pd.Series(dtype=float)
+    bat = df[mp["batch_no"]].map(bd._batch_key) if "batch_no" in mp else pd.Series("", index=df.index)
+    mach = df[mp["machine"]].astype(str) if "machine" in mp else pd.Series(machine, index=df.index)
+    pts = [{"t": t.isoformat(), "v": None if pd.isna(v) else round(float(v), 4), "batch": b, "machine": mc}
+           for t, v, b, mc in zip(ts, val, bat, mach) if t is not None and not pd.isna(v)]
+    step = max(1, len(pts) // 1500)
+    pts = sorted(pts, key=lambda p: p["t"])[::step]
+    wins: dict[tuple[str, str], dict[str, Any]] = {}
+    for p in pts:
+        if p["batch"]:
+            w = wins.setdefault((p["batch"], p["machine"]), {"batch": p["batch"], "machine": p["machine"], "start": p["t"], "end": p["t"]})
+            w["end"] = max(w["end"], p["t"])
+    per_batch = [{"batch": b, "value": (ds.batches or {}).get(b, {}).get("values", {}).get(field), "how": (ds.batches or {}).get(b, {}).get("derived", {}).get(field)}
+                 for b in dict.fromkeys(w["batch"] for w in wins.values())]
+    return {"mode": "time", "dataset": _summary(ds), "field": field, "fields": [{"id": k, "label": bd.F[k]["label"], "unit": bd.F[k]["unit"]} for k in numeric],
+            "unit": bd.F.get(field, {}).get("unit", ""), "points": pts, "windows": list(wins.values()), "per_batch": per_batch,
+            "linked_by": linked_by, "link": (ds.mapping or {}).get("_link"), "machine": machine}
 
 
 @router.post("/analysis")
@@ -199,14 +319,22 @@ def analysis(slug: str, body: dict[str, Any] = Body(default={}), user: User = De
             molecule = {"key": key, "name": prof["name"], "dose_mg": mol.dose_mg, "withheld": withheld or {}}
         except KeyError:
             key = None
-    out = bd.analyse(bd.merge([{"name": d.name, "format": d.format, "batches": d.batches} for d in rows]), body.get("specs"), predict)
+    out = bd.analyse(bd.merge([{"name": d.name, "format": d.format, "batches": _finished(d)} for d in rows]), body.get("specs"), predict)
     return {**out, "molecule": molecule, "datasets": [_summary(d) for d in rows]}
+
+
+def _finished(d: BatchDataset) -> dict[str, Any]:
+    """A dataset's batches, without the one a live stream is still running (its readings so far are not a result)."""
+    if not (d.filename or "").startswith(LIVE) or not d.raw:
+        return d.batches or {}
+    running = bd._batch_key(d.raw[-1].get("batch_no"))
+    return {b: v for b, v in (d.batches or {}).items() if b != running}
 
 
 def _calibration(rows: list[BatchDataset]) -> dict[str, Any]:
     """Twin baseline and ranges from the uploaded files (stable); from the live streams only when there are no files."""
     files = [d for d in rows if not (d.filename or "").startswith(LIVE)] or rows
-    return bd.analyse(bd.merge([{"name": d.name, "batches": d.batches} for d in files]))["calibration"] if files else {"baseline": {}, "nor": {}}
+    return bd.analyse(bd.merge([{"name": d.name, "batches": _finished(d)} for d in files]))["calibration"] if files else {"baseline": {}, "nor": {}}
 
 
 def _datasets(db: Session, org_id: int, ids: Optional[list[int]] = None) -> list[BatchDataset]:
@@ -395,6 +523,26 @@ def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current
     return out
 
 
+def _retain(raw: list[dict[str, Any]], batches: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Drop live readings, and batches last seen, more than RETAIN_H hours ago."""
+    cutoff = (datetime.now(timezone.utc) - pd.Timedelta(hours=RETAIN_H)).isoformat()
+    keep_raw = [r for r in raw if not r.get("timestamp") or str(r["timestamp"]) >= cutoff[:19]]
+    keep_b = {b: v for b, v in batches.items() if not v.get("meta", {}).get("last_ts") or str(v["meta"]["last_ts"]) >= cutoff[:19]}
+    return keep_raw, keep_b
+
+
+def prune_live(db: Session) -> int:
+    """Apply the retention to every live stream (also when no agent is pushing); returns how many streams changed."""
+    n = 0
+    for d in db.scalars(select(BatchDataset).where(BatchDataset.filename.like(f"{LIVE}%"))).all():
+        raw, batches = _retain(d.raw or [], d.batches or {})
+        if len(raw) != len(d.raw or []) or len(batches) != len(d.batches or {}):
+            d.raw, d.batches = raw, batches
+            n += 1
+    db.commit()
+    return n
+
+
 def _f(v: Any) -> Optional[float]:
     try:
         x = float(v)
@@ -440,6 +588,11 @@ def ingest(body: dict[str, Any] = Body(...), authorization: str = Header(""), db
         df = pd.DataFrame([r for r in raw if r["batch_no"] in touched]).fillna("").astype(str)
         mapping = {k: k for k in df.columns if k in bd.F}
         batches = {**(ds.batches or {}), **bd.aggregate(df, fmt, mapping)}  # only the batches this push touched
+        for r in new:  # when each batch was last seen, for retention
+            b = bd._batch_key(r["batch_no"])
+            if b in batches:
+                batches[b].setdefault("meta", {})["last_ts"] = r["timestamp"]
+        raw, batches = _retain(raw, batches)
         ds.raw, ds.format = raw, fmt
         ds.columns = list(dict.fromkeys([*(ds.columns or []), *df.columns]))
         ds.mapping = {k: k for k in ds.columns if k in bd.F}
@@ -451,3 +604,114 @@ def ingest(body: dict[str, Any] = Body(...), authorization: str = Header(""), db
     c.last_seen_at = datetime.now(timezone.utc)
     db.commit()
     return {"accepted": sum(len(v) for v in groups.values()), "rejected": rejected, "machines": sorted(m for m, _ in groups)}
+
+
+# --- the plant simulator's settings (Sim engine panel) ---------------------------------------------------------------
+
+PATTERNS = ("steady", "drift", "sine", "step", "spikes", "ramp")
+_NUM_KEYS = ("setpoint", "noise", "min", "max", "amplitude", "every", "period_min")
+
+
+def sim_defaults() -> dict[str, Any]:
+    return json.loads((AGENT_DIR / "sim_defaults.json").read_text(encoding="utf-8"))
+
+
+def _merged(saved: Optional[dict[str, Any]]) -> dict[str, Any]:
+    base = sim_defaults()
+
+    def merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+        out = dict(a)
+        for k, v in (b or {}).items():
+            out[k] = merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+        return out
+    return merge(base, saved or {})
+
+
+def _clean(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Only known machines and signals, numbers as numbers, patterns from the list, min ≤ setpoint ≤ max."""
+    base = sim_defaults()
+    out: dict[str, Any] = {"running": bool(cfg.get("running", True)), "speed": max(1.0, min(240.0, float(cfg.get("speed", 30)))),
+                           "handling_min": max(0.0, min(120.0, float(cfg.get("handling_min", 5)))), "apparatus": {}}
+    for m, a in base["apparatus"].items():
+        got = (cfg.get("apparatus") or {}).get(m) or {}
+        am = {"label": a.get("label", m), "format": a.get("format"), "enabled": bool(got.get("enabled", a.get("enabled", True))),
+              "duration_min": max(1.0, min(600.0, float(got.get("duration_min", a.get("duration_min", 30))))), "signals": {}}
+        for f, sdef in a["signals"].items():
+            g = (got.get("signals") or {}).get(f) or {}
+            sv = {k: float(g.get(k, sdef.get(k, 0))) for k in _NUM_KEYS}
+            sv["min"], sv["max"] = min(sv["min"], sv["max"]), max(sv["min"], sv["max"])
+            sv["setpoint"] = min(sv["max"], max(sv["min"], sv["setpoint"]))
+            sv["noise"], sv["every"], sv["period_min"] = abs(sv["noise"]), max(1, int(sv["every"])), max(1.0, sv["period_min"])
+            sv["pattern"] = g.get("pattern") if g.get("pattern") in PATTERNS else sdef.get("pattern", "steady")
+            sv.update(label=sdef.get("label", f), unit=sdef.get("unit", ""), per=sdef.get("per", "reading"))
+            am["signals"][f] = sv
+        out["apparatus"][m] = am
+    return out
+
+
+def _guidance(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """For each simulator signal the process twin uses, the twin's normal operating range expressed in that
+    signal's own unit (chem.process_twin.PARAMS), so values can be fed knowingly."""
+    from chem import process_twin as twin
+
+    P = twin.P_BY_ID
+    A = cfg["apparatus"]
+    sp = lambda m, f: float(A[m]["signals"][f]["setpoint"])  # noqa: E731
+    g: dict[str, dict[str, Any]] = {}
+
+    def put(m: str, f: str, lo: float, hi: float, text: str) -> None:
+        g[f"{m}.{f}"] = {"lo": round(lo, 3), "hi": round(hi, 3), "text": text}
+
+    for f, pid in (("inlet_c", "inlet_c"), ("air_m3_h", "air_m3_h"), ("drying_min", "drying_min")):
+        put("FBD-1", f, P[pid].lo, P[pid].hi, f"twin's normal range for {P[pid].label.lower()}")
+    put("BLENDER-1", "blend_min", P["blend_min"].lo, P["blend_min"].hi, "twin's normal range for lubricated blend time")
+    dry = sp("RMG-1", "dry_mix_kg")
+    put("RMG-1", "binder_kg", P["granulation_liquid_pct"].lo * dry / 100, P["granulation_liquid_pct"].hi * dry / 100,
+        f"granulation liquid {P['granulation_liquid_pct'].lo:g}–{P['granulation_liquid_pct'].hi:g}% w/w of a {dry:g} kg dry mix")
+    T = sp("FBD-1", "inlet_c")
+    rh = lambda td: 100 * math.exp(17.625 * td / (243.04 + td) - 17.625 * T / (243.04 + T))  # noqa: E731
+    put("FBD-1", "inlet_rh_pct", rh(P["dew_point_c"].lo), rh(P["dew_point_c"].hi), f"inlet dew point {P['dew_point_c'].lo:g}–{P['dew_point_c'].hi:g} °C at {T:g} °C inlet (Magnus)")
+    area = math.pi * sp("PRESS-1", "punch_diameter_mm") ** 2 / 4
+    put("PRESS-1", "force_kn", P["pressure_mpa"].lo * area / 1000, P["pressure_mpa"].hi * area / 1000,
+        f"compression pressure {P['pressure_mpa'].lo:g}–{P['pressure_mpa'].hi:g} MPa on a {sp('PRESS-1', 'punch_diameter_mm'):g} mm punch")
+    w = sp("PRESS-1", "tablet_weight_mg")
+    put("PRESS-1", "tablet_weight_mg", w * (1 - 3 * P["weight_rsd_pct"].hi / 100), w * (1 + 3 * P["weight_rsd_pct"].hi / 100),
+        f"noise as weight RSD {P['weight_rsd_pct'].lo:g}–{P['weight_rsd_pct'].hi:g}% → SD {w * P['weight_rsd_pct'].lo / 100:.1f}–{w * P['weight_rsd_pct'].hi / 100:.1f} mg")
+    return g
+
+
+@router.get("/sim-config")
+def get_sim_config(slug: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    org = org_for_user(db, slug, user)
+    row = db.get(PlantSimConfig, org.id)
+    cfg = _clean(_merged(row.config if row else None))
+    sim = next((c for c in db.scalars(select(PlantConnector).where(PlantConnector.org_id == org.id)).all() if c.created_by == "PLANT_SIM_TOKEN"), None)
+    return {"config": cfg, "defaults": _clean(sim_defaults()), "guidance": _guidance(cfg), "patterns": PATTERNS,
+            "simulator": _conn(sim) if sim else None, "updated_by": row.updated_by if row else None,
+            "updated_at": row.updated_at.isoformat() if row and row.updated_at else None}
+
+
+@router.put("/sim-config")
+def put_sim_config(slug: str, request: Request, body: dict[str, Any] = Body(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    org = org_for_user(db, slug, user)
+    try:
+        cfg = _clean(body.get("config") or {})
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, f"Bad simulator settings: {exc}") from exc
+    row = db.get(PlantSimConfig, org.id) or PlantSimConfig(org_id=org.id)
+    row.config, row.updated_by = cfg, user.email
+    db.add(row)
+    db.commit()
+    audit(db, "plant_data.sim_config", user, "org", org.id, {"running": cfg["running"], "speed": cfg["speed"]}, request)
+    return {"config": cfg, "guidance": _guidance(cfg)}
+
+
+@ingest_router.get("/sim-config")
+def sim_config_for_agent(authorization: str = Header(""), db: Session = Depends(get_db)):
+    """The simulator's settings, for the simulator itself (authenticated by its connector token)."""
+    token = authorization.removeprefix("Bearer ").strip()
+    c = db.scalar(select(PlantConnector).where(PlantConnector.token_hash == _hash(token))) if token else None
+    if c is None or not c.active:
+        raise HTTPException(401, "Unknown or revoked connector token.")
+    row = db.get(PlantSimConfig, c.org_id)
+    return {"config": _clean(_merged(row.config if row else None))}
