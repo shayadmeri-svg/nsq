@@ -52,9 +52,9 @@ export function CardHeader({ title, subtitle, action, icon }: { title: ReactNode
   return (
     <div className="flex items-start justify-between gap-4 px-5 pt-5">
       <div className="flex items-start gap-3">
-        {icon && <div className="mt-0.5 grid h-8 w-8 place-items-center rounded-lg bg-brand-50 text-brand-700">{icon}</div>}
+        {icon && <div className="mt-0.5 grid h-8 w-8 place-items-center rounded-lg bg-gold-50 text-gold-600 ring-1 ring-inset ring-gold-200/70">{icon}</div>}
         <div>
-          <h3 className="font-display text-[15px] font-bold text-ink">{title}</h3>
+          <h3 className="font-display text-[17px] font-semibold leading-snug text-ink">{title}</h3>
           {subtitle && <p className="mt-0.5 text-xs text-ink-muted">{subtitle}</p>}
         </div>
       </div>
@@ -91,9 +91,9 @@ export function CountUp({ value, decimals = 0, suffix = "" }: { value: number; d
 }
 
 export function Stat({ label, value, hint, icon, tone = "brand", delay = 0, decimals = 0, suffix = "" }: {
-  label: string; value: number | string | null | undefined; hint?: ReactNode; icon?: ReactNode; tone?: "brand" | "indigo" | "amber" | "rose"; delay?: number; decimals?: number; suffix?: string;
+  label: string; value: number | string | null | undefined; hint?: ReactNode; icon?: ReactNode; tone?: "brand" | "indigo" | "amber" | "rose" | "gold"; delay?: number; decimals?: number; suffix?: string;
 }) {
-  const tones = { brand: "from-brand-500/15 text-brand-700", indigo: "from-indigo-500/15 text-indigo-700", amber: "from-amber-500/15 text-amber-700", rose: "from-rose-500/15 text-rose-700" };
+  const tones = { brand: "from-brand-500/15 text-brand-700", indigo: "from-indigo-500/15 text-indigo-700", amber: "from-amber-500/15 text-amber-700", rose: "from-rose-500/15 text-rose-700", gold: "from-gold-400/25 text-gold-600" };
   return (
     <Card delay={delay} className="relative overflow-hidden p-5">
       <div className={cn("pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-gradient-to-br to-transparent", tones[tone])} />
@@ -101,10 +101,11 @@ export function Stat({ label, value, hint, icon, tone = "brand", delay = 0, deci
         <span className="label">{label}</span>
         {icon && <span className={cn("opacity-80", tones[tone].split(" ")[1])}>{icon}</span>}
       </div>
-      <div className="mt-3 font-display text-3xl font-extrabold tracking-tight text-ink">
+      <div className="mt-3 font-display text-[2.1rem] font-semibold leading-none tracking-tight text-ink">
         {typeof value === "number" ? <CountUp value={value} decimals={decimals} suffix={suffix} /> : value ?? "—"}
       </div>
-      {hint && <div className="mt-1.5 text-xs text-ink-muted">{hint}</div>}
+      <div className="gold-rule mt-3 w-10 opacity-70" />
+      {hint && <div className="mt-2 text-xs leading-relaxed text-ink-muted">{hint}</div>}
     </Card>
   );
 }
@@ -128,7 +129,7 @@ export function Empty({ icon, title, children }: { icon?: ReactNode; title: stri
   return (
     <div className="grid place-items-center rounded-2xl border border-dashed border-line bg-white/60 px-6 py-14 text-center">
       {icon && <div className="mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-ink-muted">{icon}</div>}
-      <div className="font-display text-base font-bold">{title}</div>
+      <div className="font-display text-lg font-semibold">{title}</div>
       {children && <div className="mt-1 max-w-md text-sm text-ink-muted">{children}</div>}
     </div>
   );
@@ -144,9 +145,9 @@ export function PageHeader({ eyebrow, title, subtitle, actions }: { eyebrow?: Re
   return (
     <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        {eyebrow && <div className="label mb-1.5 text-brand-700">{eyebrow}</div>}
-        <h1 className="font-display text-[26px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1.5 max-w-3xl text-sm text-ink-muted">{subtitle}</p>}
+        {eyebrow && <div className="label mb-2 text-gold-600">{eyebrow}</div>}
+        <h1 className="font-display text-[34px] font-semibold leading-[1.1] tracking-tight text-ink">{title}</h1>
+        {subtitle && <p className="mt-2 max-w-3xl text-[14.5px] leading-relaxed text-ink-muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </motion.div>
@@ -208,7 +209,7 @@ export function Modal({ open, onClose, title, children, footer }: { open: boolea
             className="w-full max-w-lg rounded-2xl bg-white shadow-lift"
           >
             <div className="flex items-center justify-between border-b border-line px-6 py-4">
-              <div className="font-display text-base font-bold">{title}</div>
+              <div className="font-display text-lg font-semibold">{title}</div>
               <button onClick={onClose} className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="px-6 py-5">{children}</div>
@@ -275,3 +276,5 @@ export function Bar({ value, color = "#0a9a7d", className }: { value: number; co
 // --- Stagger list ---------------------------------------------------------------------------------
 export const listVariants = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
 export const itemVariants = { hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } };
+
+export { SearchBox, SearchSelect, type Opt } from "./SearchSelect";

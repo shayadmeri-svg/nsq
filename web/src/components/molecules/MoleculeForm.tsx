@@ -23,7 +23,7 @@ const STATUS_CHIP: Record<string, string> = {
 };
 
 const empty = (v: any) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
-const show = (v: any) => (empty(v) ? "—" : Array.isArray(v) ? (typeof v[0] === "object" ? `${v.length} item(s)` : v.join(", ")) : String(v));
+const show = (v: any) => (empty(v) ? "—" : Array.isArray(v) ? (typeof v[0] === "object" ? `${v.length} item${v.length === 1 ? "" : "s"}` : v.join(", ")) : String(v));
 
 function RowsEditor({ value, onChange, kind }: { value: any[]; onChange: (v: any[]) => void; kind: "patents" | "exclusivity" }) {
   const rows = value ?? [];
@@ -219,7 +219,7 @@ export function MoleculeForm({ open, name: initialName, mkey, onClose, onSaved }
           <ErrorNote error={err} />
           <div className="sticky bottom-0 -mx-6 flex items-center justify-between gap-3 border-t border-line bg-white/95 px-6 py-3 backdrop-blur">
             <div className="text-xs text-ink-muted">
-              {Object.keys(typed).length} typed field(s){reverted.size ? ` · ${reverted.size} back to source` : ""}
+              {Object.keys(typed).length} typed field{Object.keys(typed).length === 1 ? "" : "s"}{reverted.size ? ` · ${reverted.size} back to source` : ""}
               {d.entry && <> · last edited by {d.entry.updated_by}</>}
             </div>
             <div className="flex gap-2">

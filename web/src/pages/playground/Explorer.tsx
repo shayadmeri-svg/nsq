@@ -1,13 +1,13 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { LoadingEdge } from "../../components/ui/Loading";
-import { ChevronLeft, ChevronRight, Columns3, Download, Factory, FlaskConical, Grid3x3, Package, Pill, Search, ShieldAlert, SlidersHorizontal, Stethoscope, Waypoints, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Columns3, Download, Factory, FlaskConical, Grid3x3, Package, Pill, ShieldAlert, SlidersHorizontal, Stethoscope, Waypoints, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Legendary, RankBars, TrendArea } from "../../components/charts";
-import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton, Stat } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton, Stat, SearchSelect, SearchBox } from "../../components/ui";
 import { Heatmap, IndiaMap, MultiSelect, SankeyChart } from "../../components/viz";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { fmtMonth } from "../../lib/format";
+import { fmtMonth, plural } from "../../lib/format";
 import { ExpandedProvider, Tile, type Section } from "../../components/ui/Expanded";
 
 export type Filters = { focus: string; drug_type: string[]; form: string[]; category: string[]; state: string[]; source: string[]; since: string; until: string; q: string; authenticity: string };
@@ -27,8 +27,6 @@ export function qs(f: Filters, extra: Record<string, string | string[] | number 
 
 export function FilterBar({ f, set }: { f: Filters; set: (f: Filters) => void }) {
   const { data } = useQuery({ queryKey: ["pg-facets"], queryFn: () => api<any>("/api/playground/facets"), staleTime: 300_000 });
-  const [q, setQ] = useState(f.q);
-  useEffect(() => { const t = setTimeout(() => q !== f.q && set({ ...f, q }), 350); return () => clearTimeout(t); }, [q]); // eslint-disable-line
   const active = f.drug_type.length + f.form.length + f.category.length + f.state.length + f.source.length + (f.since ? 1 : 0) + (f.until ? 1 : 0) + (f.q ? 1 : 0) + (f.focus !== "all" ? 1 : 0) + (f.authenticity ? 1 : 0);
   return (
     <Card className="sticky top-2 z-30 p-3">
@@ -40,17 +38,21 @@ export function FilterBar({ f, set }: { f: Filters; set: (f: Filters) => void })
         <MultiSelect label="Failure" options={data?.category ?? []} value={f.category} onChange={(v) => set({ ...f, category: v })} />
         <MultiSelect label="State" options={data?.state ?? []} value={f.state} onChange={(v) => set({ ...f, state: v })} />
         <MultiSelect label="Lab type" options={data?.source ?? []} value={f.source} onChange={(v) => set({ ...f, source: v })} />
-        <select className="input h-9 w-28 text-xs" value={f.since} onChange={(e) => set({ ...f, since: e.target.value })}>
-          <option value="">From</option>{(data?.months ?? []).map((m: string) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
-        </select>
-        <select className="input h-9 w-28 text-xs" value={f.until} onChange={(e) => set({ ...f, until: e.target.value })}>
-          <option value="">To</option>{(data?.months ?? []).map((m: string) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
-        </select>
-        <select className="input h-9 w-36 text-xs" value={f.authenticity ?? ""} onChange={(e) => set({ ...f, authenticity: e.target.value })} title="Spurious = declared spurious; the maker on the label may not be the real maker">
-          <option value="">All batches</option><option value="genuine">Exclude spurious</option><option value="spurious">Spurious only</option>
-        </select>
-        <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-ink-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product or manufacturer…" className="input h-9 w-56 pl-8 text-xs" /></div>
-        {active > 0 && <button onClick={() => { setQ(""); set(EMPTY); }} className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink"><X size={12} /> Clear {active}</button>}
+        <SearchSelect size="sm" className="w-32" value={f.since} onChange={(v) => set({ ...f, since: v })} placeholder="From" clearLabel="Any start" searchPlaceholder="e.g. 2024"
+          options={[...(data?.months ?? [])].reverse().map((m: string) => ({ value: m, label: fmtMonth(m) }))} />
+        <SearchSelect size="sm" className="w-32" value={f.until} onChange={(v) => set({ ...f, until: v })} placeholder="To" clearLabel="Any end" searchPlaceholder="e.g. 2026"
+          options={[...(data?.months ?? [])].reverse().map((m: string) => ({ value: m, label: fmtMonth(m) }))} />
+        <SearchSelect size="sm" className="w-40" value={f.authenticity ?? ""} onChange={(v) => set({ ...f, authenticity: v })}
+          options={[{ value: "", label: "All batches" }, { value: "genuine", label: "Exclude spurious", sub: "the labelled maker is the real maker" }, { value: "spurious", label: "Spurious only", sub: "declared spurious by CDSCO" }]} />
+        <SearchBox size="sm" className="w-72" value={f.q} onChange={(v) => v !== f.q && set({ ...f, q: v })} placeholder="Product or manufacturer…" queryKey="explorer-suggest"
+          suggest={async (q) => {
+            const r = await api<any>(`/api/playground/investigate/search?q=${encodeURIComponent(q)}`);
+            return [
+              ...(r.manufacturers ?? []).slice(0, 8).map((m: any) => ({ value: `m:${m.key}`, label: m.name, sub: [[m.city, m.state].filter(Boolean).join(", "), `${plural(m.alerts, "alert")}`].filter(Boolean).join(" · "), group: "Manufacturers" })),
+              ...(r.products ?? []).slice(0, 8).map((p: any) => ({ value: `p:${p.name}`, label: p.name, sub: `${plural(p.alerts, "alert")} · ${p.manufacturers} manufacturers`, group: "Products" })),
+            ];
+          }} />
+        {active > 0 && <button onClick={() => set(EMPTY)} className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink"><X size={12} /> Clear {active}</button>}
       </div>
     </Card>
   );

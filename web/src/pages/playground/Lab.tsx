@@ -2,11 +2,12 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import { Atom, Beaker, ExternalLink, Info } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
-import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton, SearchSelect } from "../../components/ui";
 import { useToast } from "../../components/ui/toast";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { ProcessTwin } from "./ProcessTwin";
+import { plural } from "../../lib/format";
 
 // Every number on this page carries where it came from:
 //   source     a cited record (PubChem, CDSCO NSQ list, FAERS), linked
@@ -360,7 +361,7 @@ function Crystal({ mkey, solvents, engines }: { mkey: string; solvents: string[]
         action={<Badge tone={pp?.available ? "brand" : "amber"}>{pp?.available ? `PharmaPy ${pp.version ?? ""} online` : "PharmaPy offline: built-in engine"}</Badge>} />
       <div className="grid gap-5 p-5 xl:grid-cols-[300px_1fr]">
         <div className="space-y-3">
-          <div className="text-xs"><div className="mb-1 font-medium text-ink-soft">Solvent</div><select className="input h-8 w-full text-xs" value={f.solvent} onChange={(e) => set("solvent")(e.target.value)}>{solvents.map((s) => <option key={s}>{s}</option>)}</select></div>
+          <div className="text-xs"><div className="mb-1 font-medium text-ink-soft">Solvent</div><SearchSelect size="sm" value={f.solvent} onChange={set("solvent")} options={solvents.map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }))} /></div>
           {f.solvent !== "water" && <Num label="Activity coefficient γ" value={f.gamma} min={0.1} max={10} step={0.1} onChange={set("gamma")} dflt={1} hint="1 = ideal solution (solvent not modelled); enter a fitted or measured value for this solvent" />}
           <Num label="Start temperature" unit="°C" value={f.t0_c} min={10} max={85} onChange={set("t0_c")} dflt={50} hint="Must be below the solvent's boiling point" />
           <Num label="End temperature" unit="°C" value={f.t1_c} min={-10} max={40} onChange={set("t1_c")} dflt={5} />
@@ -408,7 +409,7 @@ function Compaction({ materials, note }: { materials: Record<string, any>; note?
       <div className="grid gap-5 p-5 xl:grid-cols-[300px_1fr]">
         <div className="space-y-3">
           <div className="text-xs"><div className="mb-1 flex items-center gap-1 font-medium text-ink-soft">Material preset <Pill kind="assumption" label={note} /></div>
-            <select className="input h-8 w-full text-xs" value={mat} onChange={(e) => setMat(e.target.value)}>{Object.entries(materials).map(([k, v]: any) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+            <SearchSelect size="sm" value={mat} onChange={setMat} options={Object.entries(materials).map(([k, v]: any) => ({ value: k, label: v.label }))} /></div>
           <Num label="Yield pressure Py" unit="MPa" value={f.py_mpa} min={30} max={600} step={5} onChange={set("py_mpa")} dflt={m?.py_mpa} />
           <Num label="σ0 (zero-porosity strength)" unit="MPa" value={f.sigma0_mpa} min={2} max={30} step={0.5} onChange={set("sigma0_mpa")} dflt={m?.sigma0_mpa} />
           <Num label="b" value={f.b} min={2} max={15} step={0.5} onChange={set("b")} dflt={m?.b} />
@@ -472,6 +473,55 @@ function FluidBed() {
   );
 }
 
+// Chemical formula with subscripted counts (C8H9NO2 → C₈H₉NO₂ as <sub>)
+function Formula({ f }: { f: string }) {
+  return <>{(f ?? "").split(/(\d+)/).map((x, i) => (i % 2 ? <sub key={i} className="text-[0.7em]">{x}</sub> : x))}</>;
+}
+
+const KIND_DOT: Record<string, string> = { source: "bg-emerald-400", estimate: "bg-sky-400", assumption: "bg-amber-400" };
+
+function HeroFact({ k, v, sub, kind }: { k: string; v: React.ReactNode; sub?: React.ReactNode; kind?: string | null }) {
+  return (
+    <div className="rounded-2xl bg-white/[0.04] px-4 py-3 ring-1 ring-inset ring-white/10">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        {kind && <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kind] ?? "bg-slate-500")} title={kind} />}{k}</div>
+      <div className="mt-1 font-display text-[26px] font-semibold leading-none text-gold-200">{v}</div>
+      {sub && <div className="mt-1 truncate text-[11px] text-slate-400">{sub}</div>}
+    </div>
+  );
+}
+
+// The molecule, large: what the Lab is about, with its key facts and where each comes from
+function MoleculeHero({ p }: { p: any }) {
+  const d = p.descriptors, s = p.solubility, pv = p.provenance, n = p.nsq ?? {};
+  return (
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-night-900 via-night-800 to-[#1c170c] p-6 text-white shadow-lift ring-1 ring-gold-400/20">
+      <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-gold-400/10 blur-3xl" />
+      <div className="relative grid items-center gap-6 lg:grid-cols-[170px_minmax(0,1fr)_minmax(0,1.25fr)]">
+        <div className="hidden aspect-square items-center justify-center rounded-2xl bg-white p-2 shadow-card lg:flex [&_svg]:h-full [&_svg]:w-full" dangerouslySetInnerHTML={{ __html: p.svg }} />
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-400">Molecule</div>
+          <h2 className="mt-1 font-display text-[44px] font-semibold leading-[1.02] tracking-tight">{p.name}</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300">
+            <span className="font-display text-lg text-white"><Formula f={d.formula} /></span>
+            <span>{d.mw} g/mol</span>
+            {p.url && <a href={p.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-gold-300 hover:text-gold-200">PubChem CID {p.cid} <ExternalLink size={12} /></a>}
+          </div>
+          {p.iupac && <div className="mt-1.5 line-clamp-2 text-[11px] text-slate-400" title={p.iupac}>{p.iupac}</div>}
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          <HeroFact k="CDSCO notices" v={n.alerts ?? 0} kind="source" sub={n.alerts ? `${n.dissolution_pct}% name dissolution` : "none recorded"} />
+          <HeroFact k="Highest strength" v={p.derived.dose_mg ? `${p.derived.dose_mg} mg` : "—"} kind={pv.dose.kind} sub="tablet / capsule, CDSCO names" />
+          <HeroFact k="log P" v={s.logp != null ? Number(s.logp).toFixed(1) : "—"} kind={pv.log_p.kind} sub={pv.log_p.label} />
+          <HeroFact k="Solubility" v={s.in_domain === false ? "n/a" : `${s.kind === "source" ? "" : "~"}${fmt(s.display_mg_ml, 2)}`} kind={pv.aqueous_solubility.kind} sub="mg/mL in water, 25 °C" />
+          <HeroFact k="pKa" v={pv.pka.value ?? "—"} kind={pv.pka.kind} sub={pv.pka.value != null ? pv.pka.label : "none published"} />
+          <HeroFact k="BCS (provisional)" v={p.bcs.class ?? "—"} kind={p.bcs.class ? "estimate" : null} sub={p.bcs.class ? "from structure and dose" : "not classified"} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Lab() {
   const list = useQuery({ queryKey: ["lab-molecules"], queryFn: () => api<any>("/api/lab/molecules"), staleTime: 300_000 });
   const [key, setKey] = useState(() => new URLSearchParams(window.location.search).get("m") ?? "");
@@ -499,14 +549,14 @@ export function Lab() {
   return (
     <div className="space-y-5">
       <Card className="flex flex-wrap items-center gap-3 p-4">
-        <Atom size={18} className="text-brand-600" />
+        <Atom size={18} className="text-gold-600" />
         {needsMol
-          ? <select className="input h-9 w-72 text-sm" value={key} onChange={(e) => setKey(e.target.value)}>
-              {mols.map((m: any) => <option key={m.key} value={m.key}>{m.name}{m.alerts ? ` · ${m.alerts} NSQ alerts` : ""}{m.has_structure ? "" : " · no structure yet"}</option>)}
-            </select>
+          ? <SearchSelect className="w-80" size="md" value={key} onChange={setKey} searchPlaceholder="Search a molecule…"
+              options={mols.map((m: any) => ({ value: m.key, label: m.name, sub: [m.alerts ? `${m.alerts} NSQ alerts` : "no NSQ alerts", m.has_structure ? null : "no structure yet"].filter(Boolean).join(" · "),
+                group: m.alerts ? "Seen in CDSCO alerts" : "Tracked molecules" }))} />
           : <span className="text-xs text-ink-muted">Generic process model: not tied to a molecule</span>}
         <Segmented value={tab} onChange={setTab} options={[{ value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "be", label: "Bioequivalence" }, { value: "safety", label: "Safety" }, { value: "crystal", label: "Crystallisation" }, { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" }, { value: "twin", label: "Failure tree" }]} />
-        <span className="ml-auto flex items-center gap-2 text-[11px] text-ink-muted"><Beaker size={13} />{withStructure} of {mols.length} molecules have structures
+        <span className="ml-auto flex items-center gap-2 text-[11px] text-ink-muted"><Beaker size={13} />{withStructure} of {plural(mols.length, "molecule")} have structures
           <span className="hidden items-center gap-1 lg:flex"><Pill kind="source" /> cited <Pill kind="estimate" /> published method <Pill kind="assumption" /> replace me</span></span>
       </Card>
       {needsMol && current && !current.has_structure && (
@@ -518,6 +568,7 @@ export function Lab() {
       )}
       {needsMol && current?.has_structure && (prof.error ? <ErrorNote error={prof.error} /> : !prof.data ? <Skeleton className="h-96" /> : (
         <>
+          <MoleculeHero p={prof.data} />
           {tab === "molecule" && <MoleculeTab p={prof.data} />}
           {tab === "dissolution" && <Dissolution mkey={key} p={prof.data} />}
           {tab === "be" && <Bioequivalence mkey={key} p={prof.data} />}

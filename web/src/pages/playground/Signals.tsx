@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Activity, HeartPulse, Ship } from "lucide-react";
 import { useMemo, useState } from "react";
 import { RankBars, TrendBars } from "../../components/charts";
-import { Badge, Card, CardHeader, ErrorNote, Segmented, Skeleton, Stat } from "../../components/ui";
+import { Badge, Card, CardHeader, ErrorNote, Segmented, Skeleton, Stat, SearchSelect } from "../../components/ui";
 import { IndiaMap } from "../../components/viz";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -69,9 +69,8 @@ function Burden({ geo }: { geo: any }) {
       ) : (
         <div className="p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <select className="input h-9 w-96 max-w-full" value={d.indicator} onChange={(e) => { setInd(e.target.value); setState(""); }}>
-              {Object.entries(groups).map(([g, items]) => <optgroup key={g} label={g}>{items.map((i: any) => <option key={i.key} value={i.key}>{i.label}</option>)}</optgroup>)}
-            </select>
+            <SearchSelect className="w-96 max-w-full" size="sm" value={d.indicator} onChange={(v) => { setInd(v); setState(""); }} searchPlaceholder="Search an indicator…"
+              options={Object.entries(groups).flatMap(([g, items]) => (items as any[]).map((i: any) => ({ value: i.key, label: i.label, group: g })))} />
             {d.rounds.length > 1 && <Segmented value={d.round} onChange={(v: string) => setRnd(v)} options={d.rounds.map((r: string) => ({ value: r, label: r }))} />}
             {state && <button className="text-xs text-brand-700 hover:underline" onClick={() => setState("")}>{state} × — all India</button>}
             <span className="ml-auto text-[11px] text-ink-faint">{d.indicators.length} indicators</span>
@@ -122,9 +121,8 @@ function Outbreaks({ geo }: { geo: any }) {
         <div className="p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Segmented value={weeks} onChange={setWeeks} options={[{ value: "8", label: "8 wk" }, { value: "13", label: "13 wk" }, { value: "26", label: "26 wk" }, { value: "52", label: "52 wk" }]} />
-            <select className="input h-9 w-64" value={disease} onChange={(e) => setDisease(e.target.value)}>
-              <option value="">All diseases</option>{d.diseases_all.map((x: any) => <option key={x.name} value={x.name}>{x.name} ({x.count})</option>)}
-            </select>
+            <SearchSelect className="w-64" size="sm" value={disease} onChange={setDisease} clearLabel="All diseases" placeholder="All diseases" searchPlaceholder="Search a disease…"
+              options={d.diseases_all.map((x: any) => ({ value: x.name, label: x.name, sub: `${x.count} outbreak${x.count === 1 ? "" : "s"}` }))} />
             {state && <button className="text-xs text-brand-700 hover:underline" onClick={() => setState("")}>{state} × — all India</button>}
           </div>
           <div className="grid gap-5 xl:grid-cols-[1.3fr_1fr]">

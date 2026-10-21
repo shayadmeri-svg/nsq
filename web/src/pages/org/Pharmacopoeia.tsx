@@ -4,7 +4,7 @@ import { BookOpenCheck, CalendarClock, ExternalLink, FileWarning, Pencil } from 
 import { useState } from "react";
 import { Badge, Card, CardHeader, ErrorNote, PageHeader, PageSkeleton, Segmented, Stat } from "../../components/ui";
 import { cn } from "../../lib/cn";
-import { fmtDate } from "../../lib/format";
+import { fmtDate, plural } from "../../lib/format";
 import { useOrg, useOrgData } from "./common";
 
 const STATE: Record<string, { label: string; tone: "rose" | "brand" | "slate" }> = {
@@ -40,7 +40,7 @@ export function Pharmacopoeia() {
     <>
       <PageHeader eyebrow="Organisation" title="Pharmacopoeia changes" subtitle={`Ph. Eur. revisions that touch ${org?.name ?? "your"} products: what changes and from when`} />
       <div className="mb-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat label="Your molecules with a Ph. Eur. monograph" value={c.with_monograph} hint={`of ${c.molecules} molecules in your CDSCO alerts`} icon={<BookOpenCheck size={18} />} />
+        <Stat label="Your molecules with a Ph. Eur. monograph" value={c.with_monograph} hint={`of ${plural(c.molecules, "molecule")} in your CDSCO alerts`} icon={<BookOpenCheck size={18} />} />
         <Stat label="Upcoming changes" value={c.upcoming} hint="published, applying on a future date" icon={<CalendarClock size={18} />} tone="rose" delay={0.05} />
         <Stat label="Under revision" value={c.under_revision} hint="drafts in Pharmeuropa, not yet adopted" icon={<Pencil size={18} />} tone="amber" delay={0.1} />
         <Stat label="Relevant to your quality records" value={c.touching_failures} hint="the revised section is a test that appears in your CDSCO records" icon={<FileWarning size={18} />} tone="indigo" delay={0.15} />

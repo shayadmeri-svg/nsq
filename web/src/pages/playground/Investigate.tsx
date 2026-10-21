@@ -7,11 +7,11 @@ import { ArrowLeft, Building2, ChevronLeft, ChevronRight, Package, Search, Shiel
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CompareBars, Legendary, RankBars, TrendBars } from "../../components/charts";
-import { Badge, Button, Card, CardHeader, ErrorNote, Skeleton } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, ErrorNote, Skeleton, SearchSelect } from "../../components/ui";
 import { Figure, Tile } from "../../components/ui/Expanded";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { fmtMonth } from "../../lib/format";
+import { fmtMonth, plural } from "../../lib/format";
 import { IssueDrawer } from "../org/IssueDrawer";
 
 const clean = (s?: string) => (s ?? "").replace(/^M\/s\.?\s*/i, "").trim();
@@ -44,7 +44,7 @@ function Finder({ onProduct, onMfr }: { onProduct: (p: string) => void; onMfr: (
             r.data.products.map((p: any) => (
               <button key={p.name} onClick={() => onProduct(p.name)} className="flex w-full items-center gap-3 border-t border-line/70 px-5 py-2.5 text-left hover:bg-slate-50">
                 <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium">{p.name}</div><div className="text-[11px] text-ink-muted">{p.manufacturers} manufacturers · last {fmtMonth(p.last)}</div></div>
-                <Badge tone="rose">{p.alerts} alerts</Badge>
+                <Badge tone="rose">{plural(p.alerts, "alert")}</Badge>
               </button>
             ))}</div>
         </Card>
@@ -54,7 +54,7 @@ function Finder({ onProduct, onMfr }: { onProduct: (p: string) => void; onMfr: (
             r.data.manufacturers.map((m: any) => (
               <button key={m.key} onClick={() => onMfr(m.key)} className="flex w-full items-center gap-3 border-t border-line/70 px-5 py-2.5 text-left hover:bg-slate-50">
                 <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium">{clean(m.name)}</div><div className="text-[11px] text-ink-muted">{[m.city, m.state].filter(Boolean).join(", ") || "—"}</div></div>
-                <Badge tone="rose">{m.alerts} alerts</Badge>
+                <Badge tone="rose">{plural(m.alerts, "alert")}</Badge>
               </button>
             ))}</div>
         </Card>
@@ -79,7 +79,7 @@ function ProductView({ name, onMfr }: { name: string; onMfr: (k: string, product
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Tile title="NSQ alerts" clickable={false}><Figure value={d.alerts} label={`${fmtMonth(d.period.first)} – ${fmtMonth(d.period.last)}`} tone="#e11d48" /></Tile>
         <Tile title="Manufacturers" clickable={false}><Figure value={d.manufacturers.length} label="that had this product fail" /></Tile>
-        <Tile title="Main failure" clickable={false}><Figure value={top?.name ?? "—"} label={top ? `${top.count} of ${d.alerts} alerts` : ""} /></Tile>
+        <Tile title="Main failure" clickable={false}><Figure value={top?.name ?? "—"} label={top ? `${top.count} of ${plural(d.alerts, "alert")}` : ""} /></Tile>
         <Tile title="Dosage form" clickable={false}><Figure value={d.forms[0]?.name ?? "—"} label={d.labs[0] ? `most reports: ${d.labs[0].name}` : ""} /></Tile>
       </div>
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
@@ -147,7 +147,8 @@ function MfrView({ mkey, product, onProduct, setProduct, onAlert }: { mkey: stri
             {product && <button onClick={() => setProduct("")} className="rounded-full bg-amber-50 px-2 py-1 text-[11px] text-amber-800 ring-1 ring-inset ring-amber-200">{product} ✕</button>}
             {product && <button onClick={() => onProduct(product)} className="text-[11px] text-brand-700 hover:underline">all makers of this product →</button>}
             <div className="relative"><Search size={14} className="absolute left-3 top-2.5 text-ink-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product, batch, reason…" className="input h-9 w-56 pl-8" /></div>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="input h-9 w-44"><option value="">All categories</option>{d.categories.map((c: any) => <option key={c.name}>{c.name}</option>)}</select>
+            <SearchSelect size="sm" className="w-48" value={category} onChange={setCategory} clearLabel="All categories" placeholder="All categories"
+              options={d.categories.map((c: any) => ({ value: c.name, label: c.name, sub: c.count != null ? `${plural(c.count, "alert")}` : undefined }))} />
           </div>} />
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">

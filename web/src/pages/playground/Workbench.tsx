@@ -4,13 +4,13 @@ import { ExternalLink, Factory, FlaskConical, Gauge, Globe2, Maximize2, ScrollTe
 import { useEffect, useMemo, useState } from "react";
 import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
 import { RankBars, TrendBars } from "../../components/charts";
-import { Badge, Bar, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
+import { Badge, Bar, Card, CardHeader, ErrorNote, Segmented, Skeleton, SearchSelect } from "../../components/ui";
 import { Estimate } from "../../components/ui/Estimate";
 import { ExpandedProvider, Figure, Frame, Tile, type Section } from "../../components/ui/Expanded";
 import { api } from "../../lib/api";
 import { MakersCard, RegistryBadges } from "./Plants";
 import { cn } from "../../lib/cn";
-import { fmtDate, titleCase } from "../../lib/format";
+import { fmtDate, titleCase, plural } from "../../lib/format";
 
 const PILLARS = [["patent", "Patent readiness", "#10b996"], ["regulatory", "Regulatory clarity", "#6366f1"], ["demand", "Demand", "#f59e0b"], ["plant", "Plant fit", "#e11d48"]] as const;
 
@@ -200,7 +200,7 @@ function FitRanking({ moleculeKey, onScore, bare, highlight }: { moleculeKey: st
               </button>))}
               {band && <button onClick={() => setBand("")} className="ml-1 text-brand-700 hover:underline">all</button>}</span>
           </div>
-          {m.tied_at_top > 3 && <p className="mb-2 text-[11px] text-ink-muted">{m.tied_at_top} plants tie at the top score — public records don't separate them further, so they are ordered by most recent EU / FDA inspection.</p>}
+          {m.tied_at_top > 3 && <p className="mb-2 text-[11px] text-ink-muted">{plural(m.tied_at_top, "plant")} tie at the top score — public records don't separate them further, so they are ordered by most recent EU / FDA inspection.</p>}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead><tr className="text-left text-ink-muted"><th className="py-1.5 pr-3 font-medium">Fit</th><th className="pr-3 font-medium">Plant</th><th className="pr-3 font-medium">Form · caps · block · standing · record</th><th className="pr-3 font-medium">Why</th><th /></tr></thead>
@@ -602,7 +602,7 @@ export function Workbench({ initial }: { initial?: string }) {
     { id: "passport", title: "Regulatory passport", icon: <ScrollText size={16} />, subtitle: d.patent.brand_name ? `${d.patent.brand_name} · ${d.patent.originator}` : d.patent.originator, render: () => <PassportDetail d={d} /> },
     { id: "markets", title: "Where it can be sold", icon: <Globe2 size={16} />, subtitle: "Patent status per country", render: () => <MarketsDetail d={d} /> },
     { id: "demand", title: "Demand & complexity", icon: <TrendingUp size={16} />, subtitle: d.demand?.disease_area, render: () => <DemandDetail d={d} /> },
-    ...(d.nsq ? [{ id: "nsq", title: "NSQ record — all India", icon: <ShieldAlert size={16} />, subtitle: `${d.nsq.alerts} alerts across ${d.nsq.manufacturers} manufacturers`, render: () => <NsqDetail d={d} /> }] : []),
+    ...(d.nsq ? [{ id: "nsq", title: "NSQ record — all India", icon: <ShieldAlert size={16} />, subtitle: `${plural(d.nsq.alerts, "alert")} across ${d.nsq.manufacturers} manufacturers`, render: () => <NsqDetail d={d} /> }] : []),
     { id: "fit", title: "Plant fit across the registry", icon: <Factory size={16} />, subtitle: "Every plant scored for this molecule's form", render: () => <FitRanking bare moleculeKey={key} highlight={d.selected_plant?.registry_plant} onScore={(id) => { setPlant(`reg:${id}`); setActive(null); }} /> },
     { id: "makers", title: "Who can make it", icon: <Users size={16} />, subtitle: "API makers, plants that made it, plants permitted to make the form, API filings", render: () => <MakersCard bare moleculeKey={key} highlight={d.selected_plant?.registry_plant} /> },
     { id: "synthesis", title: "How it's made", icon: <FlaskConical size={16} />, subtitle: "Reactions from the Open Reaction Database", render: () => <Synthesis bare moleculeKey={key} /> },
@@ -613,7 +613,8 @@ export function Workbench({ initial }: { initial?: string }) {
     <div className="space-y-4">
       <Card className="flex flex-wrap items-center gap-3 p-3">
         <FlaskConical size={18} className="ml-1 text-brand-700" />
-        <select className="input h-10 w-64" value={key} onChange={(e) => setKey(e.target.value)}>{list.data?.molecules.map((m: any) => <option key={m.key} value={m.key}>{m.name}</option>)}</select>
+        <SearchSelect className="w-80" value={key} onChange={setKey} searchPlaceholder="Search a molecule…"
+          options={(list.data?.molecules ?? []).map((m: any) => ({ value: m.key, label: m.name, sub: m.area || m.therapeutic_area || undefined }))} />
         <PlantPicker plants={d?.plants ?? []} current={d?.plant_id} onPick={setPlant} />
         {d && <span className="ml-auto text-[11px] text-ink-muted">{d.patent.origin === "curated" ? "Curated profile" : d.patent.origin === "manual" ? "Added in the app" : "Built from public sources"} · {(d.patent.signals?.sources ?? []).length} sources</span>}
       </Card>

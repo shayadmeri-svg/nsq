@@ -1,10 +1,10 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Activity, CalendarDays, ChevronLeft, ChevronRight, FileWarning, Layers, Search } from "lucide-react";
+import { Activity, CalendarDays, ChevronLeft, ChevronRight, FileWarning, Layers, ListOrdered, PieChart, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { CompareBars, Donut, Legendary, RankBars, TrendBars } from "../../components/charts";
-import { Badge, Button, Card, CardHeader, Empty, ErrorNote, PageHeader, PageSkeleton, Stat } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, Empty, ErrorNote, PageHeader, PageSkeleton, Stat, SearchSelect } from "../../components/ui";
 import { api } from "../../lib/api";
 import { fmtMonth } from "../../lib/format";
 import { Link } from "react-router-dom";
@@ -52,11 +52,14 @@ export function Quality() {
   return (
     <>
       <PageHeader eyebrow="Quality signals" title="Quality signals" subtitle={`CDSCO Not-of-Standard-Quality notices naming ${org.name}, ${fmtMonth(data.period.first)} – ${fmtMonth(data.period.last)}. Open any notice for the evidence and what to check.`} />
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <Stat label="Notices" value={k.alerts} icon={<Activity size={18} />} tone="indigo" hint={`${k.last_12m} in the last 12 months`} />
         <Stat label="Products" value={k.products} icon={<Layers size={18} />} tone="brand" delay={0.05} hint={`${k.batches} distinct batches`} />
         <Stat label="Last 12 months" value={k.last_12m} icon={<CalendarDays size={18} />} tone="indigo" delay={0.1} hint={k.spurious ? `${k.spurious} declared spurious — the label names you, the product isn't yours` : "notices reported in the last year"} />
-        <Stat label="Most frequent test" value={k.top_category} tone="brand" delay={0.15} hint="the test most often involved" />
+        <Stat label="National position" value={k.national_rank ? `#${k.national_rank}` : "—"} icon={<ListOrdered size={18} />} tone="gold" delay={0.15}
+          hint={k.national_rank ? `of ${(k.manufacturers_ranked ?? 0).toLocaleString("en-IN")} manufacturers, ordered by CDSCO notice count (#1 = most)${k.spurious ? ` · ${k.spurious} spurious not counted` : ""}` : "No attributable notices to place"} />
+        <Stat label="Share of all-India notices" value={k.national_share_pct ?? 0} decimals={2} suffix="%" icon={<PieChart size={18} />} tone="indigo" delay={0.2} hint="of every CDSCO notice in the period" />
+        <Stat label="Most frequent test" value={k.top_category} tone="brand" delay={0.25} hint="the test most often involved" />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.7fr_1fr]">
@@ -90,10 +93,8 @@ export function Quality() {
         <CardHeader title="All notices" subtitle={`${issues.data?.total ?? "…"} matching`} action={
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative"><Search size={15} className="absolute left-3 top-2.5 text-ink-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product, batch, reason…" className="input h-9 w-64 pl-9" /></div>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="input h-9 w-48">
-              <option value="">All categories</option>
-              {data.categories.filter((c: any) => c.name !== "Other").map((c: any) => <option key={c.name}>{c.name}</option>)}
-            </select>
+            <SearchSelect size="sm" className="w-52" value={category} onChange={setCategory} clearLabel="All tests" placeholder="All tests"
+              options={data.categories.filter((c: any) => c.name !== "Other").map((c: any) => ({ value: c.name, label: c.name, sub: `${c.count} notice${c.count === 1 ? "" : "s"}` }))} />
           </div>
         } />
         <div className="mt-4 overflow-x-auto">

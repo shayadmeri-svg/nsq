@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { Legendary, TrendArea } from "../../components/charts";
 import { Badge, Bar, Card, CardHeader, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Stat } from "../../components/ui";
 import { api } from "../../lib/api";
-import { fmtDateTime, fmtMonth, timeAgo } from "../../lib/format";
+import { fmtDateTime, fmtMonth, timeAgo, plural } from "../../lib/format";
 
 const JOB_TONE: Record<string, any> = { succeeded: "brand", failed: "rose", running: "indigo", queued: "slate" };
 
@@ -87,7 +87,7 @@ export function AdminOverview() {
           {data.orgs.map((o: any) => (
             <Link key={o.slug} to={`/o/${o.slug}`} className="rounded-2xl border border-line p-4 transition hover:border-brand-300 hover:shadow-card">
               <div className="font-semibold">{o.name}</div>
-              <div className="mt-2 flex gap-3 text-xs text-ink-muted"><span>{o.stats.alerts} alerts</span><span>{o.stats.plants} plants</span><span>{o.stats.users} users</span></div>
+              <div className="mt-2 flex gap-3 text-xs text-ink-muted"><span>{plural(o.stats.alerts, "alert")}</span><span>{plural(o.stats.plants, "plant")}</span><span>{o.stats.users} users</span></div>
             </Link>
           ))}
           {data.orgs.length === 0 && <div className="text-sm text-ink-muted">No organisations yet — create the first one.</div>}

@@ -603,6 +603,94 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
 
 
 _twin_cache: dict[str, Any] = {}
+_TABLET = re.compile(r"\btab(let)?s?\b|caplet", re.I)
+# Modified-release products: the twin is an immediate-release tablet, so their records are left out
+_MODIFIED = re.compile(r"\b(sr|er|xr|xl|cr|mr|dr|od|extended|sustained|prolonged|controlled|modified|delayed|gastro-?resistant|"
+                       r"enteric|retard)\b", re.I)
+_COMBO = re.compile(r"\band\b|&|/|\+|\bwith\b", re.I)
+
+
+def _ir_tablet_recall(x: dict[str, Any]) -> bool:
+    """An FDA recall of a single-ingredient immediate-release tablet, judged on its own product description."""
+    d = x.get("product") or ""
+    head = re.split(r"tablet", d, maxsplit=1, flags=re.I)[0]
+    return bool(re.search(r"tablet", d, re.I)) and not _MODIFIED.search(d) and not _COMBO.search(head)
+
+
+def twin_records(key: str) -> dict[str, Any]:
+    """The public records behind the twin's error scenarios for one molecule, matched on their own text:
+    CDSCO NSQ notices for single-ingredient tablets of it, and FDA recalls (openFDA enforcement) naming it.
+    Per quality test: how many records name the test, with up to three quoted."""
+    from chem import process_twin as twin
+
+    from . import evidence
+
+    rec = structures().get(key) or {}
+    keys = {key, *rec.get("aliases", [])}
+    df = data.attributable(data.frame())
+    rows = df.iloc[0:0]
+    if not df.empty:
+        names = df["Name of Product"].astype(str)
+        ok = {n for n in names.unique() if _TABLET.search(n) and not _MODIFIED.search(n)
+              and (lambda i: len(i) == 1 and i[0] in keys)(insights.product_ingredients(n))}
+        rows = df[names.isin(ok)]
+    texts = rows["NSQ Result"].fillna("").astype(str) if not rows.empty else []
+    rc_all = evidence.recalls_all(key)
+    rc = {**rc_all, "items": [x for x in rc_all.get("items", []) if _ir_tablet_recall(x)]}
+    tests: dict[str, Any] = {}
+    for c in twin.CQAS:
+        rx = re.compile(c["record_rx"], re.I)
+        hit = rows[[bool(rx.search(t)) for t in texts]] if len(texts) else rows
+        hit = hit.sort_values("Parsed_Date", ascending=False) if "Parsed_Date" in hit else hit
+        rec_hits = [x for x in rc.get("items", []) if rx.search(x.get("reason") or "")]
+        tests[c["id"]] = {
+            "cdsco": int(len(hit)),
+            "cdsco_quotes": [{"product": str(r["Name of Product"]), "result": str(r.get("NSQ Result") or ""),
+                              "month": r["Parsed_Date"].strftime("%Y-%m") if "Parsed_Date" in r and not pd_isna(r["Parsed_Date"]) else None,
+                              "lab": str(r.get("Reporting by Lab/State") or "")} for _, r in hit.head(3).iterrows()],
+            "recalls": len(rec_hits), "recall_quotes": rec_hits[:3],
+        }
+    cats = rows["Failure_Category_Primary"].value_counts() if not rows.empty and "Failure_Category_Primary" in rows else {}
+    covered = {n for c in twin.CQAS for n in c["cdsco"]}
+    outside = [{"name": str(k), "count": int(v)} for k, v in (cats.items() if len(cats) else []) if k not in covered and k not in ("", "Uncategorized")]
+    return {"tablet_notices": int(len(rows)), "tests": tests, "outside": outside,
+            "recalls_total": rc_all.get("total", 0), "recalls_ir_tablet": len(rc["items"]), "recalls_scanned": len(rc_all.get("items", [])),
+            "recalls_error": rc_all.get("error"), "recalls_query": rc_all.get("query"),
+            "cdsco_source": {"label": "CDSCO NSQ alerts: single-ingredient, immediate-release tablets of this molecule (spurious excluded)",
+                             "url": "https://cdscoonline.gov.in/CDSCO/publicNsqDrugTable"},
+            "recall_source": {"label": "FDA enforcement reports (openFDA): of the 100 most recent naming the molecule, single-ingredient immediate-release tablets",
+                              "url": "https://open.fda.gov/apis/drug/enforcement/"},
+            "label": evidence.label_block(key)}
+
+
+def pd_isna(v: Any) -> bool:
+    try:
+        return bool(v != v) or v is None
+    except (TypeError, ValueError):
+        return False
+
+
+def twin_scenarios(nominal_run: dict[str, Any], records: dict[str, Any]) -> list[dict[str, Any]]:
+    """One scenario per quality test, ordered by how often public records name that test for this molecule. The
+    injection is the model's own (chem.process_twin.injections): the parameters that tip the test, not a
+    hand-picked number."""
+    from chem import process_twin as twin
+
+    out = []
+    withheld = nominal_run.get("withheld") or {}
+    for c in twin.CQAS:
+        cid = c["id"]
+        inj = (nominal_run.get("injections") or {}).get(cid) or {"kind": "none", "steps": []}
+        steps = [[{**st, "label": twin.P_BY_ID[st["param"]].label, "unit": twin.P_BY_ID[st["param"]].unit,
+                   "unit_op": twin.P_BY_ID[st["param"]].unit_op, "nominal": twin.P_BY_ID[st["param"]].nominal,
+                   "basis": twin.P_BY_ID[st["param"]].basis} for st in step] for step in inj["steps"]]
+        ev = records["tests"][cid]
+        out.append({"test": cid, "label": c["label"], "records": ev["cdsco"] + ev["recalls"], **ev,
+                    "kind": inj["kind"], "injections": steps, "withheld": withheld.get(cid), "worst": inj.get("worst"),
+                    "worst_params": [twin.P_BY_ID[i].label for i in inj.get("worst_params") or []],
+                    "not_modelled": twin.NOT_MODELLED.get(cid, [])})
+    out.sort(key=lambda r: (-r["records"], not r["injections"]))
+    return out
 
 
 def process_twin(key: str, p: dict[str, Any]) -> dict[str, Any]:
@@ -635,10 +723,15 @@ def process_twin(key: str, p: dict[str, Any]) -> dict[str, Any]:
     else:
         vol = 900.0
     nsq = prof.get("nsq") or {}
+    recs = twin_records(key)
     mol = twin.Molecule(name=prof["name"], dose_mg=dose, cs37_mg_ml=cs, diff_cm2_s=float(d["diffusivity_cm2_s"]), volume_ml=vol,
-                        cdsco_categories=nsq.get("categories") or [], alerts=int(nsq.get("alerts") or 0))
+                        cdsco_categories=nsq.get("categories") or [], alerts=recs["tablet_notices"],
+                        test_alerts={k: v["cdsco"] for k, v in recs["tests"].items()})
     withheld = {"dissolution": "; ".join(diss["withheld"])} if diss.get("withheld") else None
     out = twin.run(mol, overrides, form, specs, withheld=withheld)
+    nominal_run = out if not out["injected"] else process_twin(key, {**p, "overrides": {}})
+    out["scenarios"] = twin_scenarios(nominal_run, recs) if not out["injected"] else nominal_run["scenarios"]
+    out["records"] = {k: v for k, v in recs.items() if k != "tests"}
     out["molecule"] = {"key": key, "name": prof["name"], "dose_mg": dose, "dose_kind": diss["inputs"]["dose_mg"]["kind"],
                        "solubility_mg_ml": cs, "solubility_label": diss["inputs"]["solubility_mg_ml"]["label"],
                        "medium": diss["inputs"]["medium"]["label"], "diffusivity": d["diffusivity_cm2_s"], "alerts": mol.alerts}

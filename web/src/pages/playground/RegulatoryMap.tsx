@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Globe2, Info, Maximize2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Badge, Card, CardHeader, ErrorNote, PageSkeleton, Segmented } from "../../components/ui";
+import { Badge, Card, CardHeader, ErrorNote, PageSkeleton, Segmented, SearchSelect } from "../../components/ui";
 import { WorldMap } from "../../components/viz";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -78,9 +78,8 @@ export function RegulatoryMap() {
           <div className="min-w-0">
             <div className="mb-3"><Segmented value={metric} onChange={setMetric} options={[{ value: "strictness", label: "Stringency" }, { value: "pics", label: "PIC/S GMP" }, { value: "exclusivity", label: "Data exclusivity" }, { value: "linkage", label: "Patent linkage" }, { value: "molecule", label: "A molecule" }]} /></div>
             {metric === "molecule" && (
-              <select className="input mb-3 h-9 w-72 text-sm" value={molecule} onChange={(e) => setMolecule(e.target.value)}>
-                <option value="">Pick a tracked molecule…</option>{d.molecules.map((m: any) => <option key={m.key} value={m.key}>{m.name}</option>)}
-              </select>
+              <div className="mb-3 w-80"><SearchSelect value={molecule} onChange={setMolecule} placeholder="Pick a tracked molecule…" searchPlaceholder="Search a molecule…"
+                options={d.molecules.map((m: any) => ({ value: m.key, label: m.name }))} /></div>
             )}
             <WorldMap height={470} colorFor={colorFor} isSelected={(c) => marketOf(c) === picked} onPick={(c) => setPicked(marketOf(c))}
               tooltip={(code) => { const m = mk(code); const k = marketOf(code)!; return m ? <div>{m.regulator}{metric === "molecule" && d.molecule?.countries?.[k] ? ` · ${d.molecule.countries[k].status.replace("_", " ")}` : ""}{metric === "exclusivity" ? ` · ${m.data_exclusivity ?? "check"}` : ""}</div> : null; }} />

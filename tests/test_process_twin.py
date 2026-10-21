@@ -64,3 +64,39 @@ def test_every_link_and_parameter_declares_its_basis():
     assert all(p.basis in ("mechanistic", "correlation", "assumed") for p in T.PARAMS)
     assert all(link["basis"] in ("mechanistic", "correlation", "assumed") for link in T.LINKS)
     assert set(T.EDGES) == {c["id"] for c in T.CQAS}
+
+
+def _injections(mol):
+    x = {p.id: p.nominal for p in T.PARAMS}
+    sens = T.morris(mol, x)
+    tips = T.tipping_points(mol, x)
+    return x, T.injections(mol, x, sens, tips)
+
+
+def test_scenario_injections_come_from_the_model_and_fail_their_test():
+    # every injected value is a tipping point found by the model: applying it fails the test it is for
+    for mol in (PARA, LOW_DOSE):
+        x, inj = _injections(mol)
+        for cid, r in inj.items():
+            for step in r["steps"]:
+                assert cid in fails(mol, **{**x, **{s["param"]: s["value"] for s in step}}), (mol.name, cid, step)
+
+
+def test_scenarios_differ_by_molecule():
+    # a low dose is tipped on uniformity by the API particle size (Yalkowsky-Bolton); a 650 mg dose is not
+    _, low = _injections(LOW_DOSE)
+    _, para = _injections(PARA)
+    first = lambda r: [s["param"] for s in r["uniformity"]["steps"][0]]  # noqa: E731
+    assert "api_d50_um" in first(low) and "api_d50_um" not in first(para)
+
+
+def test_a_failure_the_model_cannot_reproduce_is_reported_as_such():
+    # very soluble, high dose: no parameter fails dissolution at Q, so no injection is invented
+    _, inj = _injections(T.Molecule("Very soluble", 100, 500.0, 1e-5))
+    assert inj["dissolution"]["kind"] == "none" and inj["dissolution"]["steps"] == []
+    assert inj["dissolution"]["worst"] >= T.SPECS["q_pct"]
+
+
+def test_every_test_states_where_its_limit_comes_from():
+    assert set(T.SPEC_BASIS) == {c["id"] for c in T.CQAS}
+    assert all(b["kind"] in ("source", "default") for b in T.SPEC_BASIS.values())

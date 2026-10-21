@@ -130,25 +130,36 @@ def label_block(key: str) -> Optional[dict[str, Any]]:
             "pk": rec.get("pk") or {}, "pk_label": rec.get("pk_label")}
 
 
-def recalls_block(key: str, category: str) -> dict[str, Any]:
+def recalls_all(key: str) -> dict[str, Any]:
+    """The 100 most recent FDA enforcement reports whose product description names the molecule (cached a day)."""
     term = _names(key)[0]
     hit = _recall_cache.get(term.lower())
     if hit and time.time() - hit[0] < 86400:
-        out = hit[1]
-    else:
-        q = f'product_description:"{term}"'
-        try:
-            r = requests.get("https://api.fda.gov/drug/enforcement.json", params={"search": q, "limit": 100, "sort": "report_date:desc"}, timeout=15)
-            rows = r.json().get("results", []) if r.status_code == 200 else []
-            total = (r.json().get("meta") or {}).get("results", {}).get("total", 0) if r.status_code == 200 else 0
-        except (requests.RequestException, ValueError):
-            return {"error": "openFDA unreachable"}
-        items = [{"recall_number": x.get("recall_number"), "date": x.get("report_date"), "class": x.get("classification"),
-                  "firm": x.get("recalling_firm"), "country": x.get("country"), "reason": x.get("reason_for_recall"),
-                  "product": (x.get("product_description") or "")[:160],
-                  "url": f"https://api.fda.gov/drug/enforcement.json?search=recall_number:%22{x.get('recall_number')}%22"} for x in rows]
-        out = {"total": total, "items": items, "query": q}
-        _recall_cache[term.lower()] = (time.time(), out)
+        return hit[1]
+    q = f'product_description:"{term}"'
+    try:
+        r = requests.get("https://api.fda.gov/drug/enforcement.json", params={"search": q, "limit": 100, "sort": "report_date:desc"}, timeout=15)
+        if r.status_code == 404:  # openFDA: no matches
+            rows, total = [], 0
+        elif r.status_code == 200:
+            rows, total = r.json().get("results", []), (r.json().get("meta") or {}).get("results", {}).get("total", 0)
+        else:
+            return {"error": f"openFDA returned {r.status_code}", "items": [], "total": 0, "query": q}
+    except (requests.RequestException, ValueError):
+        return {"error": "openFDA unreachable", "items": [], "total": 0, "query": q}
+    items = [{"recall_number": x.get("recall_number"), "date": x.get("report_date"), "class": x.get("classification"),
+              "firm": x.get("recalling_firm"), "country": x.get("country"), "reason": x.get("reason_for_recall"),
+              "product": (x.get("product_description") or "")[:160],
+              "url": f"https://api.fda.gov/drug/enforcement.json?search=recall_number:%22{x.get('recall_number')}%22"} for x in rows]
+    out = {"total": total, "items": items, "query": q}
+    _recall_cache[term.lower()] = (time.time(), out)
+    return out
+
+
+def recalls_block(key: str, category: str) -> dict[str, Any]:
+    out = recalls_all(key)
+    if out.get("error"):
+        return {"error": out["error"]}
     rx = _RECALL_WORDS.get(category)
     matching = [x for x in out.get("items", []) if rx and re.search(rx, x.get("reason") or "", re.I)]
     return {"total": out.get("total", 0), "matching_category": len(matching), "items": (matching + [x for x in out.get("items", []) if x not in matching])[:6],

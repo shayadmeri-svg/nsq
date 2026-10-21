@@ -10,7 +10,7 @@ import { Badge, Button, Card, CardHeader, Drawer, ErrorNote, PageHeader, PageSke
 import { useToast } from "../../components/ui/toast";
 import { api, del, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { fmtDate, timeAgo } from "../../lib/format";
+import { fmtDate, timeAgo, plural } from "../../lib/format";
 
 export const SOURCE_CHIP: Record<string, { short: string; label: string; cls: string }> = {
   orange_book: { short: "OB", label: "FDA Orange Book", cls: "bg-orange-100 text-orange-800" },
@@ -86,7 +86,7 @@ function MoleculeDrawer({ mkey, onClose, onEdit, canEdit }: { mkey?: string; onC
               <div className="text-ink-muted">checked {timeAgo(sig.trials.fetched_at)}</div>
             </div>}
             {sig.nsq && <div className="rounded-xl border border-line p-3 text-xs"><div className="mb-1.5 flex items-center gap-1.5 font-semibold"><span className={cn("rounded px-1 text-[10px] font-bold", SOURCE_CHIP.cdsco.cls)}>NSQ</span> CDSCO alerts</div>
-              <div>{sig.nsq.alerts} alerts · {sig.nsq.manufacturers} manufacturers · last {sig.nsq.last}</div>
+              <div>{plural(sig.nsq.alerts, "alert")} · {sig.nsq.manufacturers} manufacturers · last {sig.nsq.last}</div>
               <div className="mt-0.5 text-ink-faint">every alert naming the ingredient, combinations and spurious batches included (the Lab excludes spurious ones)</div>
               <div className="text-ink-muted">{Object.entries(sig.nsq.forms ?? {}).map(([k, v]) => `${k} ${v}`).join(" · ")}</div>
             </div>}
@@ -149,7 +149,7 @@ function Watchlist({ skipped, onTrack, canEdit }: { skipped: any[]; onTrack: (na
         <div className="max-h-[340px] space-y-1 overflow-auto px-5 py-4 scrollbar-thin">
           {skipped.map((s: any) => (
             <div key={s.key + s.name} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50">
-              <div className="min-w-0"><b className="capitalize">{s.name}</b> <span className="text-ink-muted">· {s.alerts} alerts</span><div className="truncate text-ink-faint">{s.reason}</div></div>
+              <div className="min-w-0"><b className="capitalize">{s.name}</b> <span className="text-ink-muted">· {plural(s.alerts, "alert")}</span><div className="truncate text-ink-faint">{s.reason}</div></div>
               {canEdit && <Button size="sm" variant="secondary" onClick={() => onTrack(s.name)}><Plus size={12} /> Track</Button>}
             </div>
           ))}

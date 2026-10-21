@@ -6,7 +6,7 @@ import { LoadingEdge } from "../../components/ui/Loading";
 import { BadgeCheck, ChevronDown, ExternalLink, FlaskRound, Flame, Info, Target, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
-import { Badge, Card, CardHeader, ErrorNote, Skeleton } from "../../components/ui";
+import { Badge, Card, CardHeader, ErrorNote, Skeleton, SearchSelect } from "../../components/ui";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
@@ -348,9 +348,9 @@ export function ReactionLab() {
         <div className="space-y-4">
           <Card className="p-4">
             <div className="label mb-2">1 · Molecule and published step</div>
-            <select className="input h-9 w-full" value={mol} onChange={(e) => { setMol(e.target.value); setRoute(null); }}>
-              {(mols.data?.molecules ?? []).map((m: any) => <option key={m.key} value={m.key}>{m.name} — {m.routes} steps, {m.anchors} with T·time·yield</option>)}
-            </select>
+            <SearchSelect value={mol} onChange={(v) => { setMol(v); setRoute(null); }} searchPlaceholder="Search a molecule…"
+              options={(mols.data?.molecules ?? []).map((m: any) => ({ value: m.key, label: m.name, sub: `${m.routes} published step${m.routes === 1 ? "" : "s"} · ${m.anchors} with temperature, time and yield`,
+                group: m.anchors ? "With measured points" : "Routes only" }))} />
             <div className="mt-2 max-h-80 space-y-1.5 overflow-y-auto pr-1">
               {steps.map((r: any) => <RouteCard key={r.id} r={r} />)}
               {routes.data && !steps.length && <div className="text-xs text-ink-muted">No published reaction step for this molecule.</div>}
@@ -376,9 +376,7 @@ export function ReactionLab() {
 
           <Card className="p-4">
             <div className="label mb-2 flex items-center justify-between">2 · Mechanism <Pill kind={B?.mechanism?.kind} title={B?.mechanism?.text} /></div>
-            <select className="input h-9 w-full" value={tpl} onChange={(e) => setTpl(e.target.value)}>
-              {tpls.data.templates.map((t: any) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
+            <SearchSelect value={tpl} onChange={setTpl} options={tpls.data.templates.map((t: any) => ({ value: t.id, label: t.label, sub: t.hint }))} />
             <p className="mt-1 text-[11px] text-ink-muted">{T?.hint}</p>
             {route?.synthesis && route.step && (
               <div className="mt-2 rounded-lg bg-brand-50 p-2 text-[11px] text-brand-800 ring-1 ring-inset ring-brand-200">

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { Badge, Drawer, ErrorNote, Skeleton } from "../../components/ui";
 import { RankBars } from "../../components/charts";
 import { api } from "../../lib/api";
-import { fmtMonth } from "../../lib/format";
+import { fmtMonth, plural } from "../../lib/format";
 import { useMe } from "../../lib/session";
 
 function Section({ icon, title, children, i }: { icon: ReactNode; title: string; children: ReactNode; i: number }) {
@@ -63,7 +63,7 @@ export function IssueDrawer({ slug, issueId, onClose, endpoint, who }: { slug?: 
     ),
     pattern: (
       <Section key="pattern" i={1} icon={<TrendingUp size={15} />} title={who ? `Pattern across ${who}'s notices` : "Pattern across your notices"}>
-        <div className="mb-3 text-xs text-ink-muted">{d.tenant_alert_count} notices across {d.form_span} dosage forms.</div>
+        <div className="mb-3 text-xs text-ink-muted">{plural(d.tenant_alert_count, "notice")} across {d.form_span} dosage forms.</div>
         <RankBars rows={d.dominant_failures.map((f: any) => ({ name: f[0], count: f[1], sub: `${f[2]}%` }))} color="#6366f1" />
         {d.temporal_clusters?.length > 0 && (
           <div className="mt-5">

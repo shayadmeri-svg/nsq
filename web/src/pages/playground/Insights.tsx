@@ -3,9 +3,10 @@ import { useState } from "react";
 import { BadgeCheck, CalendarRange, CloudRain, FlaskConical, Globe2, Lightbulb, MapPin, ShieldAlert, Timer, Users } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { RankBars } from "../../components/charts";
-import { Badge, ErrorNote, PageSkeleton, Segmented, Skeleton } from "../../components/ui";
+import { Badge, ErrorNote, PageSkeleton, Segmented, Skeleton, SearchSelect } from "../../components/ui";
 import { api } from "../../lib/api";
 import { ExpandedProvider, Frame, Tile, type Section } from "../../components/ui/Expanded";
+import { plural } from "../../lib/format";
 
 const LIFE_COLORS = ["#10b996", "#6366f1", "#f59e0b", "#e11d48", "#0f172a"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -28,7 +29,7 @@ function Survival({ bare }: { bare?: boolean }) {
   return (
     <Frame bare={bare} title="Shelf-life survival: how long until a failing batch is caught?" subtitle="Kaplan-Meier curves (lifelines) of time from manufacture to the NSQ report, with a log-rank test between groups">
       <div className="flex flex-wrap justify-end gap-2 px-5 pt-3">
-          <select className="input h-9 w-44 text-xs" value={group} onChange={(e) => setGroup(e.target.value)}>{(d?.groups ?? [{ key: "form", label: "Dosage form" }]).map((g: any) => <option key={g.key} value={g.key}>{g.label}</option>)}</select>
+          <SearchSelect size="sm" className="w-48" value={group} onChange={setGroup} options={(d?.groups ?? [{ key: "form", label: "Dosage form" }]).map((g: any) => ({ value: g.key, label: `By ${g.label.toLowerCase()}` }))} />
           <Segmented value={measure} onChange={setMeasure} options={[{ value: "months", label: "Months" }, { value: "shelf", label: "% of shelf life" }]} />
       </div>
       {q.error ? <div className="p-5"><ErrorNote error={q.error} /></div> : !d ? <Skeleton className="m-5 h-64" /> : (
@@ -105,7 +106,7 @@ export function InsightsTab() {
           Most failures surface in the <b>second quarter</b> of shelf life, roughly 10 months after manufacture: post-market surveillance catches batches mid-life, not at release.
           {early && <> <b>{early.category}</b> has the largest early share ({early["first quarter"]}% in the first quarter), which points to a release or manufacturing defect rather than stability.</>}
           {mostLate && <> <b>{mostLate.category}</b> skews latest ({Math.round(lateShare(mostLate))}% in the last quarter or expired), which is a stability or packaging signal.</>}
-          {sl.after_expiry > 0 && <> {sl.after_expiry} alerts were on batches already past expiry when tested.</>}
+          {sl.after_expiry > 0 && <> {plural(sl.after_expiry, "alert")} were on batches already past expiry when tested.</>}
         </Takeaway>
       </div>
     ) },
@@ -129,8 +130,8 @@ export function InsightsTab() {
     ) },
     { id: "hubs", title: "Manufacturing hubs", icon: <MapPin size={16} />, subtitle: "Alerts per PIN code — industrial clusters", render: () => (
 <div className="-m-5 md:-m-6 bg-white pt-2">
-          <div className="p-5"><RankBars rows={d.hubs.map((h: any) => ({ name: `${h.pin} ${h.city || h.state}`, count: h.alerts, sub: `${h.sites} sites · ${h.fda} FDA-reg.` }))} color="#6366f1" /></div>
-          {hub && <Takeaway>PIN <b>{hub.pin}</b> ({hub.city || hub.state}) alone has <b>{hub.sites}</b> sites with alerts and {hub.alerts} alerts. Cluster-level interventions such as shared testing labs or state-led GMP audits reach many makers at once.</Takeaway>}
+          <div className="p-5"><RankBars rows={d.hubs.map((h: any) => ({ name: `${h.pin} ${h.city || h.state}`, count: h.alerts, sub: `${plural(h.sites, "site")} · ${h.fda} FDA-reg.` }))} color="#6366f1" /></div>
+          {hub && <Takeaway>PIN <b>{hub.pin}</b> ({hub.city || hub.state}) alone has <b>{hub.sites}</b> sites with alerts and {plural(hub.alerts, "alert")}. Cluster-level interventions such as shared testing labs or state-led GMP audits reach many makers at once.</Takeaway>}
         </div>
     ) },
     { id: "spurious", title: "Spurious batches", icon: <ShieldAlert size={16} />, subtitle: "Kept out of every company ranking", render: () => (
@@ -204,7 +205,7 @@ export function InsightsTab() {
     { id: "survival", accent: "#10b996", figure: survFast ? `${survFast.median} months` : "…", label: survFast ? `median time from manufacture to an NSQ report, ${survFast.group} (the fastest form)` : "median time from manufacture to an NSQ report", text: surv?.logrank ? (surv.logrank.p < 0.05 ? "How fast failing batches get caught differs by dosage form, and the difference is statistically real (log-rank test)." : "No real difference between dosage forms in how fast failing batches get caught.") : "Kaplan-Meier curves by form, category, lab or state." },
     { id: "shelf", accent: "#6366f1", figure: "2nd quarter", label: "of shelf life is when most failures are reported", text: <>{early ? <><b>{early.category}</b> fails earliest; </> : null}{mostLate ? <><b>{mostLate.category}</b> skews latest.</> : null}</> },
     { id: "concentration", accent: "#e11d48", figure: top ? `${top.alert_share}%` : "—", label: top ? `of alerts from ${top.manufacturers} makers with 10+` : "alert concentration", text: `${d.repeat.repeat_share}% of alerts repeat the same product and failure at the same maker.` },
-    { id: "hubs", accent: "#6366f1", figure: hub ? (hub.city || hub.state || `PIN ${hub.pin}`) : "—", label: hub ? `PIN ${hub.pin} · ${hub.sites} sites, ${hub.alerts} alerts — the most of any PIN code` : "top hub", text: "Cluster-level fixes (shared labs, state GMP audits) reach many makers at once." },
+    { id: "hubs", accent: "#6366f1", figure: hub ? (hub.city || hub.state || `PIN ${hub.pin}`) : "—", label: hub ? `PIN ${hub.pin} · ${plural(hub.sites, "site")}, ${plural(hub.alerts, "alert")} — the most of any PIN code` : "top hub", text: "Cluster-level fixes (shared labs, state GMP audits) reach many makers at once." },
     { id: "spurious", accent: "#7c3aed", figure: `${d.spurious.share}%`, label: `${d.spurious.alerts} spurious alerts`, text: "Counterfeits or spiked products — the named company is not a confirmed source." },
     { id: "labs", accent: "#0ea5e9", figure: d.labs.top.length ? `${Math.min(...d.labs.top.map((l: any) => l.dissolution_pct)).toFixed(0)}–${Math.max(...d.labs.top.map((l: any) => l.dissolution_pct)).toFixed(0)}%` : "—", label: `dissolution share of alerts across the ${d.labs.top.length} labs with 40+ alerts`, text: "Labs differ in how often they report dissolution failures, so where a batch is tested shapes what is found." },
     { id: "season", accent: "#f59e0b", figure: Math.abs(avg(mon, moist) - avg(dry, moist)) < 1.5 ? "No effect" : `${Math.abs(avg(mon, moist) - avg(dry, moist)).toFixed(1)} pt gap`, label: `${moist} failures, batches made in the monsoon vs dry months`, text: Math.abs(avg(mon, moist) - avg(dry, moist)) < 1.5 ? "No meaningful seasonal effect at national level." : "A gap this size points to humidity control." },

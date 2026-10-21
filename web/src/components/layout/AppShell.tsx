@@ -22,12 +22,12 @@ function Logo() {
   const c = useContext(Collapsed);
   return (
     <div className={cn("flex items-center gap-2.5", c ? "justify-center" : "px-2")}>
-      <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-700 shadow-lg shadow-brand-900/40">
-        <svg viewBox="0 0 32 32" className="h-5 w-5"><path d="M8 23V9l8 9 8-9v14" stroke="white" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-gold-300 via-gold-400 to-gold-600 shadow-lg shadow-black/40 ring-1 ring-gold-200/40">
+        <svg viewBox="0 0 32 32" className="h-5 w-5"><path d="M8 23V9l8 9 8-9v14" stroke="#0b1020" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </div>
       {!c && <div className="leading-tight">
-        <div className="font-display text-[15px] font-extrabold tracking-tight text-white">NSQ Intelligence</div>
-        <div className="text-[10.5px] font-medium text-slate-400">Quality · Capability · Export</div>
+        <div className="font-display text-[17px] font-semibold tracking-tight text-white">NSQ Intelligence</div>
+        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300/80">Quality · Capability · Export</div>
       </div>}
     </div>
   );
@@ -40,9 +40,9 @@ function NavItem({ to, icon, children, end }: { to: string; icon: ReactNode; chi
       {({ isActive }) => (
         <div className={cn("relative flex items-center rounded-xl py-2 text-[13.5px] font-medium transition", c ? "justify-center px-0" : "gap-3 px-3",
           isActive ? "text-white" : "text-slate-400 hover:bg-white/5 hover:text-slate-200")}>
-          {isActive && <motion.div layoutId="nav-active" className="absolute inset-0 rounded-xl bg-white/10 ring-1 ring-inset ring-white/10" transition={{ type: "spring", damping: 30, stiffness: 380 }} />}
-          {isActive && <motion.div layoutId="nav-bar" className="absolute -left-3 top-1.5 h-6 w-1 rounded-r-full bg-brand-400" />}
-          <span className={cn("relative", isActive ? "text-brand-400" : "")}>{icon}</span>
+          {isActive && <motion.div layoutId="nav-active" className="absolute inset-0 rounded-xl bg-gradient-to-r from-gold-400/15 to-white/[0.03] ring-1 ring-inset ring-gold-300/20" transition={{ type: "spring", damping: 30, stiffness: 380 }} />}
+          {isActive && <motion.div layoutId="nav-bar" className="absolute -left-3 top-1.5 h-6 w-1 rounded-r-full bg-gold-400" />}
+          <span className={cn("relative", isActive ? "text-gold-300" : "")}>{icon}</span>
           {!c && <span className="relative truncate">{children}</span>}
         </div>
       )}

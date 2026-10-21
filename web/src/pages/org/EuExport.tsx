@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Badge, Card, CardHeader, Drawer, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Ring, Segmented, Stat } from "../../components/ui";
 import { cn } from "../../lib/cn";
-import { fmtDate } from "../../lib/format";
+import { fmtDate, plural } from "../../lib/format";
 import { Estimate } from "../../components/ui/Estimate";
 import { STATUS_STYLE, useOrg, useOrgData, VERDICT } from "./common";
 
@@ -99,7 +99,7 @@ export function EuExport() {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Stat label="Within reach" value={(v.ready ?? 0) + (v.close ?? 0)} icon={<Globe2 size={18} />} hint={`${v.ready ?? 0} ready · ${v.close ?? 0} with ≤ 2 gaps`} />
         <Stat label="Longer-term options" value={v.far ?? 0} icon={<TriangleAlert size={18} />} tone="amber" delay={0.05} hint="3 or more steps still to take" />
-        <Stat label="EU GMP sites" value={data.eu_gmp_sites.length} icon={<ShieldCheck size={18} />} tone="indigo" delay={0.1} hint={data.eu_gmp_sites.join(", ") || `of ${data.plants} plant(s)`} />
+        <Stat label="EU GMP sites" value={data.eu_gmp_sites.length} icon={<ShieldCheck size={18} />} tone="indigo" delay={0.1} hint={data.eu_gmp_sites.join(", ") || `of ${plural(data.plants, "plant")}`} />
         <Stat label="Quality records to prepare" value={data.org_nsq_alerts} tone="indigo" delay={0.15} hint="EU inspectors look at market quality history: keep each investigation summary ready" />
       </div>
 
@@ -115,7 +115,7 @@ export function EuExport() {
             {data.blockers.length === 0 && <li className="text-sm text-ink-muted">No common steps outstanding.</li>}
             {data.blockers.map((b: any) => (
               <motion.li variants={itemVariants} key={b.id} className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3.5">
-                <div className="flex items-start justify-between gap-3"><span className="text-sm font-semibold">{b.title}</span><Badge tone="indigo">{b.molecules} molecules</Badge></div>
+                <div className="flex items-start justify-between gap-3"><span className="text-sm font-semibold">{b.title}</span><Badge tone="indigo">{plural(b.molecules, "molecule")}</Badge></div>
                 <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">{b.how_to_close}</p>
                 <p className="mt-1 text-[11px] text-ink-faint">{b.reference}</p>
               </motion.li>

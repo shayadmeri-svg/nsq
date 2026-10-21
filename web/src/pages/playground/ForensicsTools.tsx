@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { Badge, Button, Card, CardHeader, ErrorNote, Skeleton } from "../../components/ui";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { fmtMonth } from "../../lib/format";
+import { fmtMonth, plural } from "../../lib/format";
 
 type Open = (key: string, g?: any) => void;
 
@@ -73,7 +73,7 @@ function MakerLoader({ onLoad }: { onLoad: (lines: string[], maker: { key: strin
         <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl bg-white shadow-lg ring-1 ring-line">
           {r.data.manufacturers.map((m: any) => (
             <button key={m.key} onClick={() => pick(m.key, m.name)} className="block w-full px-3 py-2 text-left text-xs hover:bg-slate-50">
-              <div className="font-medium">{m.name}</div><div className="text-ink-muted">{[m.city, m.state].filter(Boolean).join(", ")} · {m.alerts} alerts</div>
+              <div className="font-medium">{m.name}</div><div className="text-ink-muted">{[m.city, m.state].filter(Boolean).join(", ")} · {plural(m.alerts, "alert")}</div>
             </button>
           ))}
         </div>
@@ -178,12 +178,12 @@ export function Portfolio({ onOpen }: { onOpen: Open }) {
               <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-400">Market risk · all makers · NSQ {fmtMonth(d.period.first)} – {fmtMonth(d.period.last)}</div>
               <div className="mt-1 font-display text-xl font-bold leading-snug">
                 {d.summary.high > 0
-                  ? <>{d.summary.high} of these {d.rows.length} products {d.summary.high === 1 ? "is" : "are"} failed by many makers in a known way — whoever makes {d.summary.high === 1 ? "it" : "them"} should run the checks below before the first batch.</>
-                  : <>None of these {d.rows.length} products has a strong market-wide failure pattern.</>}
+                  ? <>{d.summary.high} of these {plural(d.rows.length, "product")} {d.summary.high === 1 ? "is" : "are"} failed by many makers in a known way — whoever makes {d.summary.high === 1 ? "it" : "them"} should run the checks below before the first batch.</>
+                  : <>None of these {plural(d.rows.length, "product")} has a strong market-wide failure pattern.</>}
               </div>
               {d.compare && <div className="mt-2 text-sm text-indigo-200"><Building2 size={13} className="mr-1 inline" />
                 {d.compare.source === "organisation" ? "Your organisation" : d.compare.name}: {d.compare.products_failed
-                  ? <>its own batches failed NSQ on <b className="text-white">{d.compare.products_failed}</b> of these products ({d.compare.alerts} alerts).</>
+                  ? <>its own batches failed NSQ on <b className="text-white">{d.compare.products_failed}</b> of these products ({plural(d.compare.alerts, "alert")}).</>
                   : <>no NSQ alert on any of these products.</>}</div>}
               <div className="mt-3 flex flex-wrap gap-2">{Object.entries(RISK).map(([k, v]) => d.summary[k] ? (
                 <span key={k} className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset", v.chip)}>{d.summary[k]} {v.label.toLowerCase()}</span>) : null)}
@@ -213,7 +213,7 @@ export function Portfolio({ onOpen }: { onOpen: Open }) {
                         <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 ring-inset", x.chip)}>{x.label}</span>
                       </div>
                       <div className="mt-0.5 text-[11.5px] text-ink-muted">
-                        {r.why}{r.alerts > 0 && <> · {r.alerts} alerts ({r.recent_24m} in 24 mo) · {r.makers} makers{r.tests?.length ? <> · mostly {r.tests[0].toLowerCase()}</> : null} · last {fmtMonth(r.last)}</>}
+                        {r.why}{r.alerts > 0 && <> · {plural(r.alerts, "alert")} ({r.recent_24m} in 24 mo) · {r.makers} makers{r.tests?.length ? <> · mostly {r.tests[0].toLowerCase()}</> : null} · last {fmtMonth(r.last)}</>}
                       </div>
                       {r.own && (
                         <div className={cn("mt-1.5 flex w-fit max-w-full flex-wrap items-center gap-x-1.5 rounded-md px-2 py-0.5 text-[11.5px] ring-1 ring-inset",
@@ -368,7 +368,7 @@ export function PatternsSource({ src }: { src: any }) {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <Col title="1 · Grouping into products" tone="text-ink">
               <li>Active ingredients are read from the product name (brands resolved where the name carries the generic) and paired with the dosage form: <i>Albendazole · Tablet</i>.</li>
-              <li>A product needs at least {src.min_alerts} alerts before it gets a pattern ({n(src.alerts_with_ingredients)} alerts had readable ingredients).</li>
+              <li>A product needs at least {plural(src.min_alerts, "alert")} before it gets a pattern ({n(src.alerts_with_ingredients)} alerts had readable ingredients).</li>
             </Col>
             <Col title="2 · Which test failed" tone="text-ink">
               <li>Keywords in the result text: dissolution, assay / content, related substances, disintegration, uniformity, description, identification, sterility, endotoxin, particulate matter, microbial, pH, water / LOD, labelling / spurious.</li>

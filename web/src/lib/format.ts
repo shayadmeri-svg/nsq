@@ -45,3 +45,9 @@ export const TIER_STYLE: Record<string, string> = {
   adjacent: "bg-amber-50 text-amber-700 ring-amber-200",
   stretch: "bg-slate-100 text-slate-600 ring-slate-200",
 };
+
+/** "1 plant", "3 plants" (irregular plurals passed explicitly). */
+export function plural(n: number | null | undefined, one: string, many = one + "s"): string {
+  const v = Number(n ?? 0);
+  return `${v.toLocaleString("en-IN")} ${v === 1 ? one : many}`;
+}

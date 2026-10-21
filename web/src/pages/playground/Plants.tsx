@@ -8,11 +8,11 @@ import { LoadingEdge } from "../../components/ui/Loading";
 import { AlertTriangle, BadgeCheck, ChevronLeft, ChevronRight, ExternalLink, Factory, FlaskConical, KeyRound, MapPin, Search, ShieldAlert, Syringe } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, PageSkeleton, Segmented, Skeleton, Stat } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, Drawer, Empty, ErrorNote, PageSkeleton, Segmented, Skeleton, Stat, SearchSelect } from "../../components/ui";
 import { api } from "../../lib/api";
 import { BasisLegend, CoverageSections } from "../../components/capabilities";
 import { cn } from "../../lib/cn";
-import { fmtMonth } from "../../lib/format";
+import { fmtMonth, plural } from "../../lib/format";
 import { ExpandedProvider, Frame, type Section } from "../../components/ui/Expanded";
 
 type Rate = { key: string; label: string; plants: number; plants_with_nsq: number; alerts: number; share_with_nsq: number | null; alerts_per_100_plants: number | null };
@@ -98,7 +98,7 @@ function RatesCard({ s: all, onPick, limit, onExpand, bare }: { s: any; onPick: 
                 <span className="absolute inset-y-0 left-0 rounded-full bg-rose-400/80" style={{ width: `${(100 * val(r)) / max}%` }} />
                 {metric === "share" && <span className="absolute inset-y-[-2px] w-px border-l border-dashed border-ink-muted" style={{ left: `${(100 * overall) / max}%` }} />}
               </span>
-              <span className="text-right tabular-nums font-semibold" title={`${r.plants_with_nsq} of ${r.plants} plants · ${r.alerts} alerts`}>
+              <span className="text-right tabular-nums font-semibold" title={`${r.plants_with_nsq} of ${plural(r.plants, "plant")} · ${plural(r.alerts, "alert")}`}>
                 {metric === "share" ? `${nf(r.share_with_nsq, 1)}%` : nf(r.alerts_per_100_plants, 0)}
               </span>
             </button>
@@ -235,7 +235,7 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
             <div className="rounded-xl bg-slate-50 p-3"><div className="label">NSQ alerts linked</div><div className="mt-1 font-display text-xl font-bold">{p.nsq?.alerts ?? 0}</div>
               <div className="text-[11px] text-ink-muted">{p.nsq ? `${fmtMonth(p.nsq.first)} – ${fmtMonth(p.nsq.last)}` : "none on record"}</div></div>
             <div className="rounded-xl bg-slate-50 p-3"><div className="label">Dosage forms</div><div className="mt-1 font-display text-xl font-bold">{c.dosage_forms.length}</div>
-              <div className="text-[11px] text-ink-muted">{Object.keys(c.segregated).length} segregated block(s)</div></div>
+              <div className="text-[11px] text-ink-muted">{plural(Object.keys(c.segregated).length, "segregated block")}</div></div>
             <div className="rounded-xl bg-slate-50 p-3"><div className="label">WHO-GMP</div><div className="mt-1 font-semibold">{p.who_gmp_certified ? "Certified" : "Not in the list"}</div>
               <div className="text-[11px] text-ink-muted">{p.who_gmp_valid_until ? `valid until ${p.who_gmp_valid_until}` : p.who_gmp_certified ? "validity not stated" : ""}</div></div>
           </div>
@@ -308,7 +308,7 @@ function PlantDrawer({ id, labels, onClose }: { id?: string; labels?: Labels; on
                 {p.nsq.sites.map((s: any) => (
                   <div key={s.id} className="mb-1 flex items-center justify-between rounded-lg border border-line px-3 py-2 text-xs">
                     <span><b>{s.company}</b> <span className="text-ink-muted">· {s.pincode || "no PIN"} · matched on {MATCH_WORD[s.match] ?? s.match}</span></span>
-                    <span className="tabular-nums">{s.alerts} alerts · last {fmtMonth(s.last)}</span>
+                    <span className="tabular-nums">{plural(s.alerts, "alert")} · last {fmtMonth(s.last)}</span>
                   </div>
                 ))}
                 <PlantAlerts id={p.id} />
@@ -423,21 +423,16 @@ export function Plants() {
         <CardHeader title="Plants" subtitle={`${list.data?.total?.toLocaleString("en-IN") ?? "…"} plants`} action={
           <div className="flex flex-wrap items-center gap-2">
             {chips.length > 0 && <button onClick={() => { setState(""); setCapability(""); setSegregated(""); setPage(1); }}><Badge tone="indigo">{chips.join(" · ")} ✕</Badge></button>}
-            <select className="input h-9 w-36 text-xs" value={state} onChange={(e) => { setState(e.target.value); setPage(1); }}>
-              <option value="">All states</option>{facets.data?.states.map((x: string) => <option key={x}>{x}</option>)}
-            </select>
-            <select className="input h-9 w-44 text-xs" value={capability} onChange={(e) => { setCapability(e.target.value); setPage(1); }}>
-              <option value="">Any dosage form</option><option value="sterile">Sterile (any)</option>
-              {facets.data?.capabilities.map((x: any) => <option key={x.key} value={x.key}>{x.label}</option>)}
-            </select>
-            <select className="input h-9 w-40 text-xs" value={segregated} onChange={(e) => { setSegregated(e.target.value); setPage(1); }}>
-              <option value="">Any block</option>{facets.data?.segregated.map((x: any) => <option key={x.key} value={x.key}>{x.label}</option>)}
-            </select>
+            <SearchSelect size="sm" className="w-40" value={state} onChange={(v) => { setState(v); setPage(1); }} clearLabel="All states" placeholder="All states" searchPlaceholder="Search a state…"
+              options={(facets.data?.states ?? []).map((x: string) => ({ value: x, label: x }))} />
+            <SearchSelect size="sm" className="w-48" value={capability} onChange={(v) => { setCapability(v); setPage(1); }} clearLabel="Any dosage form" placeholder="Any dosage form" searchPlaceholder="Search a dosage form…"
+              options={[{ value: "sterile", label: "Sterile (any)" }, ...(facets.data?.capabilities ?? []).map((x: any) => ({ value: x.key, label: x.label }))]} />
+            <SearchSelect size="sm" className="w-44" value={segregated} onChange={(v) => { setSegregated(v); setPage(1); }} clearLabel="Any block" placeholder="Any block"
+              options={(facets.data?.segregated ?? []).map((x: any) => ({ value: x.key, label: x.label }))} />
             <Segmented value={cert} onChange={(v) => { setCert(v); setPage(1); }} options={[{ value: "", label: "All" }, { value: "who_gmp", label: "WHO-GMP" }, { value: "eu_gmp", label: "EU GMP" }, { value: "eu_ncr", label: "EU NCR" }, { value: "us_fda", label: "US FDA" }, { value: "fda_oai", label: "FDA OAI" }, { value: "schedule_c", label: "Sched. C" }, { value: "loan", label: "Loan" }]} />
             <Segmented value={nsq} onChange={(v) => { setNsq(v); setPage(1); }} options={[{ value: "", label: "Any" }, { value: "yes", label: "With NSQ" }, { value: "no", label: "Clean" }]} />
-            <select className="input h-9 w-32 text-xs" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-              <option value="nsq">Most alerts</option><option value="forms">Most forms</option><option value="name">Name</option>
-            </select>
+            <SearchSelect size="sm" className="w-40" value={sort} onChange={(v) => setSort(v as any)}
+              options={[{ value: "nsq", label: "Sort: most alerts" }, { value: "forms", label: "Sort: most forms" }, { value: "name", label: "Sort: name" }]} />
             <div className="relative"><Search size={15} className="absolute left-3 top-2.5 text-ink-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Company, town, PIN, loan licensee…" className="input h-9 w-60 pl-9" /></div>
           </div>
         } />
@@ -553,12 +548,12 @@ export function MakersCard({ moleculeKey, bare, highlight }: { moleculeKey: stri
             {[...m.api_makers, ...m.listed].slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} highlight={highlight} sub={<span title={p.evidence}>{p.evidence.startsWith("EU") ? "EU-inspected API" : "CDSCO listing"}</span>} />)}
           </div>
           <div>
-            <div className="label mb-1.5">Made it and failed (NSQ) <span className="font-normal normal-case text-ink-faint">· {m.made_total} registry plants{m.nsq_alerts_unlinked ? ` · ${m.nsq_alerts_unlinked} alerts from unlisted makers` : ""}</span></div>
+            <div className="label mb-1.5">Made it and failed (NSQ) <span className="font-normal normal-case text-ink-faint">· {m.made_total} registry plants{m.nsq_alerts_unlinked ? ` · ${plural(m.nsq_alerts_unlinked, "alert")} from unlisted makers` : ""}</span></div>
             {m.made.length === 0 && <div className="text-xs text-ink-muted">No NSQ alert for this molecule traces to a registry plant.</div>}
             {m.made.slice(0, 8).map((p: any) => <MakerRow key={p.id} p={p} highlight={highlight} right={<Badge tone="rose">{p.alerts_for_molecule} NSQ</Badge>} />)}
           </div>
           <div>
-            <div className="label mb-1.5">Permitted to make the form <span className="font-normal normal-case text-ink-faint">· {m.capable_total} plants</span></div>
+            <div className="label mb-1.5">Permitted to make the form <span className="font-normal normal-case text-ink-faint">· {plural(m.capable_total, "plant")}</span></div>
             {!req?.forms?.length ? <div className="text-xs text-ink-muted">Dosage form not known for this molecule — add it in the molecule's Regulatory tab.</div> : (
               <>
                 <div className="mb-2 flex flex-wrap gap-1 text-[11px]">

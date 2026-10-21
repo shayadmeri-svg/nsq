@@ -8,7 +8,7 @@ import { PillarRadar } from "../../components/charts";
 import { Badge, Card, CardHeader, Drawer, Empty, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Ring, Segmented, Skeleton, Stat } from "../../components/ui";
 import { Estimate } from "../../components/ui/Estimate";
 import { api } from "../../lib/api";
-import { fmtDate, TIER_STYLE, titleCase } from "../../lib/format";
+import { fmtDate, TIER_STYLE, titleCase, plural } from "../../lib/format";
 import { useOrg, useOrgData, VERDICT } from "./common";
 import { useMe } from "../../lib/session";
 import { ExpandedProvider, type Section } from "../../components/ui/Expanded";
@@ -209,7 +209,7 @@ export function Opportunities() {
     .filter((m: any) => tier === "all" || m.fit_tier === tier)
     .slice().sort((a: any, b: any) => (b.alerts_in_org > 0 ? 1 : 0) - (a.alerts_in_org > 0 ? 1 : 0) || b.alerts_in_org - a.alerts_in_org || b.fit_score - a.fit_score), [data, tier]);
   const sections: Section[] = useMemo(() => !data ? [] : [
-    { id: "table", title: "Tracked molecules", icon: <ListChecks size={16} />, subtitle: `${rows.length} molecules · highlighted rows are molecules you already make`, render: () => (
+    { id: "table", title: "Tracked molecules", icon: <ListChecks size={16} />, subtitle: `${plural(rows.length, "molecule")} · highlighted rows are molecules you already make`, render: () => (
       <div className="-m-5 md:-m-6">
         <div className="flex justify-end px-5 pt-4 md:px-6"><Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} /></div>
         <div className="mt-3 bg-white"><MoleculeTable rows={rows} slug={slug} /></div>
@@ -232,13 +232,13 @@ export function Opportunities() {
       <PageHeader eyebrow="Patent opportunities" title="Which off-patent medicines your plants can make" subtitle="Each molecule's patent expiry, market and FTO risk scored against your best plant — and the additions that would unlock the rest." />
       {!data.has_plants && <div className="mb-5"><Empty title="No plants linked">Scores below assume no plant. Add one under Infrastructure.</Empty></div>}
       <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl bg-white px-4 py-3 text-xs text-ink-soft ring-1 ring-inset ring-line">
-        <span className="flex items-center gap-2"><span className="h-3 w-1 rounded-full bg-brand-500" /><b className="text-ink">Tracked</b> — one of {total} molecules with patent, regulatory and demand profiles; scored below.</span>
+        <span className="flex items-center gap-2"><span className="h-3 w-1 rounded-full bg-brand-500" /><b className="text-ink">Tracked</b> — one of {plural(total, "molecule")} with patent, regulatory and demand profiles; scored below.</span>
         <span className="flex items-center gap-2"><span className="h-3 w-3 rounded border border-dashed border-slate-400" /><b className="text-ink">Untracked</b> — an ingredient in your products that has no profile yet, so it cannot be scored.</span>
         <span className="flex items-center gap-1.5"><Estimate field="loe" /> marks estimated values — hover for what is present and what is missing.</span>
       </div>
       <div className="grid gap-4 md:grid-cols-4">
         <Stat label="Your products on tracked molecules" value={data.coverage.alerts_tracked} icon={<Crosshair size={18} />} tone="indigo" hint={`of ${data.coverage.alerts} CDSCO records · ${data.coverage.untracked_total} untracked ingredients`} />
-        <Stat label="Strategic + core fit" value={(t.strategic ?? 0) + (t.core ?? 0)} icon={<Sparkles size={18} />} hint={`of ${total} molecules tracked`} />
+        <Stat label="Strategic + core fit" value={(t.strategic ?? 0) + (t.core ?? 0)} icon={<Sparkles size={18} />} hint={`of ${plural(total, "molecule")} tracked`} />
         <Stat label="Available within 5 years" value={data.ready_within_5y} icon={<CalendarClock size={18} />} tone="indigo" delay={0.05} hint={<span className="inline-flex items-center gap-1">good fit and off-patent or LOE ≤ 5 y <Estimate field="loe" /></span>} />
         <Card delay={0.1} className="p-5">
           <div className="label">Fit distribution</div>
@@ -267,7 +267,7 @@ export function Opportunities() {
       </div>
 
       <Card delay={0.2} className="mt-5">
-        <CardHeader title="Tracked molecules" subtitle={`${rows.length} molecules · highlighted rows are molecules you already make`} action={
+        <CardHeader title="Tracked molecules" subtitle={`${plural(rows.length, "molecule")} · highlighted rows are molecules you already make`} action={
           <div className="flex flex-wrap items-center gap-2">
             <Segmented value={tier} onChange={setTier} options={[{ value: "all", label: "All" }, { value: "strategic", label: "Strategic" }, { value: "core", label: "Core" }, { value: "adjacent", label: "Adjacent" }, { value: "stretch", label: "Stretch" }]} />
             {rows.length > 10 && <ExpandButton onClick={() => setActive("table")}>All {rows.length}</ExpandButton>}

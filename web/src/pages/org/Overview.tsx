@@ -1,10 +1,10 @@
-import { Activity, ArrowUpRight, Factory, Globe2, Layers, Sparkles } from "lucide-react";
+import { Activity, ArrowUpRight, Factory, Globe2, Layers, ListOrdered, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 import { Legendary, RankBars, TrendBars } from "../../components/charts";
 import { Badge, Card, CardHeader, Empty, ErrorNote, itemVariants, listVariants, PageHeader, PageSkeleton, Ring, Stat } from "../../components/ui";
 import { Estimate } from "../../components/ui/Estimate";
-import { fmtMonth, TIER_STYLE, titleCase } from "../../lib/format";
+import { fmtMonth, TIER_STYLE, titleCase, plural } from "../../lib/format";
 import { useOrg, useOrgData, VERDICT } from "./common";
 
 export function OrgOverview() {
@@ -26,10 +26,12 @@ export function OrgOverview() {
         subtitle={`${org.city ? org.city + " · " : ""}${org.country} — CDSCO quality record, manufacturing footprint, off-patent opportunities and EU export readiness.`}
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
         <Stat label="CDSCO quality notices" value={k.alerts ?? 0} icon={<Activity size={18} />} tone="indigo" hint={k.alerts ? `${k.last_12m} in the last 12 months · ${fmtMonth(q.period?.first)} – ${fmtMonth(q.period?.last)}` : "None linked to this organisation"} />
         <Stat label="Products monitored" value={k.products ?? 0} icon={<Layers size={18} />} tone="brand" delay={0.05}
           hint="products in your CDSCO records, each with its test history and the guidance that applies" />
+        <Stat label="National position" value={k.national_rank ? `#${k.national_rank}` : "—"} icon={<ListOrdered size={18} />} tone="gold" delay={0.08}
+          hint={k.national_rank ? `of ${(k.manufacturers_ranked ?? 0).toLocaleString("en-IN")} manufacturers, ordered by CDSCO notice count (#1 = most) · ${k.national_share_pct}% of all-India notices` : "No attributable notices to place"} />
         <Stat label="Molecules within reach" value={good} icon={<Sparkles size={18} />} tone="brand" delay={0.1} hint={`of ${opp.molecules?.length ?? "the"} tracked molecules: strategic or core plant fit · ${opp.ready_within_5y} open within 5 years`} />
         <Stat label="EU-ready or close" value={(eu.verdicts.ready ?? 0) + (eu.verdicts.close ?? 0)} icon={<Globe2 size={18} />} tone="indigo" delay={0.15} hint={`of ${eu.checked ?? "all"} tracked molecules · ` + (eu.eu_gmp_sites.length ? `EU GMP site: ${eu.eu_gmp_sites.join(", ")}` : "no EU GMP certified site")} />
       </div>
@@ -70,7 +72,7 @@ export function OrgOverview() {
             <div className="border-t border-line px-5 py-4">
               <div className="label mb-2">Biggest unlocks</div>
               <div className="flex flex-wrap gap-2">
-                {opp.unlocks.map((u: any) => <Badge key={u.token} tone="indigo">+ {u.label} → {u.count} molecules</Badge>)}
+                {opp.unlocks.map((u: any) => <Badge key={u.token} tone="indigo">+ {u.label} → {plural(u.count, "molecule")}</Badge>)}
               </div>
             </div>
           )}
@@ -92,7 +94,7 @@ export function OrgOverview() {
             <div className="border-t border-line px-5 py-4">
               <div className="label mb-2">Blocking most molecules</div>
               <ul className="space-y-1.5 text-sm">
-                {eu.blockers.map((b: any) => <li key={b.id} className="flex justify-between gap-3"><span className="text-ink-soft">{b.title}</span><span className="text-xs font-semibold text-rose-600">{b.molecules} molecules</span></li>)}
+                {eu.blockers.map((b: any) => <li key={b.id} className="flex justify-between gap-3"><span className="text-ink-soft">{b.title}</span><span className="text-xs font-semibold text-rose-600">{plural(b.molecules, "molecule")}</span></li>)}
               </ul>
             </div>
           )}
@@ -100,7 +102,7 @@ export function OrgOverview() {
       </div>
 
       <Card delay={0.3} className="mt-5">
-        <CardHeader icon={<Factory size={16} />} title="Manufacturing footprint" subtitle={`${data.infrastructure.plants} plant(s) · ${data.infrastructure.capabilities} capabilities`} action={<Link to={`/o/${slug}/infrastructure`} className="flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">Infrastructure <ArrowUpRight size={14} /></Link>} />
+        <CardHeader icon={<Factory size={16} />} title="Manufacturing footprint" subtitle={`${plural(data.infrastructure.plants, "plant")} · ${plural(data.infrastructure.capabilities, "capability", "capabilities")}`} action={<Link to={`/o/${slug}/infrastructure`} className="flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">Infrastructure <ArrowUpRight size={14} /></Link>} />
         <div className="flex flex-wrap gap-2 px-5 pb-5 pt-3">
           {data.infrastructure.certifications.length ? data.infrastructure.certifications.map((c: string) => <Badge key={c} tone="brand">{c.replace(/_/g, " ").toUpperCase()}</Badge>) : <span className="text-sm text-ink-muted">No plants linked yet.</span>}
         </div>

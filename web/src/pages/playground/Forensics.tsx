@@ -6,11 +6,11 @@ import { Beaker, Building2, ChevronLeft, ChevronRight, Clock, Factory, FlaskConi
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Legendary, TrendBars } from "../../components/charts";
-import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton } from "../../components/ui";
+import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton, SearchSelect } from "../../components/ui";
 import { ExpandedProvider, Figure, Tile, useExpanded, type Section } from "../../components/ui/Expanded";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { fmtMonth } from "../../lib/format";
+import { fmtMonth, plural } from "../../lib/format";
 import { HowItWorks, Needed, PatternsSource, Portfolio } from "./ForensicsTools";
 
 const ARCH: Record<string, { label: string; tone: any; icon: ReactNode; color: string }> = {
@@ -185,7 +185,7 @@ function Tiles({ o, onFilter }: { o: any; onFilter: (id: string) => void }) {
       </Tile>
       {gap && <Tile title="Biggest quality gap" icon={<Gem size={14} />} accent="#0a9a7d" clickable={false}
         action={<button className="text-[11px] text-brand-700 hover:underline" onClick={() => open(`g:${gap.key}`)}>why</button>}>
-        <Figure value={gap.label.split(" · ")[0]} label={`${gap.recent_24m} alerts in 24 months across ${gap.makers} makers`} tone="#0a9a7d" />
+        <Figure value={gap.label.split(" · ")[0]} label={`${plural(gap.recent_24m, "alert")} in 24 months across ${gap.makers} makers`} tone="#0a9a7d" />
       </Tile>}
     </div>
   );
@@ -271,12 +271,12 @@ function AllProductsWithFilter({ initial, onOpen }: { initial: string; onOpen: (
       <div className="flex flex-wrap items-center gap-2 px-4 py-3">
         <div className="relative min-w-[220px] flex-1"><Search size={14} className="absolute left-3 top-2.5 text-ink-faint" />
           <input className="input h-9 w-full pl-8" placeholder="Molecule or product" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        <select className="input h-9 w-auto" value={arch} onChange={(e) => setArch(e.target.value)}>
-          <option value="">Every pattern</option>{Object.entries(ARCH).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        <SearchSelect size="sm" className="w-52" value={arch} onChange={setArch} clearLabel="Every pattern" placeholder="Every pattern"
+          options={Object.entries(ARCH).map(([k, v]: any) => ({ value: k, label: v.label }))} />
         <Segmented value={sort} onChange={setSort} options={[{ value: "alerts", label: "Most alerts" }, { value: "recent", label: "Recent" }, { value: "makers", label: "Most makers" }]} />
       </div>
       <div className={cn("relative", r.isFetching && "opacity-70")}><LoadingEdge active={r.isFetching} />{r.data?.items.map((g: any) => <GroupRow key={g.key} g={g} onOpen={(k) => onOpen(k, g)} />)}</div>
-      {r.data && <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-xs text-ink-muted"><span>{r.data.total} products · page {r.data.page} of {r.data.pages}</span>
+      {r.data && <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-xs text-ink-muted"><span>{plural(r.data.total, "product")} · page {r.data.page} of {r.data.pages}</span>
         <div className="flex gap-1.5"><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={14} /></Button>
           <Button size="sm" variant="secondary" disabled={page >= r.data.pages} onClick={() => setPage(page + 1)}><ChevronRight size={14} /></Button></div></div>}
     </Card>

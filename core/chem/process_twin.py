@@ -96,14 +96,42 @@ FORMULATION = {
 SPECS = {"assay_lo": 95.0, "assay_hi": 105.0, "av_max": 15.0, "lod_max": 3.0, "dt_max_min": 15.0,
          "tensile_min": product.TARGET_TENSILE_MPA, "q_pct": 75.0, "q_time_min": 45.0}
 
-# Quality tests and the CDSCO failure categories they correspond to
+# Where each specification default comes from. Monograph-specific limits (assay, Q, LOD) are not public for free
+# (IP / USP / Ph. Eur. are paid texts): those are defaults to be replaced with the product's own monograph limits.
+SPEC_BASIS = {
+    "assay": {"kind": "default", "text": "Default 95–105% of label claim: assay limits are set per monograph (commonly 90–110% or 95–105%). Enter your product's."},
+    "uniformity": {"kind": "source", "text": "AV ≤ 15 for 10 units (L1): uniformity of dosage units, Ph. Eur. 2.9.40 / USP <905>, harmonised under ICH Q4B Annex 6",
+                   "url": "https://database.ich.org/sites/default/files/Q4B%20Annex%206%20Guideline.pdf"},
+    "dissolution": {"kind": "default", "text": "Default Q = 75% at 45 min: Q is set per monograph. The FDA Dissolution Methods Database gives the method, not the limit."},
+    "disintegration": {"kind": "source", "text": "15 min for uncoated tablets (30 min if film-coated): Ph. Eur. monograph Tablets (0478), test 2.9.1"},
+    "lod": {"kind": "default", "text": "Default ≤ 3%: loss on drying of the granules is an in-house specification. Enter yours."},
+    "strength": {"kind": "source", "text": "Tensile strength ≥ 1.7 MPa gives acceptable friability for most tablets: Pitt & Heasley, Powder Technol. 2013",
+                 "url": "https://doi.org/10.1016/j.powtec.2013.01.024"},
+}
+
+# What the twin leaves out for each test: a failure the model cannot reproduce may come from any of these.
+NOT_MODELLED = {
+    "assay": ["degradation on storage", "analytical method error", "overage"],
+    "uniformity": ["segregation after blending", "API agglomerates"],
+    "dissolution": ["disintegrant type and level", "binder type", "hardening on storage", "coating", "polymorph or salt form",
+                    "the test method (medium, deaeration, apparatus)"],
+    "disintegration": ["disintegrant type and level", "binder type", "hardening on storage", "coating"],
+    "lod": ["falling-rate drying period", "moisture pick-up in storage or packing"],
+    "strength": ["excipient grade changes", "punch tooling", "press speed (dwell time)"],
+}
+
+# Quality tests, the CDSCO failure categories they fall under, and the words that name them in a CDSCO result text
+# or an FDA recall reason (the records are matched on their own text, quoted in the UI).
 CQAS = [
-    {"id": "assay", "label": "Assay", "cdsco": ["Assay / Content"], "unit": "%"},
-    {"id": "uniformity", "label": "Content uniformity (AV)", "cdsco": ["Uniformity of Content", "Uniformity"], "unit": "AV"},
-    {"id": "dissolution", "label": "Dissolution", "cdsco": ["Dissolution"], "unit": "% at Q time"},
-    {"id": "disintegration", "label": "Disintegration", "cdsco": ["Disintegration"], "unit": "min"},
-    {"id": "lod", "label": "Loss on drying", "cdsco": ["Water / LOD", "Loss on Drying"], "unit": "%"},
-    {"id": "strength", "label": "Tablet strength (friability risk)", "cdsco": [], "unit": "MPa"},
+    {"id": "assay", "label": "Assay", "cdsco": ["Assay / Content"], "unit": "%",
+     "record_rx": r"\bassay\b|label claim|sub-?potent|super-?potent|\bpotency\b"},
+    {"id": "uniformity", "label": "Content uniformity (AV)", "cdsco": ["Uniformity of Weight"], "unit": "AV",
+     "record_rx": r"uniformity|weight variation|average weight"},
+    {"id": "dissolution", "label": "Dissolution", "cdsco": ["Dissolution"], "unit": "% at Q time", "record_rx": r"dissolution"},
+    {"id": "disintegration", "label": "Disintegration", "cdsco": ["Disintegration"], "unit": "min", "record_rx": r"disintegrat"},
+    {"id": "lod", "label": "Loss on drying", "cdsco": [], "unit": "%", "record_rx": r"loss on drying|moisture|water content"},
+    {"id": "strength", "label": "Tablet strength (friability risk)", "cdsco": ["Hardness / Friability"], "unit": "MPa",
+     "record_rx": r"hardness|friab|crumbl|broken tablets?|chipped"},
 ]
 
 # Which parameters can move which test (the edges of the cycle)
@@ -139,6 +167,7 @@ class Molecule:
     volume_ml: float = 900.0
     cdsco_categories: list[dict[str, Any]] = field(default_factory=list)  # [{name, count}] for this molecule
     alerts: int = 0
+    test_alerts: Optional[dict[str, int]] = None  # CDSCO notices whose result text names each test (record_rx)
 
 
 def _api_rsd_random(dose_mg: float, d50_um: float, gsd: float, rho: float) -> float:
@@ -321,15 +350,94 @@ def monte_carlo(mol: Molecule, x: dict[str, float], form=None, specs=None, n: in
             "method": "parameters drawn around the current settings, σ = NOR half-width / 3"}
 
 
+def _fails(cqa: str, v: float, S: dict[str, Any]) -> bool:
+    return any((v < lim) if side == "lo" else (v > lim) for side, lim in _limit_value(cqa, S))
+
+
+def injections(mol: Molecule, x: dict[str, float], sens: dict[str, list[dict[str, Any]]], tips: dict[str, dict[str, Any]],
+               form=None, specs=None, withheld: Optional[dict[str, str]] = None, n: int = 16) -> dict[str, dict[str, Any]]:
+    """Per test, the smallest error the model needs to fail it, found by the model (nothing hand-picked):
+
+    single     the most influential parameters (Morris μ*) one at a time, each pushed 15% of its normal half-range
+               past its tipping point;
+    combined   when no single parameter tips the test inside its searched range: the two, three, then all
+               linked ones (by influence) moved together from x toward their worse end (the end of each sweep where the test
+               value is worse), and the first point on that path where the test fails.
+    """
+    S = {**SPECS, **(specs or {})}
+    out: dict[str, dict[str, Any]] = {}
+    for c in CQAS:
+        cid = c["id"]
+        if cid in (withheld or {}):
+            out[cid] = {"kind": "withheld", "steps": []}
+            continue
+        ranked = [rw for rw in sens.get(cid, []) if rw["mu_star"] > 0]
+        single = []
+        for rw in ranked:
+            p = P_BY_ID[rw["param"]]
+            tp = (tips.get(p.id) or {}).get(cid, {}).get("nearest")
+            if not tp:
+                continue
+            # the crossing is interpolated on a grid: step past it until the model confirms the test fails
+            step = 0.15 * (p.hi - p.lo) / 2 * (1 if tp["direction"] == "above" else -1)
+            v, ok = tp["at"], False
+            for _ in range(12):
+                v = float(f"{min(max(v + step, p.sweep[0]), p.sweep[1]):.3g}")
+                if _fails(cid, evaluate(mol, {**x, p.id: v}, form, specs)["values"][cid], S):
+                    ok = True
+                    break
+                if v in p.sweep:
+                    break
+            if not ok:
+                continue
+            single.append([{"param": p.id, "value": v, "tipping": tp["at"],
+                            "direction": tp["direction"], "margin_nor": (tips.get(p.id) or {}).get(cid, {}).get("margin_nor")}])
+            if len(single) == 2:
+                break
+        if single:
+            out[cid] = {"kind": "single", "steps": single}
+            continue
+        # worse end of each parameter = the end of its sweep where the test value is worse; parameters ranked by
+        # influence, or all linked ones when none has any influence around x (e.g. dissolution pinned at 100%)
+        worse = {}
+        lo_bad = any(side == "lo" for side, _ in _limit_value(cid, S))
+        for pid in [rw["param"] for rw in ranked] or EDGES[cid]:
+            t = (tips.get(pid) or {}).get(cid) or {}
+            if t.get("values") and t["values"][0] != t["values"][-1]:
+                ends = (t["values"][0], t["values"][-1])
+                worse[pid] = P_BY_ID[pid].sweep[0] if ((ends[0] < ends[1]) == lo_bad) else P_BY_ID[pid].sweep[1]
+        found, last = None, None
+        for k in sorted({min(2, len(worse)), min(3, len(worse)), len(worse)} - {0, 1}):
+            ids = list(worse)[:k]
+            for f in np.linspace(0, 1, n + 1)[1:]:
+                xs = {**x, **{i: x.get(i, P_BY_ID[i].nominal) + f * (worse[i] - x.get(i, P_BY_ID[i].nominal)) for i in ids}}
+                v = evaluate(mol, xs, form, specs)["values"][cid]
+                last = v
+                if _fails(cid, v, S):
+                    found = [{"param": i, "value": float(f"{xs[i]:.3g}"), "direction": "above" if worse[i] > x.get(i, P_BY_ID[i].nominal) else "below",
+                              "tipping": None, "margin_nor": None} for i in ids]
+                    break
+            if found:
+                break
+        # "none": the model cannot fail this test with its parameters; `worst` is the value with the most influential
+        # ones all at their worse ends — the twin does not reproduce this failure, and says so
+        if last is None and not found:
+            last = evaluate(mol, {**x, **worse}, form, specs)["values"][cid]
+        out[cid] = {"kind": "combined", "steps": [found]} if found else {"kind": "none", "steps": [],
+                                                                         "worst": None if last is None else round(float(last), 2),
+                                                                         "worst_params": list(worse)}
+    return out
+
+
 def tree(mol: Molecule, x: dict[str, float], nominal: dict[str, Any], mc: dict[str, Any], sens: dict[str, list[dict[str, Any]]],
          tips: dict[str, dict[str, Any]], withheld: Optional[dict[str, str]] = None) -> dict[str, Any]:
     """Batch failure → test → parameters ranked by Morris μ*, each with its tipping point and margin."""
-    total = sum(c["count"] for c in mol.cdsco_categories) or 0
+    total = (mol.alerts if mol.test_alerts is not None else sum(c["count"] for c in mol.cdsco_categories)) or 0
     by_cat = {c["name"]: c["count"] for c in mol.cdsco_categories}
     children = []
     for c in CQAS:
         cid = c["id"]
-        national = sum(by_cat.get(n, 0) for n in c["cdsco"])
+        national = (mol.test_alerts or {}).get(cid, 0) if mol.test_alerts is not None else sum(by_cat.get(n, 0) for n in c["cdsco"])
         kids = []
         top = max((rw["mu_star"] for rw in sens.get(cid, [])), default=0) or 1.0
         for rw in sens.get(cid, []):
@@ -361,7 +469,7 @@ def run(mol: Molecule, overrides: Optional[dict[str, float]] = None, form=None, 
     out: dict[str, Any] = {
         "unit_ops": [{**u, "params": [{**p.__dict__, "sweep": list(p.sweep), "current": x[p.id], "injected": p.id in injected}
                                       for p in PARAMS if p.unit_op == u["id"]]} for u in UNIT_OPS],
-        "cqas": CQAS, "edges": EDGES, "links": LINKS, "specs": {**SPECS, **(specs or {})}, "formulation": {**FORMULATION, **(form or {})},
+        "cqas": CQAS, "spec_basis": SPEC_BASIS, "edges": EDGES, "links": LINKS, "specs": {**SPECS, **(specs or {})}, "formulation": {**FORMULATION, **(form or {})},
         "nominal": nominal, "current": current, "injected": injected,
         "moved": {c["id"]: round(current["values"][c["id"]] - nominal["values"][c["id"]], 3) for c in CQAS},
         "withheld": withheld or {},
@@ -370,7 +478,8 @@ def run(mol: Molecule, overrides: Optional[dict[str, float]] = None, form=None, 
         mc = monte_carlo(mol, x, form, specs, withheld=withheld)
         sens = morris(mol, x, form, specs)
         tips = tipping_points(mol, x, form, specs)
-        out.update(mc=mc, sensitivity=sens, tipping=tips, tree=tree(mol, x, current, mc, sens, tips, withheld))
+        out.update(mc=mc, sensitivity=sens, tipping=tips, tree=tree(mol, x, current, mc, sens, tips, withheld),
+                   injections=injections(mol, x, sens, tips, form, specs, withheld))
     out["assumptions"] = [
         "A generic wet-granulated immediate-release tablet: the defaults (batch size, materials, mixing and lubrication rates, "
         "operating ranges) are illustrative — replace them with the product's own.",
