@@ -432,7 +432,9 @@ export function PlantData() {
   const qc = useQueryClient();
   const toast = useToast();
   const orgs = useQuery({ queryKey: ["orgs-list"], queryFn: () => api<any>("/api/orgs"), enabled: !!me?.is_platform && !params.slug, staleTime: 300_000 });
-  const slug = params.slug ?? me?.org?.slug ?? sp.get("org") ?? orgs.data?.orgs?.[0]?.slug ?? "";
+  // admins land on the plant simulator's organisation (backend DEMO_ORG) when it exists
+  const orgList: any[] = orgs.data?.orgs ?? [];
+  const slug = params.slug ?? me?.org?.slug ?? sp.get("org") ?? (orgList.find((o) => o.slug === "eurveda-demo") ?? orgList[0])?.slug ?? "";
   const src = (sp.get("src") === "scada" ? "scada" : "csv") as "csv" | "scada";
   const molecule = sp.get("m") ?? "";
   const setParam = (k: string, v: string) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };

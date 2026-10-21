@@ -40,18 +40,26 @@ def init_db() -> None:
 
 
 def ensure_plant_sim_connector() -> None:
-    """The plant simulator service (docker compose --profile demo) streams with PLANT_SIM_TOKEN into the organisation
-    PLANT_SIM_ORG: keep a connector with that token, so the demo needs no copying of tokens."""
+    """The plant simulator service (docker compose --profile demo) streams with PLANT_SIM_TOKEN: keep a connector with
+    that token, so the demo needs no copying of tokens. It streams into PLANT_SIM_ORG, or by default into a
+    "Eurveda demo plant" organisation created here (what admins see first in Plant data)."""
     import os
 
     from .models import PlantConnector
-    from .routers.plant_data import _hash
+    from .routers.plant_data import DEMO_ORG, _hash
 
-    token, slug = os.environ.get("PLANT_SIM_TOKEN", ""), os.environ.get("PLANT_SIM_ORG", "")
-    if not token or not slug:
+    token = os.environ.get("PLANT_SIM_TOKEN", "")
+    slug = os.environ.get("PLANT_SIM_ORG", "") or DEMO_ORG
+    if not token:
         return
     with SessionLocal() as db:
         org = db.scalar(select(Org).where(Org.slug == slug))
+        if org is None and slug == DEMO_ORG:
+            org = Org(slug=DEMO_ORG, name="Eurveda demo plant", city="Simulated", country="India", ontology_keys=[], plant_ids=[],
+                      notes="Created for the plant simulator (docker compose --profile demo): simulated machines, not a real plant.")
+            db.add(org)
+            db.flush()
+            log.warning("created organisation %s for the plant simulator", DEMO_ORG)
         if org is None:
             log.warning("PLANT_SIM_ORG=%s: no such organisation", slug)
             return

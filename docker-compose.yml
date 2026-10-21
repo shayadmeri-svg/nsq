@@ -109,7 +109,8 @@ services:
   plant-sim:
     # Simulated dryer + tablet press (OPC UA) read by the real edge agent and streamed to the API, for demos of
     # Playground → Plant data → Live. Off unless asked for: docker compose --profile demo up -d plant-sim
-    # Needs PLANT_SIM_TOKEN (any long random string starting evd_) and PLANT_SIM_ORG (an organisation slug) in .env.
+    # Needs PLANT_SIM_TOKEN in .env (any long random string, e.g. evd_ + openssl rand -hex 24). It streams into a
+    # "Eurveda demo plant" organisation the API creates, or into PLANT_SIM_ORG (an organisation slug) if set.
     profiles: ["demo"]
     build:
       context: ./edge-agent

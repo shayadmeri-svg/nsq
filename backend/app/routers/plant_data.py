@@ -33,6 +33,7 @@ from ..security import current_user, org_for_user
 
 router = APIRouter(prefix="/api/plant-data/{slug}", tags=["plant-data"], dependencies=[Depends(features.gate)])
 ingest_router = APIRouter(prefix="/api/ingest/plant-data", tags=["plant-data"])
+DEMO_ORG = "eurveda-demo"  # the plant simulator's organisation unless PLANT_SIM_ORG says otherwise (main.py)
 LIVE = "live:"  # filename prefix of datasets fed by a connector: live:<connector id>:<machine>
 MAX_LIVE_ROWS = 3_000  # raw tail kept per live stream; older batches keep their per-batch values
 MAX_LIVE_BATCHES = 300
