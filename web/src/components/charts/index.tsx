@@ -48,7 +48,7 @@ export function TrendArea({ data, height = 260, stacked = true }: { data: Series
         <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} />
         <Tooltip content={<TooltipBox labelFmt={labelPeriod} />} cursor={{ stroke: "#cbd5e1", strokeDasharray: "3 3" }} />
         {data.series.map((s, i) => (
-          <Area key={s.name} type="monotone" dataKey={s.name} stackId={stacked ? "1" : undefined} stroke={PALETTE[i % PALETTE.length]} strokeWidth={1.6}
+          <Area key={s.name} type="monotone" dataKey={s.name} stackId={stacked ? "1" : undefined} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2}
             fill={`url(#g${i})`} animationDuration={1100} />
         ))}
       </AreaChart>

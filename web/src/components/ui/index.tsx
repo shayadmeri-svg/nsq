@@ -36,9 +36,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
 export function Card({ className, children, delay = 0, loading, ...rest }: { className?: string; children: ReactNode; delay?: number; loading?: boolean } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0, y: 14 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "0px 0px -40px 0px" }}
+      transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
       className={cn("card", loading !== undefined && "relative", className)}
       {...(rest as any)}
     >
@@ -90,22 +91,30 @@ export function CountUp({ value, decimals = 0, suffix = "" }: { value: number; d
   return <motion.span ref={ref}>{text}</motion.span>;
 }
 
+const STAT_TONE = {
+  brand: { bar: "from-brand-400 to-gold-400", chip: "bg-brand-50 text-brand-600 ring-brand-100" },
+  indigo: { bar: "from-indigo-400 to-sky-400", chip: "bg-indigo-50 text-indigo-600 ring-indigo-100" },
+  amber: { bar: "from-amber-300 to-amber-500", chip: "bg-amber-50 text-amber-600 ring-amber-100" },
+  rose: { bar: "from-rose-300 to-rose-500", chip: "bg-rose-50 text-rose-600 ring-rose-100" },
+  gold: { bar: "from-gold-400 to-brand-400", chip: "bg-gold-50 text-gold-600 ring-gold-100" },
+};
+
 export function Stat({ label, value, hint, icon, tone = "brand", delay = 0, decimals = 0, suffix = "" }: {
-  label: string; value: number | string | null | undefined; hint?: ReactNode; icon?: ReactNode; tone?: "brand" | "indigo" | "amber" | "rose" | "gold"; delay?: number; decimals?: number; suffix?: string;
+  label: string; value: number | string | null | undefined; hint?: ReactNode; icon?: ReactNode; tone?: keyof typeof STAT_TONE; delay?: number; decimals?: number; suffix?: string;
 }) {
-  const tones = { brand: "from-brand-500/15 text-brand-700", indigo: "from-indigo-500/15 text-indigo-700", amber: "from-amber-500/15 text-amber-700", rose: "from-rose-500/15 text-rose-700", gold: "from-gold-400/25 text-gold-600" };
+  const t = STAT_TONE[tone];
   return (
-    <Card delay={delay} className="relative overflow-hidden p-5">
-      <div className={cn("pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-gradient-to-br to-transparent", tones[tone])} />
-      <div className="flex items-center justify-between">
+    <Card delay={delay} className="group relative overflow-hidden p-5 transition-[box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:shadow-hover">
+      <motion.div className={cn("absolute inset-x-0 top-0 h-[3px] origin-left bg-gradient-to-r", t.bar)}
+        initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true }} transition={{ duration: 0.9, delay: delay + 0.15, ease: [0.22, 1, 0.36, 1] }} />
+      <div className="flex items-center justify-between gap-2">
         <span className="label">{label}</span>
-        {icon && <span className={cn("opacity-80", tones[tone].split(" ")[1])}>{icon}</span>}
+        {icon && <span className={cn("grid h-8 w-8 place-items-center rounded-lg ring-1 ring-inset", t.chip)}>{icon}</span>}
       </div>
-      <div className="mt-3 font-display text-[2.1rem] font-semibold leading-none tracking-tight text-ink">
+      <div className="mt-3 font-display text-[2.4rem] font-semibold leading-none tracking-[-0.035em] text-ink">
         {typeof value === "number" ? <CountUp value={value} decimals={decimals} suffix={suffix} /> : value ?? "—"}
       </div>
-      <div className="gold-rule mt-3 w-10 opacity-70" />
-      {hint && <div className="mt-2 text-xs leading-relaxed text-ink-muted">{hint}</div>}
+      {hint && <div className="mt-2.5 text-xs leading-relaxed text-ink-muted">{hint}</div>}
     </Card>
   );
 }
@@ -146,7 +155,7 @@ export function PageHeader({ eyebrow, title, subtitle, actions }: { eyebrow?: Re
     <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
         {eyebrow && <div className="label mb-2 text-gold-600">{eyebrow}</div>}
-        <h1 className="font-display text-[34px] font-semibold leading-[1.1] tracking-tight text-ink">{title}</h1>
+        <h1 className="font-display text-[34px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink">{title}</h1>
         {subtitle && <p className="mt-2 max-w-3xl text-[14.5px] leading-relaxed text-ink-muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}

@@ -30,7 +30,7 @@ export function timeAgo(iso?: string | null) {
 
 export const titleCase = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-export const PALETTE = ["#0a9a7d", "#6366f1", "#f59e0b", "#ec4899", "#0ea5e9", "#84cc16", "#a855f7", "#94a3b8"];
+export const PALETTE = ["#0a9a7d", "#6366f1", "#06a7c4", "#f59e0b", "#a78bfa", "#fb7185", "#84cc16", "#94a3b8"];
 
 export const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super admin",

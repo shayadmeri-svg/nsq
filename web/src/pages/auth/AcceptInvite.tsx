@@ -38,7 +38,7 @@ export function AcceptInvite() {
       {error && <ErrorNote error={error} />}
       {data && (
         <>
-          <h2 className="font-display text-2xl font-extrabold tracking-tight">Join {data.org?.name ?? "NSQ Intelligence"}</h2>
+          <h2 className="font-display text-2xl font-extrabold tracking-tight">Join {data.org?.name ?? "Eurveda"}</h2>
           <p className="mt-1.5 text-sm text-ink-muted">You were invited as <b>{ROLE_LABEL[data.role]}</b> with {data.email}.</p>
           <form onSubmit={submit} className="mt-8 space-y-4">
             <Field label="Your name"><input className="input" value={name || data.name} onChange={(e) => setName(e.target.value)} required /></Field>

@@ -22,11 +22,11 @@ function Logo() {
   const c = useContext(Collapsed);
   return (
     <div className={cn("flex items-center gap-2.5", c ? "justify-center" : "px-2")}>
-      <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-gold-300 via-gold-400 to-gold-600 shadow-lg shadow-black/40 ring-1 ring-gold-200/40">
-        <svg viewBox="0 0 32 32" className="h-5 w-5"><path d="M8 23V9l8 9 8-9v14" stroke="#0b1020" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-gold-400 via-brand-500 to-brand-600 shadow-lg shadow-brand-900/40 ring-1 ring-white/20">
+        <svg viewBox="0 0 32 32" className="h-5 w-5"><path d="M21.5 9H11v14h10.5M11 16h8.5" stroke="white" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </div>
       {!c && <div className="leading-tight">
-        <div className="font-display text-[17px] font-semibold tracking-tight text-white">NSQ Intelligence</div>
+        <div className="font-display text-[18px] font-semibold tracking-tight text-white">Eurveda</div>
         <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-300/80">Quality · Capability · Export</div>
       </div>}
     </div>

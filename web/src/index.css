@@ -4,23 +4,22 @@
 
 @layer base {
   html, body, #root { height: 100%; }
-  body { @apply bg-canvas text-ink antialiased; font-feature-settings: "ss01", "tnum" 0; letter-spacing: -0.003em; }
-  /* Fraunces for headings, highlights and figures: lining numerals, a soft optical axis */
-  .font-display { font-variation-settings: "SOFT" 40, "WONK" 0; font-feature-settings: "lnum", "pnum"; letter-spacing: -0.015em; }
-  h1, h2, h3 { letter-spacing: -0.015em; }
-  ::selection { @apply bg-gold-200 text-ink; }
+  body { @apply bg-canvas text-ink antialiased; font-feature-settings: "ss01", "cv11"; text-rendering: optimizeLegibility; }
+  /* Geist: tight headings, tabular figures so numbers line up and don't jitter while they count */
+  .font-display { letter-spacing: -0.022em; font-variant-numeric: tabular-nums; }
+  h1, h2, h3 { letter-spacing: -0.022em; }
+  ::selection { @apply bg-gold-100 text-ink; }
   * { @apply border-line; }
 }
 
 @layer components {
   .card { @apply rounded-2xl border border-line bg-white shadow-card; }
-  .label { @apply text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted; }
-  .input { @apply h-10 w-full rounded-xl border border-line bg-white px-3 text-sm outline-none transition placeholder:text-ink-faint focus:border-gold-400 focus:ring-4 focus:ring-gold-300/25; }
-  /* a large serif figure for the one value a card is about (a molecule, a count) */
+  .label { @apply text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted; }
+  .input { @apply h-10 w-full rounded-xl border border-line bg-white px-3 text-sm outline-none transition placeholder:text-ink-faint focus:border-gold-400 focus:ring-4 focus:ring-gold-300/20; }
   .hero-figure { @apply font-display text-4xl font-semibold leading-none tracking-tight text-ink; }
-  /* the serif reads best at semibold: tame the extrabold/bold weights used across the app */
-  .font-display.font-extrabold, .font-display.font-bold { font-weight: 600; }
-  .gold-rule { background: linear-gradient(90deg, #d4b26a, rgba(212,178,106,0)); height: 2px; }
+  .font-display.font-extrabold { font-weight: 700; }
+  .num { font-variant-numeric: tabular-nums; }
+  .gold-rule { background: linear-gradient(90deg, #06a7c4, #10b996 55%, rgba(16,185,150,0)); height: 2px; border-radius: 2px; }
   .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { @apply rounded-full bg-slate-300/60; }
 }

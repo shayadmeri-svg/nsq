@@ -5,7 +5,7 @@ import { Maximize2, X } from "lucide-react";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
-import { Card, CardHeader } from "./index";
+import { Card, CardHeader, CountUp } from "./index";
 
 export type Section = { id: string; title: string; subtitle?: ReactNode; icon?: ReactNode; render: () => ReactNode };
 
@@ -121,8 +121,10 @@ export function Tile({ id, title, subtitle, icon, children, className, footer, a
 }) {
   const { open } = useExpanded();
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
-      className={cn("group relative flex min-w-0 flex-col rounded-2xl bg-white ring-1 ring-inset ring-line transition hover:shadow-card hover:ring-slate-300", id && clickable && "cursor-pointer", className)}
+    <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "0px 0px -30px 0px" }}
+      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      className={cn("group relative flex min-w-0 flex-col rounded-2xl bg-white shadow-card ring-1 ring-inset ring-line transition-[box-shadow,transform] duration-300 hover:shadow-hover hover:ring-slate-300",
+        id && clickable && "cursor-pointer hover:-translate-y-0.5", className)}
       onClick={id && clickable ? () => open(id) : undefined}>
       {accent && <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl" style={{ background: accent }} />}
       <div className="flex items-start justify-between gap-3 px-4 pt-4">
@@ -147,8 +149,9 @@ export function Tile({ id, title, subtitle, icon, children, className, footer, a
 export function Figure({ value, label, tone }: { value: ReactNode; label: ReactNode; tone?: string }) {
   return (
     <div className="min-w-0">
-      <div className="font-display text-xl font-extrabold tabular-nums" style={tone ? { color: tone } : undefined}>{value}</div>
-      <div className="truncate text-[11px] text-ink-muted">{label}</div>
+      <div className="font-display text-[26px] font-semibold leading-tight tracking-[-0.03em] tabular-nums" style={tone ? { color: tone } : undefined}>
+        {typeof value === "number" ? <CountUp value={value} /> : value}</div>
+      <div className="mt-0.5 truncate text-[11px] text-ink-muted">{label}</div>
     </div>
   );
 }

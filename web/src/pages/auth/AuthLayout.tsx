@@ -16,8 +16,8 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         <svg className="absolute inset-0 h-full w-full opacity-[0.07]" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="1" /></pattern></defs><rect width="100%" height="100%" fill="url(#grid)" /></svg>
         <div className="relative flex h-full flex-col justify-between p-12">
           <div className="flex items-center gap-2.5">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-700"><svg viewBox="0 0 32 32" className="h-5 w-5"><path d="M8 23V9l8 9 8-9v14" stroke="white" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></div>
-            <span className="font-display text-lg font-extrabold text-white">NSQ Intelligence</span>
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-700"><svg viewBox="0 0 32 32" className="h-5 w-5"><path d="M21.5 9H11v14h10.5M11 16h8.5" stroke="white" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></div>
+            <span className="font-display text-lg font-extrabold text-white">Eurveda</span>
           </div>
           <div>
             <motion.h1 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }} className="max-w-xl font-display text-[42px] font-extrabold leading-[1.08] tracking-tight text-white">
