@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Atom, Beaker, ExternalLink, Info } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton, SearchSelect } from "../../components/ui";
@@ -7,7 +8,6 @@ import { useToast } from "../../components/ui/toast";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { ProcessTwin } from "./ProcessTwin";
-import { plural } from "../../lib/format";
 
 // Every number on this page carries where it came from:
 //   source     a cited record (PubChem, CDSCO NSQ list, FAERS), linked
@@ -79,7 +79,7 @@ function MoleculeTab({ p }: { p: any }) {
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
         <Card className="p-4">
-          <div className="flex items-start justify-between"><div><div className="font-display text-lg font-bold">{p.name}</div><div className="text-xs text-ink-muted">{d.formula} · {d.mw} g/mol</div></div>
+          <div className="flex items-start justify-between"><div><div className="label">Structure</div><div className="mt-0.5 text-xs text-ink-muted">{d.hbd} donors · {d.hba} acceptors · {d.rotatable_bonds} rotatable bonds</div></div>
             {p.url ? <a href={p.url} target="_blank" rel="noreferrer"><Badge tone="sky">PubChem CID {p.cid}</Badge></a> : <Badge tone="amber">seed structure</Badge>}</div>
           <div className="mt-2 flex justify-center" dangerouslySetInnerHTML={{ __html: p.svg }} />
           <code className="mt-2 block break-all rounded bg-slate-50 p-2 text-[10px] text-ink-soft">{p.smiles}</code>
@@ -478,46 +478,58 @@ function Formula({ f }: { f: string }) {
   return <>{(f ?? "").split(/(\d+)/).map((x, i) => (i % 2 ? <sub key={i} className="text-[0.7em]">{x}</sub> : x))}</>;
 }
 
-const KIND_DOT: Record<string, string> = { source: "bg-emerald-400", estimate: "bg-sky-400", assumption: "bg-amber-400" };
+const KIND_DOT: Record<string, string> = { source: "bg-emerald-500", estimate: "bg-sky-500", assumption: "bg-slate-400" };
+const TABS: { value: Tab; label: string }[] = [
+  { value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "be", label: "Bioequivalence" },
+  { value: "safety", label: "Safety" }, { value: "crystal", label: "Crystallisation" }, { value: "twin", label: "Failure tree" },
+  { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" },
+];
 
-function HeroFact({ k, v, sub, kind }: { k: string; v: React.ReactNode; sub?: React.ReactNode; kind?: string | null }) {
+function Fact({ k, v, kind, title }: { k: string; v: React.ReactNode; kind?: string | null; title?: string }) {
   return (
-    <div className="rounded-2xl bg-white/[0.04] px-4 py-3 ring-1 ring-inset ring-white/10">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-        {kind && <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[kind] ?? "bg-slate-500")} title={kind} />}{k}</div>
-      <div className="mt-1 font-display text-[26px] font-semibold leading-none text-gold-200">{v}</div>
-      {sub && <div className="mt-1 truncate text-[11px] text-slate-400">{sub}</div>}
+    <div className="flex shrink-0 items-baseline gap-1.5" title={title}>
+      {kind && <span className={cn("h-1.5 w-1.5 translate-y-[-2px] rounded-full", KIND_DOT[kind] ?? "bg-slate-400")} />}
+      <span className="font-display text-[17px] font-semibold leading-none text-ink">{v}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{k}</span>
     </div>
   );
 }
 
-// The molecule, large: what the Lab is about, with its key facts and where each comes from
-function MoleculeHero({ p }: { p: any }) {
+// The molecule's identity and key facts in one line: stays put while the models below change
+function Identity({ p }: { p: any }) {
   const d = p.descriptors, s = p.solubility, pv = p.provenance, n = p.nsq ?? {};
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-night-900 via-night-800 to-[#1c170c] p-6 text-white shadow-lift ring-1 ring-gold-400/20">
-      <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-gold-400/10 blur-3xl" />
-      <div className="relative grid items-center gap-6 lg:grid-cols-[170px_minmax(0,1fr)_minmax(0,1.25fr)]">
-        <div className="hidden aspect-square items-center justify-center rounded-2xl bg-white p-2 shadow-card lg:flex [&_svg]:h-full [&_svg]:w-full" dangerouslySetInnerHTML={{ __html: p.svg }} />
-        <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-400">Molecule</div>
-          <h2 className="mt-1 font-display text-[44px] font-semibold leading-[1.02] tracking-tight">{p.name}</h2>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300">
-            <span className="font-display text-lg text-white"><Formula f={d.formula} /></span>
-            <span>{d.mw} g/mol</span>
-            {p.url && <a href={p.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-gold-300 hover:text-gold-200">PubChem CID {p.cid} <ExternalLink size={12} /></a>}
-          </div>
-          {p.iupac && <div className="mt-1.5 line-clamp-2 text-[11px] text-slate-400" title={p.iupac}>{p.iupac}</div>}
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-6 gap-y-2">
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-3">
+          <h2 className="truncate font-display text-[26px] font-semibold leading-none tracking-tight">{p.name}</h2>
+          <span className="font-display text-[15px] text-ink-soft"><Formula f={d.formula} /></span>
         </div>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-          <HeroFact k="CDSCO notices" v={n.alerts ?? 0} kind="source" sub={n.alerts ? `${n.dissolution_pct}% name dissolution` : "none recorded"} />
-          <HeroFact k="Highest strength" v={p.derived.dose_mg ? `${p.derived.dose_mg} mg` : "—"} kind={pv.dose.kind} sub="tablet / capsule, CDSCO names" />
-          <HeroFact k="log P" v={s.logp != null ? Number(s.logp).toFixed(1) : "—"} kind={pv.log_p.kind} sub={pv.log_p.label} />
-          <HeroFact k="Solubility" v={s.in_domain === false ? "n/a" : `${s.kind === "source" ? "" : "~"}${fmt(s.display_mg_ml, 2)}`} kind={pv.aqueous_solubility.kind} sub="mg/mL in water, 25 °C" />
-          <HeroFact k="pKa" v={pv.pka.value ?? "—"} kind={pv.pka.kind} sub={pv.pka.value != null ? pv.pka.label : "none published"} />
-          <HeroFact k="BCS (provisional)" v={p.bcs.class ?? "—"} kind={p.bcs.class ? "estimate" : null} sub={p.bcs.class ? "from structure and dose" : "not classified"} />
-        </div>
+        <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-muted"><span>{d.mw} g/mol</span>
+          {p.url && <a href={p.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-medium text-gold-600 hover:text-gold-700">PubChem CID {p.cid} <ExternalLink size={10} /></a>}</div>
       </div>
+      <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        <Fact k="notices" v={n.alerts ?? 0} kind="source" title="CDSCO NSQ notices naming this molecule" />
+        {p.derived.dose_mg && <Fact k="max strength" v={`${p.derived.dose_mg} mg`} kind={pv.dose.kind} title={pv.dose.label} />}
+        <Fact k="log P" v={fmt(s.logp, 2)} kind={pv.log_p.kind} title={pv.log_p.label} />
+        <Fact k="mg/mL" v={s.in_domain === false ? "n/a" : `${s.kind === "source" ? "" : "~"}${fmt(s.display_mg_ml, 2)}`} kind={pv.aqueous_solubility.kind} title={`Aqueous solubility, 25 °C: ${pv.aqueous_solubility.label}`} />
+        <Fact k="pKa" v={pv.pka.value ?? "—"} kind={pv.pka.kind} title={pv.pka.label} />
+        <Fact k="BCS" v={p.bcs.class ?? "—"} kind={p.bcs.class ? "estimate" : null} title={p.bcs.basis ?? p.bcs.reason} />
+      </div>
+    </div>
+  );
+}
+
+function TabBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  return (
+    <div className="scrollbar-thin flex gap-1 overflow-x-auto">
+      {TABS.map((t) => (
+        <button key={t.value} onClick={() => setTab(t.value)}
+          className={cn("relative shrink-0 px-3 pb-2.5 pt-2 text-[13px] font-semibold transition", tab === t.value ? "text-ink" : "text-ink-muted hover:text-ink")}>
+          {t.label}
+          {tab === t.value && <motion.span layoutId="lab-tab" className="absolute inset-x-2 bottom-0 h-[2.5px] rounded-full bg-gradient-to-r from-gold-400 to-gold-600" />}
+        </button>
+      ))}
     </div>
   );
 }
@@ -548,17 +560,24 @@ export function Lab() {
   const needsMol = ["molecule", "dissolution", "be", "safety", "crystal", "twin"].includes(tab);
   return (
     <div className="space-y-5">
-      <Card className="flex flex-wrap items-center gap-3 p-4">
-        <Atom size={18} className="text-gold-600" />
-        {needsMol
-          ? <SearchSelect className="w-80" size="md" value={key} onChange={setKey} searchPlaceholder="Search a molecule…"
-              options={mols.map((m: any) => ({ value: m.key, label: m.name, sub: [m.alerts ? `${m.alerts} NSQ alerts` : "no NSQ alerts", m.has_structure ? null : "no structure yet"].filter(Boolean).join(" · "),
-                group: m.alerts ? "Seen in CDSCO alerts" : "Tracked molecules" }))} />
-          : <span className="text-xs text-ink-muted">Generic process model: not tied to a molecule</span>}
-        <Segmented value={tab} onChange={setTab} options={[{ value: "molecule", label: "Molecule" }, { value: "dissolution", label: "Dissolution" }, { value: "be", label: "Bioequivalence" }, { value: "safety", label: "Safety" }, { value: "crystal", label: "Crystallisation" }, { value: "compaction", label: "Compaction" }, { value: "fluidbed", label: "Fluid bed" }, { value: "twin", label: "Failure tree" }]} />
-        <span className="ml-auto flex items-center gap-2 text-[11px] text-ink-muted"><Beaker size={13} />{withStructure} of {plural(mols.length, "molecule")} have structures
-          <span className="hidden items-center gap-1 lg:flex"><Pill kind="source" /> cited <Pill kind="estimate" /> published method <Pill kind="assumption" /> replace me</span></span>
-      </Card>
+      <div className="sticky top-16 z-10 -mx-1 rounded-2xl bg-white/90 px-5 pt-3.5 shadow-card ring-1 ring-inset ring-line backdrop-blur-md">
+        <div className="flex flex-wrap items-center gap-4 pb-3">
+          <Atom size={20} className="shrink-0 text-gold-600" />
+          {needsMol
+            ? <SearchSelect className="w-64" size="sm" value={key} onChange={setKey} searchPlaceholder="Search a molecule…"
+                options={mols.map((m: any) => ({ value: m.key, label: m.name, sub: [m.alerts ? `${m.alerts} NSQ alerts` : "no NSQ alerts", m.has_structure ? null : "no structure yet"].filter(Boolean).join(" · "),
+                  group: m.alerts ? "Seen in CDSCO alerts" : "Tracked molecules" }))} />
+            : <span className="text-xs text-ink-muted">Generic process model: not tied to a molecule</span>}
+          {needsMol && prof.data && <><div className="hidden h-9 w-px bg-line md:block" /><Identity p={prof.data} /></>}
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-x-4 border-t border-line">
+          <TabBar tab={tab} setTab={setTab} />
+          <span className="hidden items-center gap-3 pb-2.5 text-[10px] text-ink-muted xl:flex">
+            {(["source", "estimate", "assumption"] as const).map((k) => <span key={k} className="flex items-center gap-1"><span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[k])} />{k === "source" ? "cited" : k === "estimate" ? "published method" : "replace me"}</span>)}
+            <span className="flex items-center gap-1"><Beaker size={11} />{withStructure}/{mols.length} with structures</span>
+          </span>
+        </div>
+      </div>
       {needsMol && current && !current.has_structure && (
         <Card className="flex flex-wrap items-center gap-4 p-6">
           <div className="min-w-0 flex-1"><div className="font-display text-base font-bold">{current.name} has no chemical structure yet</div>
@@ -568,7 +587,6 @@ export function Lab() {
       )}
       {needsMol && current?.has_structure && (prof.error ? <ErrorNote error={prof.error} /> : !prof.data ? <Skeleton className="h-96" /> : (
         <>
-          <MoleculeHero p={prof.data} />
           {tab === "molecule" && <MoleculeTab p={prof.data} />}
           {tab === "dissolution" && <Dissolution mkey={key} p={prof.data} />}
           {tab === "be" && <Bioequivalence mkey={key} p={prof.data} />}
