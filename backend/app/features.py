@@ -70,6 +70,9 @@ REGISTRY: tuple[Feature, ...] = (
             ("/api/lab", "/api/lab/structure", "/api/process")),
     Feature("reactions", "Reaction lab", "Science", "Batch-reactor kinetics, yield map, thermal safety",
             ("/api/lab/reactions", "/api/lab/engines")),
+    Feature("plant-data", "Plant data", "Science", "Your batch, equipment and SCADA data, with the failure tree run on it",
+            ("/api/plant-data",), scope="own", base=True,
+            notes="Files and machine streams are private to the organisation that uploads them."),
 )
 
 BY_ID = {f.id: f for f in REGISTRY}

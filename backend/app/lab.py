@@ -678,11 +678,12 @@ def twin_scenarios(nominal_run: dict[str, Any], records: dict[str, Any]) -> list
 
     out = []
     withheld = nominal_run.get("withheld") or {}
+    base = {p["id"]: p.get("base", p["nominal"]) for u in nominal_run.get("unit_ops", []) for p in u["params"]}  # a plant's own baseline when calibrated
     for c in twin.CQAS:
         cid = c["id"]
         inj = (nominal_run.get("injections") or {}).get(cid) or {"kind": "none", "steps": []}
         steps = [[{**st, "label": twin.P_BY_ID[st["param"]].label, "unit": twin.P_BY_ID[st["param"]].unit,
-                   "unit_op": twin.P_BY_ID[st["param"]].unit_op, "nominal": twin.P_BY_ID[st["param"]].nominal,
+                   "unit_op": twin.P_BY_ID[st["param"]].unit_op, "nominal": base.get(st["param"], twin.P_BY_ID[st["param"]].nominal),
                    "basis": twin.P_BY_ID[st["param"]].basis} for st in step] for step in inj["steps"]]
         ev = records["tests"][cid]
         out.append({"test": cid, "label": c["label"], "records": ev["cdsco"] + ev["recalls"], **ev,
@@ -691,6 +692,24 @@ def twin_scenarios(nominal_run: dict[str, Any], records: dict[str, Any]) -> list
                     "not_modelled": twin.NOT_MODELLED.get(cid, [])})
     out.sort(key=lambda r: (-r["records"], not r["injections"]))
     return out
+
+
+def twin_molecule(key: str, dose_mg: Optional[float] = None) -> tuple[dict[str, Any], Any, dict[str, float], Optional[dict[str, str]], dict[str, Any]]:
+    """The twin's inputs for a molecule: (profile, chem.process_twin.Molecule, formulation from the FDA method,
+    tests withheld for want of data, the dissolution set-up)."""
+    from chem import process_twin as twin
+
+    prof = profile(key)
+    if prof is None:
+        raise KeyError(key)
+    diss = dissolution(key, {"dose_mg": dose_mg} if dose_mg else {})
+    meth = diss.get("fda_method") or {}
+    form = {"rpm": float(meth["rpm"])} if meth.get("rpm") else {}
+    mol = twin.Molecule(name=prof["name"], dose_mg=float(diss["inputs"]["dose_mg"]["value"]), cs37_mg_ml=float(diss["solubility_mg_ml"]),
+                        diff_cm2_s=float(prof["derived"]["diffusivity_cm2_s"]), volume_ml=float(meth.get("volume_ml") or 900.0),
+                        cdsco_categories=(prof.get("nsq") or {}).get("categories") or [])
+    withheld = {"dissolution": "; ".join(diss["withheld"])} if diss.get("withheld") else None
+    return prof, mol, form, withheld, diss
 
 
 def process_twin(key: str, p: dict[str, Any]) -> dict[str, Any]:
@@ -702,33 +721,22 @@ def process_twin(key: str, p: dict[str, Any]) -> dict[str, Any]:
 
     from chem import process_twin as twin
 
-    prof = profile(key)
-    if prof is None:
-        raise KeyError(key)
-    d = prof["derived"]
     overrides = {k: v for k, v in (p.get("overrides") or {}).items() if v not in (None, "")}
     specs = {k: float(v) for k, v in (p.get("specs") or {}).items() if v not in (None, "")}
     form = {k: float(v) for k, v in (p.get("formulation") or {}).items() if v not in (None, "")}
-    ck = _json.dumps([key, overrides, specs, form, p.get("dose_mg")], sort_keys=True, default=str)
+    baseline = {k: float(v) for k, v in (p.get("baseline") or {}).items() if v not in (None, "")}
+    nor = {k: [float(v[0]), float(v[1])] for k, v in (p.get("nor") or {}).items() if v and len(v) == 2}
+    ck = _json.dumps([key, overrides, specs, form, p.get("dose_mg"), baseline, nor], sort_keys=True, default=str)
     if ck in _twin_cache:
         return _twin_cache[ck]
-    diss = dissolution(key, {"dose_mg": p.get("dose_mg")} if p.get("dose_mg") else {})
-    dose = float(diss["inputs"]["dose_mg"]["value"])
-    cs = float(diss["solubility_mg_ml"])
-    meth = diss.get("fda_method")
-    if meth and meth.get("rpm"):
-        form.setdefault("rpm", float(meth["rpm"]))
-    if meth and meth.get("volume_ml"):
-        vol = float(meth["volume_ml"])
-    else:
-        vol = 900.0
-    nsq = prof.get("nsq") or {}
+    prof, mol, mform, withheld, diss = twin_molecule(key, p.get("dose_mg"))
+    form = {**mform, **form}
+    d = prof["derived"]
+    dose, cs = mol.dose_mg, mol.cs37_mg_ml
     recs = twin_records(key)
-    mol = twin.Molecule(name=prof["name"], dose_mg=dose, cs37_mg_ml=cs, diff_cm2_s=float(d["diffusivity_cm2_s"]), volume_ml=vol,
-                        cdsco_categories=nsq.get("categories") or [], alerts=recs["tablet_notices"],
-                        test_alerts={k: v["cdsco"] for k, v in recs["tests"].items()})
-    withheld = {"dissolution": "; ".join(diss["withheld"])} if diss.get("withheld") else None
-    out = twin.run(mol, overrides, form, specs, withheld=withheld)
+    mol.alerts = recs["tablet_notices"]
+    mol.test_alerts = {k: v["cdsco"] for k, v in recs["tests"].items()}
+    out = twin.run(mol, overrides, form, specs, withheld=withheld, baseline=baseline or None, nor=nor or None)
     nominal_run = out if not out["injected"] else process_twin(key, {**p, "overrides": {}})
     out["scenarios"] = twin_scenarios(nominal_run, recs) if not out["injected"] else nominal_run["scenarios"]
     out["records"] = {k: v for k, v in recs.items() if k != "tests"}

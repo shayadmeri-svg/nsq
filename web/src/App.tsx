@@ -74,6 +74,7 @@ export default function App() {
         <Route path="/o/:slug/opportunities/:molecule" element={<Opportunities />} />
         <Route path="/o/:slug/eu" element={<EuExport />} />
         <Route path="/o/:slug/pharmacopoeia" element={<Pharmacopoeia />} />
+        <Route path="/o/:slug/batches" element={<Navigate to="../playground/plant-data" relative="path" replace />} />
         <Route path="/o/:slug/eu/:molecule" element={<EuExport />} />
         <Route path="/o/:slug/team" element={<Team />} />
         <Route path="/o/:slug/access" element={<FeatureAccess />} />

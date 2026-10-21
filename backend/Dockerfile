@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY core/ core/
 COPY redis-loader/ redis-loader/
+COPY edge-agent/ edge-agent/
 COPY backend/app/ backend/app/
 
 ENV CORE_DIR=/app/core \

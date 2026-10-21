@@ -1,4 +1,4 @@
-import { Compass, Cpu, Factory, FlaskRound, FileCheck2, Microscope, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
+import { Compass, Cpu, Radio, Factory, FlaskRound, FileCheck2, Microscope, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -11,6 +11,7 @@ import { InsightsTab } from "./Insights";
 import { Investigate } from "./Investigate";
 import { Lab } from "./Lab";
 import { Medicines } from "./Medicines";
+import { PlantData } from "./PlantData";
 import { Plants } from "./Plants";
 import { ReactionLab } from "./ReactionLab";
 import { RegulatoryMap } from "./RegulatoryMap";
@@ -31,6 +32,7 @@ export const TABS = [
   { id: "health", short: "Health", label: "Health & trade", icon: HeartPulse, hint: "Disease burden by district (NFHS), outbreaks (IDSP), pharma trade (UN Comtrade)" },
   { id: "medicines", short: "Medicines", label: "Medicines", icon: Pill, hint: "Add a medicine: composition from open databases, gaps" },
   { id: "process", short: "Lab", label: "Lab", icon: Cpu, hint: "Structure-based molecule and process models" },
+  { id: "plant-data", short: "Plant data", label: "Plant data", icon: Radio, hint: "Your batch records and machine streams (CSV, Excel, SCADA): control charts, batch diagnosis, live forecast and the failure tree on your data" },
   { id: "reactions", short: "Reactions", label: "Reaction lab", icon: FlaskRound, hint: "Run a synthesis step: kinetics, yield map, operating window and thermal safety — anchored to published routes" },
 ] as const;
 
@@ -57,7 +59,7 @@ export function Playground({ base }: { base?: string }) {
           <p className="truncate text-xs text-ink-muted">{cur.hint}</p>
         </div>
         {/* every tool the same size, so switching never moves the strip */}
-        <div className="scrollbar-thin flex w-fit max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1.5 shadow-card ring-1 ring-inset ring-line">
+        <div className="no-scrollbar flex w-fit max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1.5 shadow-card ring-1 ring-inset ring-line">
           {tabs.map((t) => {
             const on = tab === t.id;
             return (
@@ -86,6 +88,7 @@ export function Playground({ base }: { base?: string }) {
         {tab === "health" && <Signals />}
         {tab === "medicines" && <Medicines />}
         {tab === "process" && <Lab />}
+        {tab === "plant-data" && <PlantData />}
         {tab === "reactions" && <ReactionLab />}
       </motion.div>
     </>

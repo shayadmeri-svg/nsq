@@ -20,6 +20,8 @@
   .font-display.font-extrabold { font-weight: 700; }
   .num { font-variant-numeric: tabular-nums; }
   .gold-rule { background: linear-gradient(90deg, #06a7c4, #10b996 55%, rgba(16,185,150,0)); height: 2px; border-radius: 2px; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
   .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { @apply rounded-full bg-slate-300/60; }
 }

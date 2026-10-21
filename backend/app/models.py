@@ -224,3 +224,42 @@ class OrgFeatures(Base):
     visibility: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=func.now())
     updated_by: Mapped[str] = mapped_column(String(254), default="")
+
+
+class BatchDataset(Base):
+    """A file of an organisation's own batch records (equipment log, IPQC, QC results…), as uploaded and as read
+    into one row per batch (chem.batch_data). Private to the organisation."""
+
+    __tablename__ = "batch_datasets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    format: Mapped[str] = mapped_column(String(40))
+    filename: Mapped[str] = mapped_column(String(240), default="")
+    columns: Mapped[list[str]] = mapped_column(JSON, default=list)
+    mapping: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    raw: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    batches: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    molecule_key: Mapped[str] = mapped_column(String(160), default="")
+    uploaded_by: Mapped[str] = mapped_column(String(254), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlantConnector(Base):
+    """An edge agent at a plant that streams machine readings (OPC UA / Modbus) into an organisation's plant data.
+    Authenticates with a token shown once at creation; only its SHA-256 is kept."""
+
+    __tablename__ = "plant_connectors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_hint: Mapped[str] = mapped_column(String(16), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # {machine: {format, ts, batch_no, values}}
+    agent: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(String(254), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -7,6 +7,7 @@ import { Badge, Button, Card, CardHeader, ErrorNote, Segmented, Skeleton, Search
 import { useToast } from "../../components/ui/toast";
 import { api, post } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { plural } from "../../lib/format";
 import { ProcessTwin } from "./ProcessTwin";
 
 // Every number on this page carries where it came from:
@@ -79,7 +80,7 @@ function MoleculeTab({ p }: { p: any }) {
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
         <Card className="p-4">
-          <div className="flex items-start justify-between"><div><div className="label">Structure</div><div className="mt-0.5 text-xs text-ink-muted">{d.hbd} donors · {d.hba} acceptors · {d.rotatable_bonds} rotatable bonds</div></div>
+          <div className="flex items-start justify-between"><div><div className="label">Structure</div><div className="mt-0.5 text-xs text-ink-muted">{plural(d.hbd, "donor")} · {plural(d.hba, "acceptor")} · {plural(d.rotatable_bonds, "rotatable bond")}</div></div>
             {p.url ? <a href={p.url} target="_blank" rel="noreferrer"><Badge tone="sky">PubChem CID {p.cid}</Badge></a> : <Badge tone="amber">seed structure</Badge>}</div>
           <div className="mt-2 flex justify-center" dangerouslySetInnerHTML={{ __html: p.svg }} />
           <code className="mt-2 block break-all rounded bg-slate-50 p-2 text-[10px] text-ink-soft">{p.smiles}</code>
@@ -104,7 +105,7 @@ function MoleculeTab({ p }: { p: any }) {
             <div className="flex flex-wrap gap-4"><span><b className="text-base">{p.nsq.alerts}</b> alerts</span><span><b className="text-base">{p.nsq.dissolution_pct}%</b> dissolution failures</span>{p.nsq.max_strength_mg && <span>highest tablet/capsule strength seen <b>{p.nsq.max_strength_mg} mg</b></span>}</div>
             <div className="mt-2 flex flex-wrap gap-1.5">{p.nsq.categories.map((c: any) => <Badge key={c.name}>{c.name} · {c.count}</Badge>)}</div>
             <p className="mt-2 text-ink-muted">{p.bcs.reason}</p>
-            <p className="mt-1 text-ink-muted">Drug-likeness: {d.lipinski_violations === 0 ? "no Lipinski flags" : `${d.lipinski_violations} Lipinski flags`} (with the log P above) · {d.rotatable_bonds} rotatable bonds · Fsp3 {d.fraction_csp3}</p>
+            <p className="mt-1 text-ink-muted">Drug-likeness: {d.lipinski_violations === 0 ? "no Lipinski flags" : `${plural(d.lipinski_violations, "Lipinski flag")}`} (with the log P above) · {d.rotatable_bonds} rotatable bonds · Fsp3 {d.fraction_csp3}</p>
           </Card>
         </div>
       </div>
@@ -496,19 +497,19 @@ function Fact({ k, v, kind, title }: { k: string; v: React.ReactNode; kind?: str
 }
 
 // The molecule's identity and key facts in one line: stays put while the models below change
-function Identity({ p }: { p: any }) {
+function Identity({ p, compact }: { p: any; compact?: boolean }) {
   const d = p.descriptors, s = p.solubility, pv = p.provenance, n = p.nsq ?? {};
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-6 gap-y-2">
       <div className="min-w-0">
         <div className="flex items-baseline gap-3">
-          <h2 className="truncate font-display text-[26px] font-semibold leading-none tracking-tight">{p.name}</h2>
+          <h2 className={cn("truncate font-display font-semibold leading-none tracking-tight transition-all duration-300", compact ? "text-[18px]" : "text-[26px]")}>{p.name}</h2>
           <span className="font-display text-[15px] text-ink-soft"><Formula f={d.formula} /></span>
         </div>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-muted"><span>{d.mw} g/mol</span>
+        <div className={cn("mt-1 items-center gap-2 text-[11px] text-ink-muted", compact ? "hidden" : "flex")}><span>{d.mw} g/mol</span>
           {p.url && <a href={p.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-medium text-gold-600 hover:text-gold-700">PubChem CID {p.cid} <ExternalLink size={10} /></a>}</div>
       </div>
-      <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1.5">
+      <div className={cn("ml-auto flex-wrap items-center gap-x-5 gap-y-1.5", compact ? "hidden lg:flex" : "flex")}>
         <Fact k="notices" v={n.alerts ?? 0} kind="source" title="CDSCO NSQ notices naming this molecule" />
         {p.derived.dose_mg && <Fact k="max strength" v={`${p.derived.dose_mg} mg`} kind={pv.dose.kind} title={pv.dose.label} />}
         <Fact k="log P" v={fmt(s.logp, 2)} kind={pv.log_p.kind} title={pv.log_p.label} />
@@ -522,7 +523,7 @@ function Identity({ p }: { p: any }) {
 
 function TabBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   return (
-    <div className="scrollbar-thin flex gap-1 overflow-x-auto">
+    <div className="no-scrollbar flex gap-1 overflow-x-auto">
       {TABS.map((t) => (
         <button key={t.value} onClick={() => setTab(t.value)}
           className={cn("relative shrink-0 px-3 pb-2.5 pt-2 text-[13px] font-semibold transition", tab === t.value ? "text-ink" : "text-ink-muted hover:text-ink")}>
@@ -538,6 +539,15 @@ export function Lab() {
   const list = useQuery({ queryKey: ["lab-molecules"], queryFn: () => api<any>("/api/lab/molecules"), staleTime: 300_000 });
   const [key, setKey] = useState(() => new URLSearchParams(window.location.search).get("m") ?? "");
   const [tab, setTab] = useState<Tab>("molecule");
+  // once the page scrolls, the sticky header folds to one slim line (tabs + molecule name)
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    // hysteresis: folding changes the header's height, which moves the page, so fold and unfold at different points
+    const on = () => setCompact((c) => (c ? window.scrollY > 140 : window.scrollY > 280));
+    on();
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
   const mols = useMemo(() => [...(list.data?.molecules ?? [])].sort((a: any, b: any) => Number(b.has_structure) - Number(a.has_structure)), [list.data]);
   const withStructure = mols.filter((m: any) => m.has_structure).length;
   useEffect(() => { if (!key && mols.length) setKey(mols[0].key); }, [mols, key]);
@@ -568,14 +578,14 @@ export function Lab() {
             <span className="flex items-center gap-1"><Beaker size={11} />{withStructure}/{mols.length} with structures</span>
           </span>
         </div>
-        <div className="flex min-h-[64px] flex-wrap items-center gap-4 py-3">
-          <Atom size={20} className="shrink-0 text-gold-600" />
+        <div className={cn("flex flex-wrap items-center gap-4 transition-all duration-300", compact ? "min-h-[46px] py-1.5" : "min-h-[64px] py-3")}>
+          <Atom size={compact ? 16 : 20} className="shrink-0 text-gold-600" />
           {needsMol
-            ? <SearchSelect className="w-64" size="sm" value={key} onChange={setKey} searchPlaceholder="Search a molecule…"
+            ? <SearchSelect className={cn("w-64", compact && "hidden")} size="sm" value={key} onChange={setKey} searchPlaceholder="Search a molecule…"
                 options={mols.map((m: any) => ({ value: m.key, label: m.name, sub: [m.alerts ? `${m.alerts} NSQ alerts` : "no NSQ alerts", m.has_structure ? null : "no structure yet"].filter(Boolean).join(" · "),
                   group: m.alerts ? "Seen in CDSCO alerts" : "Tracked molecules" }))} />
             : <span className="text-xs text-ink-muted">Generic process model: not tied to a molecule</span>}
-          {needsMol && prof.data && <><div className="hidden h-9 w-px bg-line md:block" /><Identity p={prof.data} /></>}
+          {needsMol && prof.data && <>{!compact && <div className="hidden h-9 w-px bg-line md:block" />}<Identity p={prof.data} compact={compact} /></>}
         </div>
       </div>
       {needsMol && current && !current.has_structure && (

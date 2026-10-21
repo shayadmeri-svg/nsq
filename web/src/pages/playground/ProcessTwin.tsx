@@ -2,8 +2,9 @@
 // (batch → quality test → process parameters ranked by Morris sensitivity, each with its tipping point).
 // Server: core/chem/process_twin.py via POST /api/lab/molecule/{key}/process-twin.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ExternalLink, FileText, FlaskConical, RotateCcw, Zap } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, FileText, FlaskConical, Radio, RotateCcw, UploadCloud, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, Button, Card, CardHeader, ErrorNote, Skeleton } from "../../components/ui";
 import { post } from "../../lib/api";
@@ -67,7 +68,7 @@ function Scenarios({ d, active, onInject }: { d: any; active: string | null; onI
                 {s.withheld && <div className="rounded-lg bg-slate-100 p-2 text-[11px] text-ink-muted">Not assessable by the model: {s.withheld}</div>}
                 {s.kind === "none" && (
                   <div className="rounded-lg bg-amber-50 p-2 text-[11px] text-ink-soft">
-                    <b className="text-amber-800">The model does not reproduce this failure.</b> With {s.worst_params.join(", ")} all at their worse ends it still reaches {fmt(s.worst)} (limit {limitText(s.test, d.specs)}).
+                    <b className="text-amber-800">The model does not reproduce this failure.</b> With {s.worst_params.map((w: string) => (/^API/.test(w) ? w : w[0].toLowerCase() + w.slice(1))).join(", ")} all at their worse ends it still reaches {fmt(s.worst)} (limit {limitText(s.test, d.specs)}).
                     {s.not_modelled.length > 0 && <> Not in this twin: {s.not_modelled.join(", ")}.</>}
                   </div>)}
                 {s.injections.map((step: any[], i: number) => {
@@ -132,7 +133,7 @@ function ParamEditor({ op, overrides, setOverride }: { op: any; overrides: Recor
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
       {op.params.map((p: any) => {
-        const v = overrides[p.id] ?? p.nominal;
+        const v = overrides[p.id] ?? p.base ?? p.nominal;
         const out = v < p.lo || v > p.hi;
         return (
           <label key={p.id} className={cn("block rounded-xl p-3 text-xs ring-1 ring-inset", p.id in overrides ? "bg-rose-50/60 ring-rose-200" : "bg-white ring-line")} title={p.note}>
@@ -236,15 +237,19 @@ function Tree({ d, onPick, picked }: { d: any; onPick: (unitOp: string, key: str
   );
 }
 
-export function ProcessTwin({ mkey }: { mkey: string }) {
+// `endpoint`: an organisation's calibrated twin (POST {molecule_key, overrides}); `inject`: settings to replay
+// (one recorded batch), applied when they change.
+export function ProcessTwin({ mkey, endpoint, inject }: { mkey: string; endpoint?: string; inject?: { id: string; label: string; set: Record<string, number> } | null }) {
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [active, setActive] = useState<string | null>("compression");
   const [picked, setPicked] = useState<string | null>(null);
   const [scenario, setScenario] = useState<string | null>(null);
   useEffect(() => { setOverrides({}); setScenario(null); setPicked(null); }, [mkey]);
+  useEffect(() => { if (inject) { setOverrides(inject.set); setScenario(inject.id); } }, [inject]);
   const [debounced, setDebounced] = useState(overrides);
   useEffect(() => { const t = setTimeout(() => setDebounced(overrides), 450); return () => clearTimeout(t); }, [overrides]);
-  const q = useQuery({ queryKey: ["twin", mkey, debounced], queryFn: () => post<any>(`/api/lab/molecule/${mkey}/process-twin`, { overrides: debounced }),
+  const q = useQuery({ queryKey: ["twin", endpoint ?? "lab", mkey, debounced],
+    queryFn: () => endpoint ? post<any>(endpoint, { molecule_key: mkey, overrides: debounced }) : post<any>(`/api/lab/molecule/${mkey}/process-twin`, { overrides: debounced }),
     placeholderData: keepPreviousData, retry: false, staleTime: 5 * 60_000 });
   const d = q.data;
   const setOverride = (id: string, v: number | null) => { setScenario(null); setOverrides((o) => { const n = { ...o }; if (v == null) delete n[id]; else n[id] = v; return n; }); };
@@ -259,9 +264,18 @@ export function ProcessTwin({ mkey }: { mkey: string }) {
     return { hot, warm };
   }, [d]);
   const op = d?.unit_ops.find((u: any) => u.id === active);
+  const loc = useLocation();
+  const pg = loc.pathname.includes("/playground") ? loc.pathname.split("/playground")[0] + "/playground" : "/playground";
+  const feed = !endpoint && (
+    <div className="flex items-center gap-1.5">
+      <span className="hidden text-[11px] text-ink-muted sm:inline">Run it on your data:</span>
+      <Link to={`${pg}/plant-data?m=${mkey}`} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset ring-line hover:bg-gold-50 hover:ring-gold-300"><UploadCloud size={12} /> CSV</Link>
+      <Link to={`${pg}/plant-data?m=${mkey}&src=scada`} className="inline-flex items-center gap-1 rounded-lg bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-night-700"><Radio size={12} /> SCADA</Link>
+    </div>
+  );
   return (
     <Card>
-      <CardHeader icon={<FlaskConical size={16} />} title="Process twin and failure tree"
+      <CardHeader icon={<FlaskConical size={16} />} title="Process twin and failure tree" action={feed || undefined}
         subtitle="A wet-granulated tablet of this molecule, unit operation by unit operation: inject an error, watch it travel to the quality tests, and see which parameters tip each test" />
       <div className="space-y-5 p-5">
         {q.error && <ErrorNote error={q.error} />}
@@ -273,12 +287,22 @@ export function ProcessTwin({ mkey }: { mkey: string }) {
               <span>· {d.molecule.medium}</span>
               {q.isFetching && <span className="text-brand-700">· recalculating…</span>}
             </div>
+            {d.plant && (
+              <div className="rounded-xl bg-gradient-to-r from-gold-50 to-brand-50 px-4 py-3 text-xs text-ink-soft ring-1 ring-inset ring-gold-200">
+                <b className="text-ink">Calibrated to your {plural(d.plant.batches, "batch", "batches")}.</b>{" "}
+                {Object.keys(d.plant.baseline).length
+                  ? <>{plural(Object.keys(d.plant.baseline).length, "setting")} start at your median ({Object.keys(d.plant.baseline).map((k) => d.unit_ops.flatMap((u: any) => u.params).find((p: any) => p.id === k)?.label ?? k).join(", ")}); </>
+                  : "None of your files holds a process setting the twin uses yet, so it runs on generic defaults; "}
+                {Object.keys(d.plant.nor).length > 0 && <>{plural(Object.keys(d.plant.nor).length, "range")} {Object.keys(d.plant.nor).length === 1 ? "is" : "are"} your own spread (mean ± 3 SD), so failure probabilities and tipping margins reflect how your process actually varies.</>}
+                {inject && scenario === inject.id && <div className="mt-1 font-semibold text-gold-700">Replaying {inject.label}: its recorded settings are applied below.</div>}
+              </div>
+            )}
 
             <Scenarios d={d} active={scenario} onInject={(id, set, u) => {
               if (scenario === id) { setScenario(null); setOverrides({}); return; }
               setScenario(id); setOverrides(set); setActive(u);
             }} />
-            {Object.keys(overrides).length > 0 && <div><Button size="sm" variant="ghost" onClick={() => { setOverrides({}); setScenario(null); }}><RotateCcw size={13} /> Back to the nominal process</Button></div>}
+            {Object.keys(overrides).length > 0 && <div><Button size="sm" variant="ghost" onClick={() => { setOverrides({}); setScenario(null); }}><RotateCcw size={13} /> {d.plant ? "Back to your baseline" : "Back to the nominal process"}</Button></div>}
 
             <Cycle ops={d.unit_ops} active={active} hot={hot} warm={warm} onPick={(id) => setActive(active === id ? null : id)} />
             {op && op.params.length > 0 && <ParamEditor op={op} overrides={overrides} setOverride={setOverride} />}

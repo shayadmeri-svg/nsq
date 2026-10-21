@@ -26,7 +26,8 @@ tree ranks where to look first; it does not diagnose a particular batch.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Optional
 
 import numpy as np
@@ -79,6 +80,31 @@ PARAMS: list[Param] = [
           "Die-fill variation"),
 ]
 P_BY_ID = {p.id: p for p in PARAMS}
+
+# The parameter set the analyses use: PARAMS, or a plant's own (its observed ranges as the normal operating range,
+# chem.batch_data) for the duration of one run().
+_ACTIVE: ContextVar[Optional[list[Param]]] = ContextVar("twin_params", default=None)
+
+
+def _ps() -> list[Param]:
+    return _ACTIVE.get() or PARAMS
+
+
+def _pb() -> dict[str, Param]:
+    return {p.id: p for p in _ps()}
+
+
+def plant_params(nor: Optional[dict[str, Any]]) -> list[Param]:
+    """PARAMS with a plant's normal operating ranges ({param: [lo, hi]}); each sweep widened to cover them."""
+    out = []
+    for p in PARAMS:
+        r = (nor or {}).get(p.id)
+        if r and len(r) == 2 and r[1] > r[0]:
+            lo, hi = float(r[0]), float(r[1])
+            out.append(replace(p, lo=lo, hi=hi, sweep=(min(p.sweep[0], lo), max(p.sweep[1], hi))))
+        else:
+            out.append(p)
+    return out
 
 # Formulation / equipment constants (illustrative defaults — replace with the product's own)
 FORMULATION = {
@@ -266,7 +292,7 @@ def tipping_points(mol: Molecule, x: dict[str, float], form=None, specs=None, n:
     over the parameter's search range and linear interpolation between the bracketing points."""
     S = {**SPECS, **(specs or {})}
     out: dict[str, dict[str, Any]] = {}
-    for p in PARAMS:
+    for p in _ps():
         cqas = [c for c, ps in EDGES.items() if p.id in ps]
         grid = np.linspace(p.sweep[0], p.sweep[1], n)
         vals = {c: [] for c in cqas}
@@ -303,9 +329,9 @@ def morris(mol: Molecule, x: dict[str, float], form=None, specs=None, r: int = 6
     from SALib.analyze import morris as ma
     from SALib.sample import morris as ms
 
-    names = [p.id for p in PARAMS]
+    names = [p.id for p in _ps()]
     bounds = []
-    for p in PARAMS:
+    for p in _ps():
         c = float(x.get(p.id, p.nominal))
         half = (p.hi - p.lo) / 2
         bounds.append([c - half, c + half])
@@ -333,7 +359,7 @@ def monte_carlo(mol: Molecule, x: dict[str, float], form=None, specs=None, n: in
     fails = {c["id"]: 0 for c in CQAS}
     any_fail = 0
     for _ in range(n):
-        xs = {p.id: float(rng.normal(x.get(p.id, p.nominal), (p.hi - p.lo) / 6)) for p in PARAMS}
+        xs = {p.id: float(rng.normal(x.get(p.id, p.nominal), (p.hi - p.lo) / 6)) for p in _ps()}
         xs["weight_rsd_pct"] = max(xs["weight_rsd_pct"], 0.05)
         xs["api_d50_um"] = max(xs["api_d50_um"], 1.0)
         xs["blend_min"] = max(xs["blend_min"], 0.1)
@@ -374,7 +400,7 @@ def injections(mol: Molecule, x: dict[str, float], sens: dict[str, list[dict[str
         ranked = [rw for rw in sens.get(cid, []) if rw["mu_star"] > 0]
         single = []
         for rw in ranked:
-            p = P_BY_ID[rw["param"]]
+            p = _pb()[rw["param"]]
             tp = (tips.get(p.id) or {}).get(cid, {}).get("nearest")
             if not tp:
                 continue
@@ -405,16 +431,16 @@ def injections(mol: Molecule, x: dict[str, float], sens: dict[str, list[dict[str
             t = (tips.get(pid) or {}).get(cid) or {}
             if t.get("values") and t["values"][0] != t["values"][-1]:
                 ends = (t["values"][0], t["values"][-1])
-                worse[pid] = P_BY_ID[pid].sweep[0] if ((ends[0] < ends[1]) == lo_bad) else P_BY_ID[pid].sweep[1]
+                worse[pid] = _pb()[pid].sweep[0] if ((ends[0] < ends[1]) == lo_bad) else _pb()[pid].sweep[1]
         found, last = None, None
         for k in sorted({min(2, len(worse)), min(3, len(worse)), len(worse)} - {0, 1}):
             ids = list(worse)[:k]
             for f in np.linspace(0, 1, n + 1)[1:]:
-                xs = {**x, **{i: x.get(i, P_BY_ID[i].nominal) + f * (worse[i] - x.get(i, P_BY_ID[i].nominal)) for i in ids}}
+                xs = {**x, **{i: x.get(i, _pb()[i].nominal) + f * (worse[i] - x.get(i, _pb()[i].nominal)) for i in ids}}
                 v = evaluate(mol, xs, form, specs)["values"][cid]
                 last = v
                 if _fails(cid, v, S):
-                    found = [{"param": i, "value": float(f"{xs[i]:.3g}"), "direction": "above" if worse[i] > x.get(i, P_BY_ID[i].nominal) else "below",
+                    found = [{"param": i, "value": float(f"{xs[i]:.3g}"), "direction": "above" if worse[i] > x.get(i, _pb()[i].nominal) else "below",
                               "tipping": None, "margin_nor": None} for i in ids]
                     break
             if found:
@@ -441,7 +467,7 @@ def tree(mol: Molecule, x: dict[str, float], nominal: dict[str, Any], mc: dict[s
         kids = []
         top = max((rw["mu_star"] for rw in sens.get(cid, [])), default=0) or 1.0
         for rw in sens.get(cid, []):
-            p = P_BY_ID[rw["param"]]
+            p = _pb()[rw["param"]]
             tp = tips.get(p.id, {}).get(cid, {})
             kids.append({"id": f"{cid}:{p.id}", "kind": "param", "param": p.id, "label": p.label, "unit_op": p.unit_op, "unit": p.unit,
                          "current": float(x.get(p.id, p.nominal)), "nor": [p.lo, p.hi], "basis": p.basis,
@@ -458,19 +484,34 @@ def tree(mol: Molecule, x: dict[str, float], nominal: dict[str, Any], mc: dict[s
 
 
 def run(mol: Molecule, overrides: Optional[dict[str, float]] = None, form=None, specs=None, analyses: bool = True,
-        withheld: Optional[dict[str, str]] = None) -> dict[str, Any]:
+        withheld: Optional[dict[str, str]] = None, baseline: Optional[dict[str, float]] = None,
+        nor: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """`withheld`: tests the model cannot judge for this molecule (e.g. dissolution when the solubility at the medium
-    pH is unknown), with the reason — reported as not assessable instead of pass/fail."""
-    x = {p.id: p.nominal for p in PARAMS}
-    injected = {k: float(v) for k, v in (overrides or {}).items() if k in P_BY_ID and v is not None}
+    pH is unknown), with the reason — reported as not assessable instead of pass/fail.
+    `baseline` / `nor`: a plant's own settings (medians of its batches) and normal operating ranges (its observed
+    spread), replacing the generic nominal values and ranges; `overrides` are then errors injected on top."""
+    token = _ACTIVE.set(plant_params(nor) if nor else None)
+    try:
+        return _run(mol, overrides, form, specs, analyses, withheld, baseline, nor)
+    finally:
+        _ACTIVE.reset(token)
+
+
+def _run(mol, overrides, form, specs, analyses, withheld, baseline, nor) -> dict[str, Any]:
+    base = {p.id: p.nominal for p in _ps()}
+    base.update({k: float(v) for k, v in (baseline or {}).items() if k in _pb() and v is not None})
+    x = dict(base)
+    injected = {k: float(v) for k, v in (overrides or {}).items() if k in _pb() and v is not None}
     x.update(injected)
-    nominal = evaluate(mol, {p.id: p.nominal for p in PARAMS}, form, specs, fast=False)
+    nominal = evaluate(mol, base, form, specs, fast=False)
     current = evaluate(mol, x, form, specs, fast=False) if injected else nominal
     out: dict[str, Any] = {
-        "unit_ops": [{**u, "params": [{**p.__dict__, "sweep": list(p.sweep), "current": x[p.id], "injected": p.id in injected}
-                                      for p in PARAMS if p.unit_op == u["id"]]} for u in UNIT_OPS],
+        "unit_ops": [{**u, "params": [{**p.__dict__, "sweep": list(p.sweep), "current": x[p.id], "injected": p.id in injected,
+                                       "base": base[p.id], "plant": p.id in (baseline or {}) or p.id in (nor or {})}
+                                      for p in _ps() if p.unit_op == u["id"]]} for u in UNIT_OPS],
         "cqas": CQAS, "spec_basis": SPEC_BASIS, "edges": EDGES, "links": LINKS, "specs": {**SPECS, **(specs or {})}, "formulation": {**FORMULATION, **(form or {})},
-        "nominal": nominal, "current": current, "injected": injected,
+        "nominal": nominal, "current": current, "injected": injected, "baseline": {k: v for k, v in base.items() if k in (baseline or {})},
+        "calibrated": {"baseline": sorted((baseline or {}).keys()), "ranges": sorted(k for k, r in (nor or {}).items() if r)},
         "moved": {c["id"]: round(current["values"][c["id"]] - nominal["values"][c["id"]], 3) for c in CQAS},
         "withheld": withheld or {},
     }

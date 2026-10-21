@@ -1,0 +1,56 @@
+# Eurveda edge agent configuration. Copy to config.yaml and fill in your machines.
+# Field names (inlet_c, force_kn, ...) are Eurveda's: see Playground → Plant data → Formats.
+
+eurveda:
+  url: https://YOUR-EURVEDA-HOST          # the address you open Eurveda at
+  token_env: EURVEDA_TOKEN                # the connector token (Plant data → Live → Add a connector), as an environment variable
+  push_every_s: 15
+  buffer: eurveda-buffer.sqlite           # readings wait here while the network is down
+  buffer_max_rows: 500000
+
+machines:
+  # Fluid-bed dryer over OPC UA. Find NodeIds with: python eurveda_agent.py --browse opc.tcp://<ip>:4840
+  - name: FBD-1
+    format: fbd
+    protocol: opcua
+    endpoint: opc.tcp://localhost:4840/eurveda-sim/
+    # security: Basic256Sha256,SignAndEncrypt,agent-cert.der,agent-key.pem   # when the server requires it
+    poll_s: 5
+    batch: {node: "ns=2;s=FBD1.BatchNo"}   # or {file: C:/eurveda/current_batch.txt} or {fixed: B2401}
+    tags:
+      inlet_c: "ns=2;s=FBD1.InletTemp"
+      outlet_c: "ns=2;s=FBD1.OutletTemp"
+      product_c: "ns=2;s=FBD1.ProductTemp"
+      inlet_rh_pct: "ns=2;s=FBD1.InletRH"
+      air_m3_h: "ns=2;s=FBD1.AirFlow"
+      lod_pct: "ns=2;s=FBD1.LOD"
+      elapsed_min: "ns=2;s=FBD1.ElapsedMin"
+
+  # Tablet press over OPC UA
+  - name: PRESS-1
+    format: press
+    protocol: opcua
+    endpoint: opc.tcp://localhost:4840/eurveda-sim/
+    poll_s: 2
+    batch: {node: "ns=2;s=PRESS1.BatchNo"}
+    tags:
+      force_kn: "ns=2;s=PRESS1.ForceKN"
+      precompression_kn: "ns=2;s=PRESS1.PrecompKN"
+      tablet_weight_mg: "ns=2;s=PRESS1.TabletWeightMg"
+      punch_diameter_mm: "ns=2;s=PRESS1.PunchDiameterMm"
+      press_rpm: "ns=2;s=PRESS1.TurretRPM"
+
+  # The same press over Modbus TCP (for machines without OPC UA). Register addresses come from the machine's manual.
+  # - name: PRESS-1
+  #   format: press
+  #   protocol: modbus
+  #   host: 192.168.1.30
+  #   port: 502
+  #   unit: 1
+  #   poll_s: 2
+  #   batch: {register: 20, type: string, length: 8}
+  #   tags:
+  #     force_kn: {register: 0, type: float32}
+  #     precompression_kn: {register: 2, type: float32}
+  #     tablet_weight_mg: {register: 4, type: float32}
+  #     punch_diameter_mm: {register: 6, type: float32}
