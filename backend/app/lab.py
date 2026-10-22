@@ -823,6 +823,9 @@ def crystallize(key: str, p: dict[str, Any]) -> dict[str, Any]:
             + ", the ideal model treats it as miscible with the solvent. Enter an activity coefficient (γ) or a measured "
               "solubility for this solvent, or pick a solvent it is known to crystallise from.")
     notes = []
+    if c_start >= 500:  # possible, but far outside where the ideal model holds: the run is shown, with the reason to doubt it
+        notes.append(f"The curve starts at {c_start:,.0f} g/L: above ~500 g/L the ideal model is unreliable (the solution is "
+                     "mostly solute). Enter γ or a measured solubility before relying on the yield.")
     if curve.get("ideal"):
         notes.append("Ideal solubility (γ = 1): " + (curve.get("unifac_note") or "the solvent is not modelled") +
                      ". Only its molar mass and density enter. Enter an activity coefficient (or measured solubility) for solvent-specific results.")
