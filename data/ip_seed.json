@@ -54,11 +54,6 @@
       300,
       600
      ],
-     "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Abacavir and Lamivudine Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -70,6 +65,7 @@
       "conditions_given": true
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ],
@@ -287,9 +283,9 @@
       25
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Acitretin Capsules)"
+      "lo": 95.0,
+      "hi": 105.0,
+      "text": "Assay 95.0–105.0% of the stated amount (IP 2022, Acitretin Capsules)"
      },
      "dissolution": {
       "apparatus": "basket",
@@ -654,12 +650,8 @@
      "usual_strengths_mg": [
       5
      ],
-     "assay": {
-      "lo": 98.5,
-      "hi": 101.0,
-      "text": "Assay 98.5–101% of the stated amount (IP 2022, Amiloride and Frusemide Tablets)"
-     },
      "review": [
+      "assay",
       "dissolution (no test found)",
       "related_substances (free-text limits; enter by hand)"
      ]
@@ -1369,11 +1361,6 @@
      "usual_strengths_mg": [
       30
      ],
-     "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Aspirin and Caffeine Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -1387,6 +1374,7 @@
       "text": "paddle, 500 mL, a pH 4.5 buffer prepared by dissolving, 50 rpm, 45 min; Q not less than 75% (IP 2022, Aspirin and Caffeine Tablets)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)"
      ]
     },
@@ -1573,9 +1561,9 @@
       "monograph": "Atenolol and Chlorthalidone Tablets"
      },
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Atenolol and Chlorthalidone Tablets)"
+      "lo": 95.0,
+      "hi": 105.0,
+      "text": "Assay 95.0–105.0% of the stated amount (IP 2022, Atenolol and Chlorthalidone Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -1620,9 +1608,9 @@
       100
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Atomoxetine Capsules)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Atomoxetine Capsules)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -1701,9 +1689,9 @@
       "monograph": "Atorvastatin and Fenofibrate Tablets"
      },
      "assay": {
-      "lo": 96.0,
-      "hi": 102.0,
-      "text": "Assay 96–102% of the stated amount (IP 2022, Atorvastatin and Fenofibrate Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Atorvastatin and Fenofibrate Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -1936,9 +1924,9 @@
       20
      ],
      "assay": {
-      "lo": 98.5,
-      "hi": 101.5,
-      "text": "Assay 98.5–101.5% of the stated amount (IP 2022, Baclofen Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Baclofen Tablets)"
      },
      "review": [
       "dissolution (no test found)",
@@ -2045,9 +2033,9 @@
       2.5
      ],
      "assay": {
-      "lo": 96.0,
-      "hi": 100.5,
-      "text": "Assay 96–100.5% of the stated amount (IP 2022, Bendrofluazide Tablets)"
+      "lo": 92.5,
+      "hi": 107.5,
+      "text": "Assay 92.5–107.5% of the stated amount (IP 2022, Bendrofluazide Tablets)"
      },
      "review": [
       "dissolution (no test found)",
@@ -2074,12 +2062,8 @@
      "usual_strengths_mg": [
       2.5
      ],
-     "assay": {
-      "lo": 96.0,
-      "hi": 100.5,
-      "text": "Assay 96–100.5% of the stated amount (IP 2022, Bendroflumethiazide Tablets)"
-     },
      "review": [
+      "assay",
       "dissolution (no test found)",
       "related_substances (free-text limits; enter by hand)"
      ]
@@ -2174,9 +2158,9 @@
       1
      ],
      "assay": {
-      "lo": 97.0,
-      "hi": 103.0,
-      "text": "Assay 97–103% of the stated amount (IP 2022, Betamethasone Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Betamethasone Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -2320,9 +2304,9 @@
       5
      ],
      "assay": {
-      "lo": 97.5,
-      "hi": 102.0,
-      "text": "Assay 97.5–102% of the stated amount (IP 2022, Bisacodyl Gastro-resistant Tablets)"
+      "lo": 95.0,
+      "hi": 105.0,
+      "text": "Assay 95.0–105.0% of the stated amount (IP 2022, Bisacodyl Gastro-resistant Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -2355,11 +2339,6 @@
      "usual_strengths_mg": [
       5
      ],
-     "assay": {
-      "lo": 97.5,
-      "hi": 102.0,
-      "text": "Assay 97.5–102% of the stated amount (IP 2022, Bisacodyl Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -2371,6 +2350,7 @@
       "conditions_given": true
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ]
@@ -2435,9 +2415,9 @@
       500
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Bosutinib Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Bosutinib Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -3812,11 +3792,6 @@
      "usual_strengths_mg": [
       0.1
      ],
-     "assay": {
-      "lo": 98.5,
-      "hi": 101.0,
-      "text": "Assay 98.5–101% of the stated amount (IP 2022, Clarithromycin Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -3825,6 +3800,7 @@
       "conditions_given": false
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ]
@@ -3850,9 +3826,9 @@
       1
      ],
      "assay": {
-      "lo": 91.0,
-      "hi": 102.0,
-      "text": "Assay 91–102% of the stated amount (IP 2022, Clemastine Tablets)"
+      "lo": 93.0,
+      "hi": 105.0,
+      "text": "Assay 93.0–105.0% of the stated amount (IP 2022, Clemastine Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -3960,9 +3936,9 @@
       "monograph": "Clomifene Tablets"
      },
      "assay": {
-      "lo": 99.0,
-      "hi": 101.0,
-      "text": "Assay 99–101% of the stated amount (IP 2022, Clomifene Tablets)"
+      "lo": 92.5,
+      "hi": 107.5,
+      "text": "Assay 92.5–107.5% of the stated amount (IP 2022, Clomifene Tablets)"
      },
      "review": [
       "usual_strengths_mg",
@@ -3987,12 +3963,8 @@
       "page": "1921",
       "monograph": "Clomiphene Tablets"
      },
-     "assay": {
-      "lo": 99.0,
-      "hi": 101.0,
-      "text": "Assay 99–101% of the stated amount (IP 2022, Clomiphene Tablets)"
-     },
      "review": [
+      "assay",
       "usual_strengths_mg",
       "dissolution (no test found)",
       "related_substances (free-text limits; enter by hand)"
@@ -4725,9 +4697,9 @@
       100
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Dapsone Tablets)"
+      "lo": 93.0,
+      "hi": 107.0,
+      "text": "Assay 93.0–107.0% of the stated amount (IP 2022, Dapsone Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -4988,9 +4960,9 @@
       50
      ],
      "assay": {
-      "lo": 99.0,
-      "hi": 101.0,
-      "text": "Assay 99–101% of the stated amount (IP 2022, Diazoxide Tablets)"
+      "lo": 92.5,
+      "hi": 107.5,
+      "text": "Assay 92.5–107.5% of the stated amount (IP 2022, Diazoxide Tablets)"
      },
      "review": [
       "dissolution (no test found)",
@@ -5055,9 +5027,9 @@
       100
      ],
      "assay": {
-      "lo": 95.0,
-      "hi": 102.0,
-      "text": "Assay 95–102% of the stated amount (IP 2022, Diclofenac Prolonged-release Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Diclofenac Prolonged-release Tablets)"
      },
      "review": [
       "dissolution",
@@ -5424,9 +5396,9 @@
       1000
      ],
      "assay": {
-      "lo": 98.5,
-      "hi": 101.0,
-      "text": "Assay 98.5–101% of the stated amount (IP 2022, Divalproex Prolonged-release Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Divalproex Prolonged-release Tablets)"
      },
      "review": [
       "dissolution",
@@ -5624,9 +5596,9 @@
       500
      ],
      "assay": {
-      "lo": 90.0,
-      "hi": 110.0,
-      "text": "Assay 90–110% of the stated amount (IP 2022, L-Dopa Tablets)"
+      "lo": 95.0,
+      "hi": 105.0,
+      "text": "Assay 95.0–105.0% of the stated amount (IP 2022, L-Dopa Tablets)"
      },
      "dissolution": {
       "apparatus": "basket",
@@ -6670,9 +6642,9 @@
       "monograph": "Ethambutol Tablets"
      },
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Ethambutol Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Ethambutol Tablets)"
      },
      "review": [
       "usual_strengths_mg",
@@ -7454,11 +7426,6 @@
       "page": "2376",
       "monograph": "Fludrocortisone Tablets"
      },
-     "assay": {
-      "lo": 99.0,
-      "hi": 101.5,
-      "text": "Assay 99–101.5% of the stated amount (IP 2022, Fludrocortisone Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -7472,6 +7439,7 @@
       "text": "paddle, 500 mL, 0.01 M hydrochloric acid, 75 rpm, 30 min; Q not less than 80% (IP 2022, Fludrocortisone Tablets)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)"
      ],
      "other_names": [
@@ -8250,9 +8218,9 @@
       "monograph": "Glyceryl Trinitrate Tablets"
      },
      "assay": {
-      "lo": 95.0,
-      "hi": 105.0,
-      "text": "Assay 95–105% of the stated amount (IP 2022, Glyceryl Trinitrate Tablets)"
+      "lo": 90.0,
+      "hi": 115.0,
+      "text": "Assay 90.0–115.0% of the stated amount (IP 2022, Glyceryl Trinitrate Tablets)"
      },
      "review": [
       "dissolution (no test found)",
@@ -8469,9 +8437,9 @@
       500
      ],
      "assay": {
-      "lo": 95.0,
-      "hi": 105.0,
-      "text": "Assay 95–105% of the stated amount (IP 2022, Hydroxyurea Capsules)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Hydroxyurea Capsules)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -8979,11 +8947,6 @@
       100,
       300
      ],
-     "assay": {
-      "lo": 98.0,
-      "hi": 101.5,
-      "text": "Assay 98–101.5% of the stated amount (IP 2022, Isoniazid Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -8996,6 +8959,7 @@
       "text": "paddle, 900 mL, water, 50 rpm, 45 min; Q not less than 80% (IP 2022, Isoniazid Tablets)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)"
      ]
     }
@@ -9239,11 +9203,6 @@
      "usual_strengths_mg": [
       10
      ],
-     "assay": {
-      "lo": 98.0,
-      "hi": 101.0,
-      "text": "Assay 98–101% of the stated amount (IP 2022, Ketorolac Trometamol Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -9256,6 +9215,7 @@
       "text": "paddle, 600 mL, water, 50 rpm, 45 min; Q not less than 75% (IP 2022, Ketorolac Trometamol Tablets)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)"
      ],
      "other_names": [
@@ -9480,9 +9440,9 @@
       200
      ],
      "assay": {
-      "lo": 97.0,
-      "hi": 102.0,
-      "text": "Assay 97–102% of the stated amount (IP 2022, Lamotrigine Prolonged-release Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Lamotrigine Prolonged-release Tablets)"
      },
      "review": [
       "dissolution",
@@ -9706,8 +9666,8 @@
      },
      "assay": {
       "lo": 90.0,
-      "hi": 120.0,
-      "text": "Assay 90–120% of the stated amount (IP 2022, Levodopa and Carbidopa Tablets)"
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Levodopa and Carbidopa Tablets)"
      },
      "dissolution": {
       "apparatus": "basket",
@@ -9781,9 +9741,9 @@
       500
      ],
      "assay": {
-      "lo": 90.0,
-      "hi": 110.0,
-      "text": "Assay 90–110% of the stated amount (IP 2022, Levodopa Tablets)"
+      "lo": 95.0,
+      "hi": 105.0,
+      "text": "Assay 95.0–105.0% of the stated amount (IP 2022, Levodopa Tablets)"
      },
      "dissolution": {
       "apparatus": "basket",
@@ -9962,11 +9922,6 @@
       5,
       10
      ],
-     "assay": {
-      "lo": 98.5,
-      "hi": 100.5,
-      "text": "Assay 98.5–100.5% of the stated amount (IP 2022, Lisinopril Tablets)"
-     },
      "dissolution": {
       "volume_ml": 900.0,
       "medium": "0.1 M hydrochloric acid",
@@ -9974,6 +9929,7 @@
       "conditions_given": false
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ]
@@ -10718,9 +10674,9 @@
       850
      ],
      "assay": {
-      "lo": 98.5,
-      "hi": 100.5,
-      "text": "Assay 98.5–100.5% of the stated amount (IP 2022, Metformin Tablets)"
+      "lo": 95.0,
+      "hi": 105.0,
+      "text": "Assay 95.0–105.0% of the stated amount (IP 2022, Metformin Tablets)"
      },
      "dissolution": {
       "apparatus": "basket",
@@ -11178,9 +11134,9 @@
       30
      ],
      "assay": {
-      "lo": 98.5,
-      "hi": 101.5,
-      "text": "Assay 98.5–101.5% of the stated amount (IP 2022, Mianserin Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Mianserin Tablets)"
      },
      "review": [
       "dissolution (no test found)",
@@ -11396,11 +11352,6 @@
       30,
       60
      ],
-     "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Morphine Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -11412,6 +11363,7 @@
       "text": "paddle, 900 mL, phosphate buffer pH 6.5; Q not less than 70% (IP 2022, Morphine Tablets)"
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ],
@@ -11721,11 +11673,6 @@
      "usual_strengths_mg": [
       5
      ],
-     "assay": {
-      "lo": 98.0,
-      "hi": 101.0,
-      "text": "Assay 98–101% of the stated amount (IP 2022, Nebivolol Hydrochloride Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -11739,6 +11686,7 @@
       "text": "paddle, 500 mL, 0.1 M hydrochloric acid, 75 rpm, 30 min; Q not less than 70% (IP 2022, Nebivolol Hydrochloride Tablets)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)"
      ]
     }
@@ -11763,12 +11711,8 @@
       250,
       625
      ],
-     "assay": {
-      "lo": 98.0,
-      "hi": 101.0,
-      "text": "Assay 98–101% of the stated amount (IP 2022, Nelfinavir Tablets)"
-     },
      "review": [
+      "assay",
       "dissolution (no test found)",
       "related_substances (free-text limits; enter by hand)"
      ],
@@ -11823,9 +11767,9 @@
       200
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 101.0,
-      "text": "Assay 98–101% of the stated amount (IP 2022, Nevirapine Tablets)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Nevirapine Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -12230,9 +12174,9 @@
       20
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Omeprazole Gastro-resistant Capsules)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Omeprazole Gastro-resistant Capsules)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -12625,11 +12569,6 @@
      "usual_strengths_mg": [
       8
      ],
-     "assay": {
-      "lo": 97.5,
-      "hi": 102.5,
-      "text": "Assay 97.5–102.5% of the stated amount (IP 2022, Perindopril Erbumine Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -12642,6 +12581,7 @@
       "text": "paddle, 500 mL, 0.05 M hydrochloric acid, 50 rpm, 45 min; Q not less than 75% (IP 2022, Perindopril Erbumine Tablets)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)"
      ]
     }
@@ -12908,9 +12848,9 @@
       4
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Pimozide Tablets)"
+      "lo": 95.0,
+      "hi": 105.0,
+      "text": "Assay 95.0–105.0% of the stated amount (IP 2022, Pimozide Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -13024,9 +12964,9 @@
       750
      ],
      "assay": {
-      "lo": 98.0,
-      "hi": 101.0,
-      "text": "Assay 98–101% of the stated amount (IP 2022, Piperazine Adipate Tablets)"
+      "lo": 92.5,
+      "hi": 107.5,
+      "text": "Assay 92.5–107.5% of the stated amount (IP 2022, Piperazine Adipate Tablets)"
      },
      "review": [
       "dissolution (no test found)",
@@ -13214,7 +13154,7 @@
     }
    ]
   },
-  "prednisolone": {
+  "prednisone": {
    "monographs": [
     {
      "title": "Prednisone Tablets",
@@ -13787,9 +13727,9 @@
       100
      ],
      "assay": {
-      "lo": 99.0,
-      "hi": 101.5,
-      "text": "Assay 99–101.5% of the stated amount (IP 2022, Quinalbarbitone Tablets)"
+      "lo": 92.5,
+      "hi": 107.5,
+      "text": "Assay 92.5–107.5% of the stated amount (IP 2022, Quinalbarbitone Tablets)"
      },
      "dissolution": {
       "apparatus": "basket",
@@ -13823,11 +13763,6 @@
      "usual_strengths_mg": [
       200
      ],
-     "assay": {
-      "lo": 98.5,
-      "hi": 101.5,
-      "text": "Assay 98.5–101.5% of the stated amount (IP 2022, Quinidine Tablets)"
-     },
      "dissolution": {
       "apparatus": "basket",
       "apparatus_ip": "Apparatus No. 1 (Basket), IP 2.5.2",
@@ -13839,6 +13774,7 @@
       "conditions_given": true
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ],
@@ -13993,9 +13929,9 @@
       60
      ],
      "assay": {
-      "lo": 95.0,
-      "hi": 105.0,
-      "text": "Assay 95–105% of the stated amount (IP 2022, Raloxifene Hydrochloride Tablets)"
+      "lo": 93.0,
+      "hi": 107.0,
+      "text": "Assay 93.0–107.0% of the stated amount (IP 2022, Raloxifene Hydrochloride Tablets)"
      },
      "dissolution": {
       "apparatus": "paddle",
@@ -14144,9 +14080,9 @@
       200
      ],
      "assay": {
-      "lo": 95.0,
-      "hi": 105.0,
-      "text": "Assay 95–105% of the stated amount (IP 2022, Ribavirin Capsules)"
+      "lo": 90.0,
+      "hi": 110.0,
+      "text": "Assay 90.0–110.0% of the stated amount (IP 2022, Ribavirin Capsules)"
      },
      "dissolution": {
       "apparatus": "basket",
@@ -14332,11 +14268,6 @@
       4.5,
       6
      ],
-     "assay": {
-      "lo": 99.0,
-      "hi": 101.0,
-      "text": "Assay 99–101% of the stated amount (IP 2022, Rivastigmine Capsules)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -14348,6 +14279,7 @@
       "text": "paddle, water, 50 rpm, 30 min; Q not less than 75% (IP 2022, Rivastigmine Capsules)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)",
       "dissolution volume_ml 5 is outside 100–4000: left out (OCR)"
      ]
@@ -14603,11 +14535,6 @@
      "usual_strengths_mg": [
       100
      ],
-     "assay": {
-      "lo": 99.0,
-      "hi": 101.5,
-      "text": "Assay 99–101.5% of the stated amount (IP 2022, Secobarbitone Sodium Tablets)"
-     },
      "dissolution": {
       "apparatus": "basket",
       "apparatus_ip": "Apparatus No. 1 (Basket), IP 2.5.2",
@@ -14616,6 +14543,7 @@
       "conditions_given": false
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ]
@@ -14677,11 +14605,6 @@
       "page": "3579",
       "monograph": "Sildenafil Tablets"
      },
-     "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Sildenafil Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -14690,6 +14613,7 @@
       "conditions_given": false
      },
      "review": [
+      "assay",
       "dissolution",
       "related_substances (free-text limits; enter by hand)"
      ]
@@ -15286,9 +15210,9 @@
       "monograph": "Thiacetazone and Isoniazid Tablets"
      },
      "assay": {
-      "lo": 96.0,
-      "hi": 100.5,
-      "text": "Assay 96–100.5% of the stated amount (IP 2022, Thiacetazone and Isoniazid Tablets)"
+      "lo": 92.5,
+      "hi": 107.5,
+      "text": "Assay 92.5–107.5% of the stated amount (IP 2022, Thiacetazone and Isoniazid Tablets)"
      },
      "review": [
       "usual_strengths_mg",
@@ -15487,11 +15411,6 @@
       "page": "3825",
       "monograph": "Tolbutamide Tablets"
      },
-     "assay": {
-      "lo": 98.0,
-      "hi": 102.0,
-      "text": "Assay 98–102% of the stated amount (IP 2022, Tolbutamide Tablets)"
-     },
      "dissolution": {
       "apparatus": "paddle",
       "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2",
@@ -15504,6 +15423,7 @@
       "text": "paddle, 900 mL, a solution containing 2.04 per cent w/v of, 50 rpm, 30 min; Q not less than 70% (IP 2022, Tolbutamide Tablets)"
      },
      "review": [
+      "assay",
       "related_substances (free-text limits; enter by hand)"
      ]
     }

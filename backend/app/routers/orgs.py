@@ -135,10 +135,10 @@ def opportunity_detail(slug: str, molecule_key: str, plant_id: Optional[str] = N
 
 @router.get("/{slug}/pharmacopoeia")
 def pharmacopoeia(slug: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    from .. import pharmacopoeia as ph
+    from .. import standards
 
     org = org_for_user(db, slug, user)
-    return insights.json_safe(ph.org_tracker(org.ontology_keys or []))
+    return insights.json_safe(standards.org_view(org.ontology_keys or []))
 
 
 @router.get("/{slug}/eu-export")

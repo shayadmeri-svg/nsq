@@ -77,7 +77,7 @@ services:
     environment:
       # Managed Postgres (Neon, RDS, ...): set DATABASE_URL in .env. The
       # plain "postgresql://" URL the provider gives you works as-is.
-      # Unset = the local postgres container (needs --profile local-db).
+      # Unset = the stack's own postgres container.
       - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://nsq:${POSTGRES_PASSWORD:-nsq-local-only}@postgres:5432/nsq}
       # The Redis the app reads. NSQ_REDIS_URL overrides it (escape hatch).
       - REDIS_URL=${NSQ_REDIS_URL:-redis://redis:6379/0}

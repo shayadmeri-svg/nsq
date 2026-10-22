@@ -80,7 +80,7 @@ def molecule_changes(key: str, failed_categories: Optional[set[str]] = None, tod
 
 
 def org_tracker(ontology_keys: list[str], today: Optional[str] = None) -> dict[str, Any]:
-    from .insights import tracked_for
+    from .insights import tracked_for, tracked_index
 
     today = today or date.today().isoformat()
     src = source()
@@ -89,8 +89,9 @@ def org_tracker(ontology_keys: list[str], today: Optional[str] = None) -> dict[s
     if not df.empty:
         cats: dict[str, Counter] = defaultdict(Counter)
         prods: dict[str, Counter] = defaultdict(Counter)
+        index = tracked_index()
         for name, cat in zip(df["Name of Product"].astype(str), df["Failure_Category_Primary"].fillna("").astype(str)):
-            for k in tracked_for(name):
+            for k in tracked_for(name, index):
                 cats[k][cat] += 1
                 prods[k][name] += 1
         for k in cats:
