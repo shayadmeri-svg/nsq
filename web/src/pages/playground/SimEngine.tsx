@@ -10,7 +10,7 @@ import { useToast } from "../../components/ui/toast";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
 
-const ORDER = ["RMG-1", "FBD-1", "BLENDER-1", "PRESS-1"];
+const ORDER = ["RMG-1", "FBD-1", "BLENDER-1", "PRESS-1", "COATER-1"];
 const PATTERN_HELP: Record<string, string> = {
   steady: "setpoint ± noise",
   drift: "+ amplitude per batch (e.g. force creeping up as punches wear)",

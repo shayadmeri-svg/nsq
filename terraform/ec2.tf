@@ -54,4 +54,11 @@ resource "aws_instance" "app" {
   })
 
   tags = merge(local.common_tags, { Name = "${local.name}-app" })
+
+  # The instance holds Postgres and Redis on its root volume. A newer Amazon Linux AMI (most_recent above) or an
+  # edited user_data would make Terraform REPLACE it — destroying that data. Ignore both; instance-type changes
+  # are done with the AWS CLI (stop → modify-instance-attribute → start) and recorded in terraform.tfvars.
+  lifecycle {
+    ignore_changes = [ami, user_data]
+  }
 }

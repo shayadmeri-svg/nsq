@@ -1,43 +1,363 @@
 {
-  "_about": "Default settings of the plant simulator (simulator.py). Eurveda's Sim engine panel edits a copy; the simulator reads it every few seconds. Patterns: steady | drift | sine | step | spikes | ramp. 'per': batch = drawn once when a batch starts; reading = every reading.",
+  "_about": "Default settings of the plant simulator (simulator.py). Eurveda's Sim engine panel edits a copy; the simulator reads it every few seconds. Patterns: steady | drift | sine | step | spikes | ramp. 'per': batch = drawn once when a batch starts; reading = every reading. Products alternate batch by batch; each product follows its route, its setpoints offset from the machine's (so tuning a machine moves every product).",
   "running": true,
   "speed": 30,
   "handling_min": 5,
   "apparatus": {
     "RMG-1": {
-      "label": "Rapid mixer granulator", "format": "rmg", "enabled": true, "duration_min": 15,
+      "label": "Rapid mixer granulator",
+      "format": "rmg",
+      "enabled": true,
+      "duration_min": 15,
       "signals": {
-        "dry_mix_kg": {"label": "Dry mix", "unit": "kg", "per": "batch", "setpoint": 100, "noise": 0, "min": 20, "max": 300, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "binder_kg": {"label": "Binder solution added", "unit": "kg", "per": "batch", "setpoint": 25, "noise": 0.6, "min": 5, "max": 60, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "wet_mix_min": {"label": "Wet mixing time", "unit": "min", "per": "batch", "setpoint": 4, "noise": 0.3, "min": 0.5, "max": 15, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "impeller_kw": {"label": "Impeller power", "unit": "kW", "per": "reading", "setpoint": 7.5, "noise": 0.25, "min": 0, "max": 30, "pattern": "ramp", "amplitude": 3, "every": 3, "period_min": 60}
+        "dry_mix_kg": {
+          "label": "Dry mix",
+          "unit": "kg",
+          "per": "batch",
+          "setpoint": 100,
+          "noise": 0,
+          "min": 20,
+          "max": 300,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "binder_kg": {
+          "label": "Binder solution added",
+          "unit": "kg",
+          "per": "batch",
+          "setpoint": 25,
+          "noise": 0.6,
+          "min": 5,
+          "max": 60,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "wet_mix_min": {
+          "label": "Wet mixing time",
+          "unit": "min",
+          "per": "batch",
+          "setpoint": 4,
+          "noise": 0.3,
+          "min": 0.5,
+          "max": 15,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "impeller_kw": {
+          "label": "Impeller power",
+          "unit": "kW",
+          "per": "reading",
+          "setpoint": 7.5,
+          "noise": 0.25,
+          "min": 0,
+          "max": 30,
+          "pattern": "ramp",
+          "amplitude": 3,
+          "every": 3,
+          "period_min": 60
+        }
       }
     },
     "FBD-1": {
-      "label": "Fluid-bed dryer", "format": "fbd", "enabled": true, "duration_min": 60,
+      "label": "Fluid-bed dryer",
+      "format": "fbd",
+      "enabled": true,
+      "duration_min": 60,
       "signals": {
-        "drying_min": {"label": "Drying time", "unit": "min", "per": "batch", "setpoint": 60, "noise": 1.5, "min": 10, "max": 150, "pattern": "step", "amplitude": -21, "every": 3, "period_min": 60},
-        "inlet_c": {"label": "Inlet air temperature", "unit": "°C", "per": "reading", "setpoint": 60, "noise": 0.6, "min": 25, "max": 95, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "inlet_rh_pct": {"label": "Inlet relative humidity", "unit": "%RH", "per": "reading", "setpoint": 8, "noise": 0.6, "min": 0.5, "max": 90, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "air_m3_h": {"label": "Air flow", "unit": "m³/h", "per": "reading", "setpoint": 3000, "noise": 25, "min": 500, "max": 6000, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60}
+        "drying_min": {
+          "label": "Drying time",
+          "unit": "min",
+          "per": "batch",
+          "setpoint": 60,
+          "noise": 1.5,
+          "min": 10,
+          "max": 150,
+          "pattern": "step",
+          "amplitude": -21,
+          "every": 3,
+          "period_min": 60
+        },
+        "inlet_c": {
+          "label": "Inlet air temperature",
+          "unit": "°C",
+          "per": "reading",
+          "setpoint": 60,
+          "noise": 0.6,
+          "min": 25,
+          "max": 95,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "inlet_rh_pct": {
+          "label": "Inlet relative humidity",
+          "unit": "%RH",
+          "per": "reading",
+          "setpoint": 8,
+          "noise": 0.6,
+          "min": 0.5,
+          "max": 90,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "air_m3_h": {
+          "label": "Air flow",
+          "unit": "m³/h",
+          "per": "reading",
+          "setpoint": 3000,
+          "noise": 25,
+          "min": 500,
+          "max": 6000,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        }
       }
     },
     "BLENDER-1": {
-      "label": "Blender", "format": "blender", "enabled": true, "duration_min": 10,
+      "label": "Blender",
+      "format": "blender",
+      "enabled": true,
+      "duration_min": 10,
       "signals": {
-        "blend_min": {"label": "Lubricated blend time", "unit": "min", "per": "batch", "setpoint": 5, "noise": 0.3, "min": 0.5, "max": 40, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "blender_rpm": {"label": "Blender speed", "unit": "rpm", "per": "reading", "setpoint": 12, "noise": 0.2, "min": 2, "max": 40, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60}
+        "blend_min": {
+          "label": "Lubricated blend time",
+          "unit": "min",
+          "per": "batch",
+          "setpoint": 5,
+          "noise": 0.3,
+          "min": 0.5,
+          "max": 40,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "blender_rpm": {
+          "label": "Blender speed",
+          "unit": "rpm",
+          "per": "reading",
+          "setpoint": 12,
+          "noise": 0.2,
+          "min": 2,
+          "max": 40,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        }
       }
     },
     "PRESS-1": {
-      "label": "Tablet press", "format": "press", "enabled": true, "duration_min": 45,
+      "label": "Tablet press",
+      "format": "press",
+      "enabled": true,
+      "duration_min": 45,
       "signals": {
-        "force_kn": {"label": "Main compression force", "unit": "kN", "per": "reading", "setpoint": 13, "noise": 0.35, "min": 1, "max": 60, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "precompression_kn": {"label": "Pre-compression force", "unit": "kN", "per": "reading", "setpoint": 2, "noise": 0.12, "min": 0, "max": 10, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "tablet_weight_mg": {"label": "Tablet weight", "unit": "mg", "per": "reading", "setpoint": 650, "noise": 6.5, "min": 100, "max": 1500, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "punch_diameter_mm": {"label": "Punch diameter", "unit": "mm", "per": "batch", "setpoint": 12, "noise": 0, "min": 5, "max": 25, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60},
-        "press_rpm": {"label": "Turret speed", "unit": "rpm", "per": "reading", "setpoint": 30, "noise": 0, "min": 5, "max": 90, "pattern": "steady", "amplitude": 0, "every": 3, "period_min": 60}
+        "force_kn": {
+          "label": "Main compression force",
+          "unit": "kN",
+          "per": "reading",
+          "setpoint": 13,
+          "noise": 0.35,
+          "min": 1,
+          "max": 60,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "precompression_kn": {
+          "label": "Pre-compression force",
+          "unit": "kN",
+          "per": "reading",
+          "setpoint": 2,
+          "noise": 0.12,
+          "min": 0,
+          "max": 10,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "tablet_weight_mg": {
+          "label": "Tablet weight",
+          "unit": "mg",
+          "per": "reading",
+          "setpoint": 650,
+          "noise": 6.5,
+          "min": 100,
+          "max": 1500,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "punch_diameter_mm": {
+          "label": "Punch diameter",
+          "unit": "mm",
+          "per": "batch",
+          "setpoint": 12,
+          "noise": 0,
+          "min": 5,
+          "max": 25,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "press_rpm": {
+          "label": "Turret speed",
+          "unit": "rpm",
+          "per": "reading",
+          "setpoint": 30,
+          "noise": 0,
+          "min": 5,
+          "max": 90,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        }
+      }
+    },
+    "COATER-1": {
+      "label": "Pan coater",
+      "format": "coater",
+      "enabled": true,
+      "duration_min": 40,
+      "signals": {
+        "weight_gain_pct": {
+          "label": "Coating weight gain (target)",
+          "unit": "%",
+          "per": "batch",
+          "setpoint": 3.0,
+          "noise": 0.12,
+          "min": 0,
+          "max": 6,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "coat_inlet_c": {
+          "label": "Inlet air temperature",
+          "unit": "°C",
+          "per": "reading",
+          "setpoint": 60,
+          "noise": 0.8,
+          "min": 25,
+          "max": 90,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "exhaust_c": {
+          "label": "Exhaust temperature",
+          "unit": "°C",
+          "per": "reading",
+          "setpoint": 42,
+          "noise": 0.6,
+          "min": 20,
+          "max": 70,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "spray_g_min": {
+          "label": "Spray rate",
+          "unit": "g/min",
+          "per": "reading",
+          "setpoint": 120,
+          "noise": 4,
+          "min": 0,
+          "max": 400,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "pan_rpm": {
+          "label": "Pan speed",
+          "unit": "rpm",
+          "per": "reading",
+          "setpoint": 8,
+          "noise": 0.1,
+          "min": 1,
+          "max": 20,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        },
+        "atomizing_bar": {
+          "label": "Atomizing air pressure",
+          "unit": "bar",
+          "per": "reading",
+          "setpoint": 2.0,
+          "noise": 0.05,
+          "min": 0.5,
+          "max": 4,
+          "pattern": "steady",
+          "amplitude": 0,
+          "every": 3,
+          "period_min": 60
+        }
       }
     }
-  }
+  },
+  "products": [
+    {
+      "code": "PCM500",
+      "label": "Paracetamol Tablets IP 500 mg",
+      "route": [
+        "RMG-1",
+        "FBD-1",
+        "BLENDER-1",
+        "PRESS-1"
+      ],
+      "lod_base": 1.6,
+      "offsets": {}
+    },
+    {
+      "code": "AZI500",
+      "label": "Azithromycin Tablets IP 500 mg",
+      "route": [
+        "RMG-1",
+        "FBD-1",
+        "BLENDER-1",
+        "PRESS-1",
+        "COATER-1"
+      ],
+      "lod_base": 3.3,
+      "offsets": {
+        "RMG-1": {
+          "binder_kg": -3,
+          "wet_mix_min": 1
+        },
+        "FBD-1": {
+          "inlet_c": -5
+        },
+        "BLENDER-1": {
+          "blend_min": 1
+        },
+        "PRESS-1": {
+          "force_kn": 2,
+          "tablet_weight_mg": 110
+        }
+      }
+    }
+  ]
 }

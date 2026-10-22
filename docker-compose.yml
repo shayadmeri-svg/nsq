@@ -107,6 +107,25 @@ services:
       - "8010"
     networks: [nsq-net]
 
+  connect:
+    # Eurveda Connect: the integration service — plants, machines and how each is reached, edge agents, live state,
+    # batches and alarms (Playground → Plant monitor). Same Postgres as the API, its own tables (cx_*).
+    build:
+      context: ./connect
+    image: nsq-connect:local
+    container_name: nsq-connect
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://nsq:${POSTGRES_PASSWORD:-nsq-local-only}@postgres:5432/nsq}
+      - API_URL=http://api:8001
+      - PLANT_SIM_TOKEN=${PLANT_SIM_TOKEN:-}
+      - PLANT_SIM_ORG=${PLANT_SIM_ORG:-}
+      - CONNECT_RETAIN_H=${CONNECT_RETAIN_H:-24}
+    mem_limit: 256m
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [nsq-net]
+
   plant-sim:
     # Simulated granulator, dryer, blender and tablet press (OPC UA) read by the real edge agent and streamed to the
     # API, for demos of Playground → Plant data → Live; tuned from the Sim engine panel there.
@@ -121,7 +140,8 @@ services:
     environment:
       - EURVEDA_TOKEN=${PLANT_SIM_TOKEN:-}
       - EURVEDA_URL=http://api:8001
-    mem_limit: 384m
+      - CONNECT_URL=http://connect:8020
+    mem_limit: 448m
     logging:  # the agent logs every push: keep at most ~10 MB
       driver: json-file
       options: { max-size: "5m", max-file: "2" }

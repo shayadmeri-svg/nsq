@@ -43,8 +43,8 @@ from asyncua import Server, ua
 
 log = logging.getLogger("sim")
 HERE = Path(__file__).resolve().parent
-ORDER = ["RMG-1", "FBD-1", "BLENDER-1", "PRESS-1"]  # the order a batch goes through the plant
-OBJECT = {"RMG-1": "RMG1", "FBD-1": "FBD1", "BLENDER-1": "BLEND1", "PRESS-1": "PRESS1"}
+ORDER = ["RMG-1", "FBD-1", "BLENDER-1", "PRESS-1", "COATER-1"]  # the order a batch goes through the plant
+OBJECT = {"RMG-1": "RMG1", "FBD-1": "FBD1", "BLENDER-1": "BLEND1", "PRESS-1": "PRESS1", "COATER-1": "COAT1"}
 # OPC UA variable names (NodeId ns=2;s=<OBJECT>.<name>)
 TAGS = {
     "RMG-1": {"dry_mix_kg": "DryMixKg", "binder_kg": "BinderKg", "wet_mix_min": "WetMixMin", "impeller_kw": "ImpellerKW"},
@@ -53,6 +53,8 @@ TAGS = {
     "BLENDER-1": {"blend_min": "BlendMin", "blender_rpm": "SpeedRPM"},
     "PRESS-1": {"force_kn": "ForceKN", "precompression_kn": "PrecompKN", "tablet_weight_mg": "TabletWeightMg",
                 "punch_diameter_mm": "PunchDiameterMm", "press_rpm": "TurretRPM"},
+    "COATER-1": {"weight_gain_pct": "WeightGain", "coat_inlet_c": "InletTemp", "exhaust_c": "ExhaustTemp", "spray_g_min": "SprayRate",
+                 "pan_rpm": "PanRPM", "atomizing_bar": "AtomizingBar"},
 }
 # Modbus holding registers for PRESS1 (float32, big-endian words); batch number as ASCII at 20..27
 MODBUS_MAP = {"force_kn": 0, "precompression_kn": 2, "tablet_weight_mg": 4, "punch_diameter_mm": 6, "press_rpm": 8}
@@ -91,11 +93,20 @@ class Engine:
                     self.origin[(m, f)] = self.n
         self.cfg = cfg
 
-    def sig(self, m: str, f: str) -> dict[str, Any]:
-        return self.cfg["apparatus"][m]["signals"][f]
+    def product(self, b: int) -> dict[str, Any]:
+        ps = self.cfg.get("products") or [{"code": "", "label": "", "route": ORDER, "setpoints": {}}]
+        return ps[(b - 1) % len(ps)]
+
+    def on_route(self, m: str, b: int) -> bool:
+        return m in (self.product(b).get("route") or ORDER)
+
+    def sig(self, m: str, f: str, b: int = 0) -> dict[str, Any]:
+        s = self.cfg["apparatus"][m]["signals"][f]
+        off = ((self.product(b).get("offsets") or {}).get(m) or {}).get(f) if b else None  # the product's offset from the machine setpoint
+        return {**s, "setpoint": float(s["setpoint"]) + float(off)} if off else s
 
     def value(self, m: str, f: str, b: int, progress: float = 1.0) -> float:
-        s = self.sig(m, f)
+        s = self.sig(m, f, b)
         sp, amp, every = float(s["setpoint"]), float(s.get("amplitude", 0)), max(1, int(s.get("every", 3)))
         v, p = sp, s.get("pattern", "steady")
         if p == "drift":
@@ -121,7 +132,7 @@ class Engine:
         fbd = self.cfg["apparatus"]["FBD-1"]["signals"]
         T = d["FBD-1"]["drying_min"]
         need = 60 * liquid / 25  # minutes the water load needs at the reference air
-        d["FBD-1"]["_final_lod"] = max(0.4, 1.6 + 0.09 * max(0.0, need - T) + 0.06 * max(0.0, float(fbd["inlet_rh_pct"]["setpoint"]) - 8)
+        d["FBD-1"]["_final_lod"] = max(0.4, float(self.product(b).get("lod_base", 1.6)) + 0.09 * max(0.0, need - T) + 0.06 * max(0.0, float(fbd["inlet_rh_pct"]["setpoint"]) - 8)
                                        + 0.05 * max(0.0, 60 - float(fbd["inlet_c"]["setpoint"])) + 0.0006 * max(0.0, 3000 - float(fbd["air_m3_h"]["setpoint"]))
                                        + self.rng.gauss(0, 0.1))
         d["FBD-1"]["_liquid"] = liquid
@@ -141,7 +152,7 @@ class Engine:
         self.n += 1
         self._draw(self.n)
         live = [self.duration(m, self.n - k) for k, m in enumerate(ORDER)
-                if self.cfg["apparatus"][m].get("enabled", True) and self.n - k >= 1]
+                if m in self.cfg["apparatus"] and self.cfg["apparatus"][m].get("enabled", True) and self.n - k >= 1 and self.on_route(m, self.n - k)]
         self.takt = max(live or [10.0]) + float(self.cfg.get("handling_min", 5))
         self.t = 0.0
 
@@ -154,14 +165,16 @@ class Engine:
             self._takt()
 
     def readings(self) -> dict[str, tuple[str, dict[str, float]]]:
-        """{machine: (batch number, or "" when idle, {field: value})}"""
+        """{machine: (batch number, or "" when idle, {field: value}, product label)}"""
         out = {}
         for k, m in enumerate(ORDER):
             b = self.n - k
-            a = self.cfg["apparatus"][m]
-            running = a.get("enabled", True) and b >= 1 and self.t <= self.duration(m, b)
+            a = self.cfg["apparatus"].get(m)
+            if a is None:
+                continue
+            running = a.get("enabled", True) and b >= 1 and self.on_route(m, b) and self.t <= self.duration(m, b)
             if not running:
-                out[m] = ("", self._idle(m))
+                out[m] = ("", self._idle(m), "")
                 continue
             pr = self.t / max(1e-6, self.duration(m, b))
             d = self.draws[b][m]
@@ -171,7 +184,10 @@ class Engine:
                 vals = {"inlet_c": inlet, "inlet_rh_pct": vals["inlet_rh_pct"], "air_m3_h": vals["air_m3_h"],
                         "outlet_c": inlet / 60 * (30 + 0.25 * t) + self.rng.gauss(0, 0.4), "product_c": inlet / 60 * (28 + 0.27 * t) + self.rng.gauss(0, 0.4),
                         "lod_pct": d["_final_lod"] + max(0.0, 1 - t / T) * 18 * d["_liquid"] / 25 + self.rng.gauss(0, 0.05), "elapsed_min": round(t, 2)}
-            out[m] = (f"{self.prefix}{b:03d}", {f: v for f, v in vals.items() if f in TAGS[m]})
+            elif m == "COATER-1":  # weight gain builds up to the batch's target over the coating time
+                vals["weight_gain_pct"] = d["weight_gain_pct"] * pr + self.rng.gauss(0, 0.02)
+            p = self.product(b)
+            out[m] = (f"{p.get('code', '')[:3]}{self.prefix}{b:03d}", {f: v for f, v in vals.items() if f in TAGS[m]}, p.get("code", ""))
         return out
 
     @staticmethod
@@ -179,7 +195,8 @@ class Engine:
         return {"FBD-1": {"inlet_c": 31.0, "outlet_c": 29.0, "product_c": 28.0, "inlet_rh_pct": 55.0, "air_m3_h": 0.0, "lod_pct": 0.0, "elapsed_min": 0.0},
                 "PRESS-1": {"force_kn": 0.0, "precompression_kn": 0.0, "tablet_weight_mg": 0.0, "punch_diameter_mm": 12.0, "press_rpm": 0.0},
                 "RMG-1": {"dry_mix_kg": 0.0, "binder_kg": 0.0, "wet_mix_min": 0.0, "impeller_kw": 0.0},
-                "BLENDER-1": {"blend_min": 0.0, "blender_rpm": 0.0}}[m]
+                "BLENDER-1": {"blend_min": 0.0, "blender_rpm": 0.0},
+                "COATER-1": {"weight_gain_pct": 0.0, "coat_inlet_c": 30.0, "exhaust_c": 29.0, "spray_g_min": 0.0, "pan_rpm": 0.0, "atomizing_bar": 0.0}}[m]
 
 
 def fetch_config(url: str, token: str) -> dict[str, Any]:
@@ -248,6 +265,7 @@ async def main(a: argparse.Namespace) -> None:
         obj = await server.nodes.objects.add_object(ua.NodeId(obj_name, idx), ua.QualifiedName(obj_name, idx))
         nodes[m] = {f: await obj.add_variable(ua.NodeId(f"{obj_name}.{tag}", idx), ua.QualifiedName(tag, idx), 0.0) for f, tag in TAGS[m].items()}
         nodes[m]["_batch"] = await obj.add_variable(ua.NodeId(f"{obj_name}.BatchNo", idx), ua.QualifiedName("BatchNo", idx), "")
+        nodes[m]["_product"] = await obj.add_variable(ua.NodeId(f"{obj_name}.Product", idx), ua.QualifiedName("Product", idx), "")
     regs = await start_modbus(a.modbus) if a.modbus else None
     token = os.environ.get(a.token_env, "")
     last_fetch = 0.0
@@ -263,10 +281,11 @@ async def main(a: argparse.Namespace) -> None:
                 except Exception as exc:  # noqa: BLE001 — keep simulating with the last settings
                     log.warning("could not read settings from Eurveda: %s", exc)
             eng.step(float(eng.cfg.get("speed", 30)) / 60.0)
-            for m, (batch, vals) in eng.readings().items():
+            for m, (batch, vals, product) in eng.readings().items():
                 for f, v in vals.items():
                     await nodes[m][f].write_value(float(v))
                 await nodes[m]["_batch"].write_value(batch)
+                await nodes[m]["_product"].write_value(product)
                 if regs is not None and m == "PRESS-1":
                     for f, at in MODBUS_MAP.items():
                         regs.set(at, list(struct.unpack(">HH", struct.pack(">f", float(vals.get(f, 0.0))))))

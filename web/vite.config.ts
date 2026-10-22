@@ -1,13 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Dev server proxies /api to the backend (default :8001). In production the
+// Dev server proxies /api/connect to Eurveda Connect (default :8020) and the rest of /api to the backend (default :8001). In production the
 // gateway serves the SPA and the API from one origin.
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     proxy: {
+      "/api/connect": { target: process.env.CONNECT_URL ?? "http://localhost:8020", changeOrigin: false },
       "/api": { target: process.env.API_URL ?? "http://localhost:8001", changeOrigin: false },
     },
   },

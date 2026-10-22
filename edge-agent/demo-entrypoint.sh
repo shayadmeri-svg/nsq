@@ -67,4 +67,18 @@ machines:
       punch_diameter_mm: "ns=2;s=PRESS1.PunchDiameterMm"
       press_rpm: "ns=2;s=PRESS1.TurretRPM"
 CFG
+# a second agent, in remote mode, for Eurveda Connect (Plant monitor): it reads the machines the setup wizard lists
+if [ -n "${CONNECT_URL:-}" ]; then
+cat > /tmp/connect.yaml <<CFG
+eurveda:
+  url: ${CONNECT_URL}
+  remote: true
+  token_env: EURVEDA_TOKEN
+  push_every_s: ${PUSH_EVERY_S:-10}
+  buffer: /tmp/connect-buffer.sqlite
+  buffer_max_rows: 20000
+machines: []
+CFG
+python eurveda_agent.py --config /tmp/connect.yaml &
+fi
 exec python eurveda_agent.py --config /tmp/config.yaml

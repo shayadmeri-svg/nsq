@@ -202,16 +202,17 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def poll(cfg: dict[str, Any], buf: Optional[Buffer], dry: bool = False) -> None:
+def poll(cfg: dict[str, Any], buf: Optional[Buffer], dry: bool = False, stop: Optional[threading.Event] = None) -> None:
     src = make_source(cfg)
     every = float(cfg.get("poll_s", 5))
     backoff = 2.0
-    while not STOP.is_set():
+    halt = stop or STOP
+    while not STOP.is_set() and not halt.is_set():
         try:
             src.connect()
             log.info("%s: connected (%s)", src.name, cfg.get("endpoint") or cfg.get("host"))
             backoff = 2.0
-            while not STOP.is_set():
+            while not STOP.is_set() and not halt.is_set():
                 t0 = time.monotonic()
                 vals, batch, product = src.read()
                 if batch or not cfg.get("skip_without_batch", True):
@@ -220,17 +221,17 @@ def poll(cfg: dict[str, Any], buf: Optional[Buffer], dry: bool = False) -> None:
                         print(json.dumps(r))
                     else:
                         buf.put(r)
-                STOP.wait(max(0.0, every - (time.monotonic() - t0)))
+                halt.wait(max(0.0, every - (time.monotonic() - t0)))
         except Exception as exc:  # noqa: BLE001 — any machine/network failure: log, reconnect with backoff
             log.warning("%s: %s — retrying in %.0f s", src.name, exc, backoff)
             src.close()
-            STOP.wait(backoff)
+            halt.wait(backoff)
             backoff = min(backoff * 2, 60.0)
     src.close()
 
 
 def push(conf: dict[str, Any], buf: Buffer) -> None:
-    url = conf["url"].rstrip("/") + "/api/ingest/plant-data"
+    ingest = lambda: conf["url"].rstrip("/") + conf.get("ingest_path", "/api/ingest/plant-data")  # noqa: E731 — remote mode may change it
     token = conf.get("token") or os.environ.get(conf.get("token_env", "EURVEDA_TOKEN"), "")
     if not token:
         log.error("no connector token: set eurveda.token_env (default EURVEDA_TOKEN)")
@@ -245,7 +246,7 @@ def push(conf: dict[str, Any], buf: Buffer) -> None:
         while True:
             rows = buf.take(2000)
             try:
-                r = s.post(url, data=json.dumps({"agent": agent, "readings": [b for _, b in rows]}), timeout=30,
+                r = s.post(ingest(), data=json.dumps({"agent": agent, "readings": [b for _, b in rows]}), timeout=30,
                            verify=conf.get("verify_tls", True))
             except requests.RequestException as exc:
                 log.warning("push failed: %s (%d buffered)", exc, buf.size())
@@ -284,6 +285,102 @@ def check(cfg_all: dict[str, Any]) -> int:
         finally:
             src.close()
     return 1 if bad else 0
+
+
+def browse_list(endpoint: str, depth: int = 4, limit: int = 2000) -> list[dict[str, Any]]:
+    """The machine's variables under Objects (not the server's own nodes): [{node, name, value}]."""
+    from asyncua.sync import Client
+
+    out: list[dict[str, Any]] = []
+    with Client(endpoint, timeout=8) as c:
+        def walk(node, d, path):
+            for ch in node.get_children():
+                if len(out) >= limit:
+                    return
+                try:
+                    name = ch.read_browse_name().Name
+                    if d == 0 and name == "Server":
+                        continue
+                    try:
+                        v = ch.read_value()
+                        if isinstance(v, (int, float, str, bool)):
+                            out.append({"node": ch.nodeid.to_string(), "name": ".".join([*path, name]), "value": v})
+                    except Exception:  # noqa: BLE001 — objects and folders have no value
+                        pass
+                    if d < depth:
+                        walk(ch, d + 1, [*path, name])
+                except Exception:  # noqa: BLE001
+                    continue
+        walk(c.nodes.objects, 0, [])
+    return out
+
+
+class Remote:
+    """Remote mode: machines come from Eurveda Connect (configured in its setup wizard) and are re-read every minute;
+    jobs the wizard queues (browse a machine, test-read it) are picked up and answered."""
+
+    def __init__(self, conf: dict[str, Any], buf: Buffer):
+        self.conf, self.buf = conf, buf
+        self.base = conf["url"].rstrip("/")
+        token = conf.get("token") or os.environ.get(conf.get("token_env", "EURVEDA_TOKEN"), "")
+        self.s = requests.Session()
+        self.s.headers.update({"Authorization": f"Bearer {token}", "x-nsq-client": "edge-agent"})
+        self.config_path = conf.get("config_path", "/api/connect/agent/config")
+        self.current: Optional[str] = None
+        self.stop_pollers = threading.Event()
+        self.threads: list[threading.Thread] = []
+
+    def refresh(self) -> None:
+        r = self.s.get(self.base + self.config_path, timeout=20, verify=self.conf.get("verify_tls", True))
+        r.raise_for_status()
+        cfg = r.json()
+        self.conf["ingest_path"] = cfg.get("ingest_path", self.conf.get("ingest_path"))
+        self.jobs_path = cfg.get("jobs_path")
+        sig = json.dumps(cfg.get("machines"), sort_keys=True)
+        if sig == self.current:
+            return
+        self.stop_pollers.set()
+        for t in self.threads:
+            t.join(timeout=10)
+        self.stop_pollers = threading.Event()
+        self.threads = [threading.Thread(target=poll, args=(m, self.buf, False, self.stop_pollers), daemon=True, name=m["name"]) for m in cfg.get("machines", [])]
+        for t in self.threads:
+            t.start()
+        self.current = sig
+        log.info("remote config: %d machine(s): %s", len(self.threads), ", ".join(t.name for t in self.threads) or "none yet")
+
+    def run_job(self, j: dict[str, Any]) -> None:
+        m = (j.get("request") or {}).get("machine") or {}
+        try:
+            if j["kind"] == "browse":
+                result = {"tags": browse_list(m["endpoint"])}
+            else:
+                src = make_source(m)
+                src.connect()
+                try:
+                    vals, batch, product = src.read()
+                finally:
+                    src.close()
+                result = {"values": vals, "batch": batch, "product": product}
+            status = "done"
+        except Exception as exc:  # noqa: BLE001 — report any failure to the wizard
+            result, status = {"error": str(exc)[:500]}, "failed"
+        self.s.post(f"{self.base}{self.jobs_path}/{j['id']}", json={"status": status, "result": result}, timeout=30)
+
+    def loop(self) -> None:
+        last_cfg = 0.0
+        while not STOP.is_set():
+            try:
+                if time.monotonic() - last_cfg > float(self.conf.get("config_every_s", 60)):
+                    self.refresh()
+                    last_cfg = time.monotonic()
+                if getattr(self, "jobs_path", None):
+                    for j in self.s.get(self.base + self.jobs_path, timeout=20).json().get("jobs", []):
+                        self.run_job(j)
+            except Exception as exc:  # noqa: BLE001 — keep trying
+                log.warning("remote: %s", exc)
+                last_cfg = 0.0
+            STOP.wait(5)
 
 
 def browse(endpoint: str, depth: int = 4) -> None:
@@ -330,6 +427,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     signal.signal(signal.SIGTERM, lambda *_: STOP.set())
     conf = cfg["eurveda"]
     buf = None if a.dry_run else Buffer(conf.get("buffer", "eurveda-buffer.sqlite"), int(conf.get("buffer_max_rows", 500_000)))
+    if conf.get("remote"):  # machines and jobs from Eurveda Connect
+        conf.setdefault("ingest_path", "/api/connect/agent/ingest")
+        threads = [threading.Thread(target=Remote(conf, buf).loop, daemon=True, name="remote"),
+                   threading.Thread(target=push, args=(conf, buf), daemon=True, name="push")]
+        for t in threads:
+            t.start()
+        log.info("eurveda-agent %s: remote configuration from %s", __version__, conf["url"])
+        while not STOP.is_set():
+            STOP.wait(1)
+        return 0
     threads = [threading.Thread(target=poll, args=(m, buf, a.dry_run), daemon=True, name=m["name"]) for m in cfg["machines"]]
     if buf is not None:
         threads.append(threading.Thread(target=push, args=(conf, buf), daemon=True, name="push"))

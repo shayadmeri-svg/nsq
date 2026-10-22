@@ -70,6 +70,8 @@ REGISTRY: tuple[Feature, ...] = (
             ("/api/lab", "/api/lab/structure", "/api/process")),
     Feature("reactions", "Reaction lab", "Science", "Batch-reactor kinetics, yield map, thermal safety",
             ("/api/lab/reactions", "/api/lab/engines")),
+    Feature("monitor", "Plant monitor", "Science", "Live plant: machines, batches moving through them, alarms; plant setup and connections",
+            ("/api/connect",), scope="own", base=True, notes="Served by Eurveda Connect; plants are private to their organisation."),
     Feature("plant-data", "Plant data", "Science", "Your batch, equipment and SCADA data, with the failure tree run on it",
             ("/api/plant-data",), scope="own", base=True,
             notes="Files and machine streams are private to the organisation that uploads them."),

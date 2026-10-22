@@ -1,4 +1,4 @@
-import { Compass, Cpu, Radio, Factory, FlaskRound, FileCheck2, Microscope, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
+import { Activity, Compass, Cpu, Radio, Factory, FlaskRound, FileCheck2, Microscope, ScanSearch, FlaskConical, Globe2, HeartPulse, Lightbulb, Map, Pill, Table2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -12,6 +12,7 @@ import { Investigate } from "./Investigate";
 import { Lab } from "./Lab";
 import { Medicines } from "./Medicines";
 import { PlantData } from "./PlantData";
+import { PlantMonitor } from "./PlantMonitor";
 import { Plants } from "./Plants";
 import { ReactionLab } from "./ReactionLab";
 import { RegulatoryMap } from "./RegulatoryMap";
@@ -20,6 +21,7 @@ import { Workbench } from "./Workbench";
 import { WrittenConfirmations } from "./WrittenConfirmations";
 
 export const TABS = [
+  { id: "monitor", short: "Plant monitor", label: "Plant monitor", icon: Activity, hint: "The live plant: every machine, the batch and product on it, each reading against that product's range, and alarms" },
   { id: "explore", short: "Explorer", label: "NSQ explorer", icon: Map, hint: "All-India alerts: map, heatmaps, flows" },
   { id: "ledger", short: "Ledger", label: "Ledger", icon: Table2, hint: "Every alert — sort, pick columns, export" },
   { id: "insights", short: "Insights", label: "Insights", icon: Lightbulb, hint: "Patterns the raw alerts don't show" },
@@ -89,6 +91,7 @@ export function Playground({ base }: { base?: string }) {
         {tab === "medicines" && <Medicines />}
         {tab === "process" && <Lab />}
         {tab === "plant-data" && <PlantData />}
+        {tab === "monitor" && <PlantMonitor />}
         {tab === "reactions" && <ReactionLab />}
       </motion.div>
     </>
