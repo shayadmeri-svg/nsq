@@ -178,7 +178,7 @@ def templates() -> dict[str, Any]:
 
 
 def _pharmapy(req: dict[str, Any]) -> dict[str, Any]:
-    r = requests.post(f"{SIM_URL}/react", json=req, timeout=120)
+    r = requests.post(f"{SIM_URL}/react", json=req, timeout=(3, 30))
     r.raise_for_status()
     res = r.json()
     t = np.asarray(res["time_h"], float)

@@ -7,10 +7,12 @@ a solubility curve computed from the molecule, a cooling programme and kinetics.
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import os
 import tempfile
+import threading
 import traceback
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -42,6 +44,47 @@ _TEMPLATE = {"t_crit": 540.2, "p_crit": 5190, "mol_vol": 0.0811, "cp_liq": [63.3
              "delta_hvap": 32300, "tref_hvap": 305, "surf_tension": 0.0264}
 
 
+# A solve that stalls (the step size collapsing, as for some molecules' curves) would otherwise run on and hold a core,
+# with every later request queued behind it. Each solve runs in a child process killed after SIM_TIMEOUT_S, one at a
+# time; a request that arrives while one runs is refused at once, and the API uses its built-in engine for it.
+SIM_TIMEOUT_S = float(os.environ.get("SIM_TIMEOUT_S", "20"))
+_BUSY = threading.Semaphore(1)
+
+
+def _child(fn: Callable[[dict[str, Any]], dict[str, Any]], req: dict[str, Any], conn) -> None:
+    try:
+        conn.send(("ok", fn(req)))
+    except Exception as exc:
+        traceback.print_exc()
+        conn.send(("error", f"{exc.__class__.__name__}: {exc}"))
+
+
+def _bounded(fn: Callable[[dict[str, Any]], dict[str, Any]], req: dict[str, Any]) -> dict[str, Any]:
+    if not _BUSY.acquire(blocking=False):
+        raise HTTPException(503, "another PharmaPy run is in progress")
+    try:
+        ctx = mp.get_context("fork")
+        recv, send = ctx.Pipe(duplex=False)
+        proc = ctx.Process(target=_child, args=(fn, req, send), daemon=True)
+        proc.start()
+        send.close()
+        if not recv.poll(SIM_TIMEOUT_S):
+            proc.kill()
+            proc.join(2)
+            raise HTTPException(504, f"PharmaPy did not finish within {SIM_TIMEOUT_S:g} s (the solver stalled)")
+        try:
+            status, out = recv.recv()
+        except EOFError:
+            raise HTTPException(500, "PharmaPy run ended without a result")
+        finally:
+            proc.join(2)
+        if status != "ok":
+            raise HTTPException(500, out)
+        return out
+    finally:
+        _BUSY.release()
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     ver = None
@@ -57,11 +100,7 @@ def health() -> dict[str, Any]:
 def crystallize(req: dict[str, Any]) -> dict[str, Any]:
     if IMPORT_ERROR:
         raise HTTPException(503, IMPORT_ERROR)
-    try:
-        return _run(req)
-    except Exception as exc:
-        traceback.print_exc()
-        raise HTTPException(500, f"{exc.__class__.__name__}: {exc}")
+    return _bounded(_run, req)
 
 
 def _run(req: dict[str, Any]) -> dict[str, Any]:
@@ -136,11 +175,7 @@ def react(req: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(503, IMPORT_ERROR or "PharmaPy.Reactors not importable")
     if any("keq" in rx for rx in req["rxns"]):
         raise HTTPException(422, "reversible reactions run in the built-in engine")
-    try:
-        return _react(req)
-    except Exception as exc:
-        traceback.print_exc()
-        raise HTTPException(500, f"{exc.__class__.__name__}: {exc}")
+    return _bounded(_react, req)
 
 
 def _react(req: dict[str, Any]) -> dict[str, Any]:

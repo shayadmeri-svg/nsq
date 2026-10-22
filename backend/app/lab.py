@@ -811,6 +811,17 @@ def crystallize(key: str, p: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"End temperature {prog['t1_c']:g} °C is at or below the freezing point of {sv['name']} ({sv['mp_c']:g} °C).")
     if not curve["temps_c"][0] <= prog["t1_c"] < prog["t0_c"] <= curve["temps_c"][-1]:
         raise ValueError(f"Temperatures must satisfy {curve['temps_c'][0]:g} ≤ end < start ≤ {curve['temps_c'][-1]:g} °C.")
+    # A low melting point and heat of fusion make the ideal curve nearly miscible: a "solution" denser than the solid
+    # itself, which no crystalliser can be run on (the solver stalls on it). Ask for what would make it real instead.
+    c_start = float(np.interp(prog["t0_c"], curve["temps_c"], curve["kg_m3"]))
+    rho_solid = float(p.get("rho_solid", 1300))
+    if c_start >= rho_solid:
+        raise ValueError(
+            f"The solubility curve puts {c_start:,.0f} g/L of {prof['name']} in solution at {prog['t0_c']:g} °C, more than the solid's "
+            f"own density ({rho_solid:,.0f} g/L): with a melting point of {mp:g} °C"
+            + (" and an estimated enthalpy of fusion" if fus.get("dh_kind") == "estimate" and not p.get("dh_fus") else "")
+            + ", the ideal model treats it as miscible with the solvent. Enter an activity coefficient (γ) or a measured "
+              "solubility for this solvent, or pick a solvent it is known to crystallise from.")
     notes = []
     if curve.get("ideal"):
         notes.append("Ideal solubility (γ = 1): " + (curve.get("unifac_note") or "the solvent is not modelled") +
@@ -841,7 +852,7 @@ def crystallize(key: str, p: dict[str, Any]) -> dict[str, Any]:
     if want == "pharmapy" or (want == "auto" and not seeded):
         if SIM_URL:
             try:
-                r = requests.post(f"{SIM_URL}/crystallize", json=req, timeout=120)
+                r = requests.post(f"{SIM_URL}/crystallize", json=req, timeout=(3, 30))
                 r.raise_for_status()
                 return done(r.json())
             except Exception as exc:
