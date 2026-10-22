@@ -31,7 +31,7 @@ META = {
 
 
 FORMS = {"tablets", "film-coated tablets", "dispersible tablets", "chewable tablets", "soluble tablets", "effervescent tablets",
-         "orally disintegrating tablets", "prolonged-release tablets", "modified-release tablets", "gastro-resistant tablets",
+         "orally disintegrating tablets", "sublingual tablets", "prolonged-release tablets", "modified-release tablets", "gastro-resistant tablets",
          "capsules", "hard capsules", "soft capsules", "prolonged-release capsules", "gastro-resistant capsules",
          "oral suspension", "oral solution", "syrup", "injection", "powder for injection", "eye drops", "cream", "ointment", "gel"}
 APPARATUS = {"paddle", "basket", "flow-through cell", "reciprocating cylinder"}
@@ -68,8 +68,10 @@ def check(key: str, mon: dict[str, Any]) -> tuple[list[str], list[str]]:
             err.append(f"assay {a['lo']}–{a['hi']}: lo must be below hi, both within 50–150%")
     d = mon.get("dissolution")
     if d is not None:
-        if d.get("apparatus") not in APPARATUS:
-            err.append(f"dissolution.apparatus '{d.get('apparatus')}': one of {', '.join(sorted(APPARATUS))}")
+        if d.get("apparatus") is None:
+            warn.append("dissolution.apparatus not entered")
+        elif d["apparatus"] not in APPARATUS:
+            err.append(f"dissolution.apparatus '{d['apparatus']}': one of {', '.join(sorted(APPARATUS))}")
         for f, (lo, hi) in RANGES.items():
             v = d.get(f)
             if v is None:
@@ -118,7 +120,8 @@ def run(ctx: Ctx) -> int:
                 mons.append({**mon, "url": URL, "edition": (mon.get("reference") or {}).get("edition") or edition})
         if not mons:
             continue
-        data[target] = {"found": bool(mons), "tracked": bool(m), "monographs": mons}
+        entry_ = data.setdefault(target, {"found": True, "tracked": bool(m), "monographs": []})  # two seed keys can name one molecule
+        entry_["monographs"] += mons
         ctx.log(f"  {target}: " + "; ".join(f"{x['title']} ({x['reference'].get('edition')}, vol. {x['reference'].get('volume')}, "
                                              f"p. {x['reference'].get('page')})" for x in mons))
     cov = identity.coverage(resolver, names)
