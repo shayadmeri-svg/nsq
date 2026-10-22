@@ -51,6 +51,7 @@ resource "aws_instance" "app" {
     aws_region         = var.aws_region
     redis_url_param    = aws_ssm_parameter.redis_url.name
     gemini_key_param   = aws_ssm_parameter.gemini_api_key.name
+    backup_bucket      = aws_s3_bucket.backups.bucket
   })
 
   tags = merge(local.common_tags, { Name = "${local.name}-app" })

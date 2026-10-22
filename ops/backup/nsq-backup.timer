@@ -1,0 +1,11 @@
+[Unit]
+Description=NSQ backup (4x daily)
+
+[Timer]
+# every 6 hours; Persistent: a run missed while the box was off happens at the next boot
+OnCalendar=*-*-* 02,08,14,20:15:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

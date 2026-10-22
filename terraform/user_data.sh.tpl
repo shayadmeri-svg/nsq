@@ -30,6 +30,13 @@ GEMINI_KEY_PARAM=${gemini_key_param}
 CONF_EOF
 chmod 644 /etc/nsq-platform.conf
 
+# Off-box backups (ops/backup/, installed by deploy.sh): where to upload the Postgres and Redis dumps.
+cat > /etc/nsq-backup.conf << 'CONF_EOF'
+S3_BUCKET=${backup_bucket}
+AWS_REGION=${aws_region}
+CONF_EOF
+chmod 644 /etc/nsq-backup.conf
+
 # --- First deploy --------------------------------------------------------
 # deploy.sh installs a modern buildx, runs refresh-env.sh (SSM -> .env) and
 # brings the compose stack up with a build.

@@ -1,0 +1,10 @@
+[Unit]
+Description=NSQ backup: Postgres and Redis to S3
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nsq-backup.sh
+Nice=10
+IOSchedulingClass=idle

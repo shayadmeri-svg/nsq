@@ -44,10 +44,11 @@ fi
 "$APP_DIR/refresh-env.sh"
 
 # --- swap: image builds (RDKit, the Vite bundle, and the sim service's
-#     Fortran/SUNDIALS compile) need more than a 1 GB t3.micro has. A 2 GB
+#     Fortran/SUNDIALS compile) run while the live stack keeps serving. A 2 GB
 #     swapfile is created once and kept across reboots. ------------------------
 MEM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-if [ "$MEM_MB" -lt 3500 ] && ! swapon --show | grep -q /swapfile; then
+# Below 8 GB: builds run beside the live stack (see the memory ceilings in docker-compose.yml), so keep 2 GB of swap.
+if [ "$MEM_MB" -lt 8000 ] && ! swapon --show | grep -q /swapfile; then
   if [ ! -f /swapfile ]; then
     fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
     chmod 600 /swapfile
@@ -56,6 +57,7 @@ if [ "$MEM_MB" -lt 3500 ] && ! swapon --show | grep -q /swapfile; then
   swapon /swapfile
   grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
+sysctl -q -w vm.swappiness=10 || true  # swap only under real pressure, not to cache
 
 # --- build + start ---------------------------------------------------------
 #     Everything except the PharmaPy `sim` service must come up. `sim` is
@@ -67,11 +69,48 @@ if docker ps -a --format '{{.Names}}' | grep -qx nsq-analytics; then
   docker rm -f nsq-analytics >/dev/null
   docker image rm nsq-analytics:local >/dev/null 2>&1 || true
 fi
-CORE_SERVICES=$(docker compose config --services | grep -vx sim | tr '\n' ' ')
+# --- graceful rollout ------------------------------------------------------
+#     1. Build every image first: the running containers keep serving meanwhile.
+#     2. Check the proxy configs (nginx, Caddy) in throwaway containers.
+#     3. Replace services in dependency order, each healthy before the next:
+#        data stores → API → Connect → web → demo and optional services.
+#        A container whose image and settings are unchanged is left running.
+#     4. Reload nginx and Caddy in place: open connections and event streams
+#        are not dropped; a new config applies to new requests.
+#     A failure stops the rollout with the failing service's logs: what has
+#     not been replaced yet keeps running the previous version.
+SERVICES=$(docker compose config --services)
+has() { echo "$SERVICES" | grep -qx "$1"; }
+WAIT="--wait --wait-timeout 240"
+on_fail() {
+  echo "deploy: FAILED — state and recent logs:" >&2
+  docker compose ps >&2 || true
+  docker compose logs --tail 60 api connect gateway 2>/dev/null >&2 || true
+}
+trap on_fail ERR
+
+BUILD=$(echo "$SERVICES" | grep -vx sim | tr '\n' ' ')
 # shellcheck disable=SC2086
-docker compose up -d --build $CORE_SERVICES
+docker compose build $BUILD
+
+docker run --rm -v "$APP_DIR/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine nginx -t -q
+if has caddy; then
+  docker run --rm -e DOMAIN="${DOMAIN:-$(grep -E '^DOMAIN=' .env | cut -d= -f2-)}" \
+    -v "$APP_DIR/gateway/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.8.4-alpine \
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+fi
+
+# shellcheck disable=SC2086
+docker compose up -d $WAIT redis postgres
+# shellcheck disable=SC2086
+docker compose up -d --no-deps $WAIT api
+# shellcheck disable=SC2086
+docker compose up -d --no-deps $WAIT connect
+# shellcheck disable=SC2086
+docker compose up -d --no-deps $WAIT web
+if has plant-sim; then docker compose up -d --no-deps plant-sim; fi
 if [ "${DEPLOY_SIM:-1}" = "1" ]; then
-  docker compose up -d --build sim \
+  docker compose up -d --build --no-deps sim \
     || echo "deploy: WARNING — sim (PharmaPy) failed to build/start; the lab uses its built-in engine." >&2
 fi
 
@@ -88,15 +127,42 @@ fi
   [ "$rc" -eq 10 ] || echo "deploy: WARNING — could not seed local Redis from Upstash (exit $rc); services will serve data/nsq_snapshot.json.gz until ./pull-upstash.sh succeeds." >&2
 }
 
-# --- restart the snapshot-mounted services ---------------------------------
-#     A data-only commit (fresh data/nsq_snapshot.json.gz) changes no image,
-#     and a single-file bind mount pins the inode — os.replace on the host
-#     leaves running containers reading the old snapshot bytes. Restarting
-#     picks up the new file. Seconds of downtime; safe to re-run.
-docker compose restart api
-# The gateway resolves upstream containers by name; restart it too so a
-# long-running nginx never proxies to addresses from before the rebuild.
-docker compose restart gateway
+# --- a new bundled snapshot: the API reads it at start ----------------------
+#     Restart the API only when data/nsq_snapshot.json.gz changed since the last
+#     deploy (a data-only commit changes no image, so nothing above replaced it).
+SNAP_SUM=$(sha256sum data/nsq_snapshot.json.gz 2>/dev/null | cut -d' ' -f1 || true)
+if [ -n "$SNAP_SUM" ] && [ "$SNAP_SUM" != "$(cat .deploy-snapshot.sha 2>/dev/null || true)" ]; then
+  # shellcheck disable=SC2086
+  docker compose restart -t 25 api && docker compose up -d --no-deps $WAIT api
+  echo "$SNAP_SUM" > .deploy-snapshot.sha
+fi
+
+# --- proxies: start or apply a changed definition, then reload in place -------
+# shellcheck disable=SC2086
+docker compose up -d --no-deps $WAIT gateway
+docker compose exec -T gateway nginx -s reload
+if has caddy; then
+  docker compose up -d --no-deps caddy
+  docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
+trap - ERR
+
+# --- backups: Postgres and Redis to S3, 4x daily (ops/backup/) ----------------
+#     Installed from the repo on every deploy, so a rebuilt box gets them too. It needs /etc/nsq-backup.conf
+#     (S3_BUCKET=<terraform output backup_bucket>, AWS_REGION=…); without it the deploy says so and carries on.
+#     Replaces the earlier hand-installed, Postgres-only nsq-pg-backup timer.
+if [ -r /etc/nsq-backup.conf ]; then
+  install -m 0755 ops/backup/nsq-backup.sh /usr/local/bin/nsq-backup.sh
+  install -m 0644 ops/backup/nsq-backup.service ops/backup/nsq-backup.timer /etc/systemd/system/
+  if systemctl list-unit-files nsq-pg-backup.timer >/dev/null 2>&1; then
+    systemctl disable --now nsq-pg-backup.timer >/dev/null 2>&1 || true
+  fi
+  systemctl daemon-reload
+  systemctl enable --now nsq-backup.timer
+  echo "deploy: backups scheduled — $(systemctl list-timers nsq-backup.timer --no-pager | sed -n 2p)"
+else
+  echo "deploy: WARNING — /etc/nsq-backup.conf missing: Postgres and Redis are NOT being backed up off this box." >&2
+fi
 
 # --- host nginx (optional) -------------------------------------------------
 # Nothing in this repo installs a host-level nginx: the stack's own gateway
