@@ -217,7 +217,7 @@ def sweep(db: Session) -> None:
 
 def _points(eid: int, sig: str, since: Optional[dict[tuple[int, str], str]], track: Optional[dict[tuple[int, str], str]]) -> dict[str, list]:
     with _lock:
-        h = list(HIST.get((eid, sig), []))[-60:]
+        h = list(HIST.get((eid, sig), []))[-HISTORY:]
     if track is not None and h:
         track[(eid, sig)] = h[-1][0]
     if since is None:
@@ -241,7 +241,7 @@ def history_from_db(db: Session, e: Equipment, minutes: int = 20) -> None:
 
 def snapshot(db: Session, plant_id: int, since: Optional[dict[tuple[int, str], str]] = None,
              track: Optional[dict[tuple[int, str], str]] = None) -> dict[str, Any]:
-    """The live state of a plant. Each signal carries its last 60 readings as `history`; with `since` (the last reading
+    """The live state of a plant. Each signal carries its last HISTORY readings (2 minutes at 1 Hz) as `history`; with `since` (the last reading
     time already sent, per machine and signal) it carries only the readings after it, as `append`. `track` is filled
     with the time of the last reading included, for the next call."""
     eqs = list(db.scalars(select(Equipment).where(Equipment.plant_id == plant_id).order_by(Equipment.position, Equipment.id)))

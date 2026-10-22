@@ -26,7 +26,7 @@ function merge(prev: any, tick: any) {
   const old = new Map<number, any>((prev.equipment ?? []).map((e: any) => [e.id, e]));
   const equipment = (tick.equipment ?? []).map((e: any) => {
     const was = new Map<string, any>((old.get(e.id)?.signals ?? []).map((s: any) => [s.id, s]));
-    return { ...e, signals: e.signals.map(({ append, ...s }: any) => ({ ...s, history: [...(was.get(s.id)?.history ?? []), ...(append ?? [])].slice(-60) })) };
+    return { ...e, signals: e.signals.map(({ append, ...s }: any) => ({ ...s, history: [...(was.get(s.id)?.history ?? []), ...(append ?? [])].slice(-120) })) };
   });
   return { ...prev, ...tick, equipment };
 }

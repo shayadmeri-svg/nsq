@@ -144,7 +144,7 @@ services:
       - API_URL=http://api:8001
       - PLANT_SIM_TOKEN=${PLANT_SIM_TOKEN:-}
       - PLANT_SIM_ORG=${PLANT_SIM_ORG:-}
-      - CONNECT_RETAIN_H=${CONNECT_RETAIN_H:-24}
+      - CONNECT_RETAIN_H=${CONNECT_RETAIN_H:-6}   # raw 1 Hz readings; batches and alarms are kept separately
     mem_limit: 256m
     depends_on:
       postgres: { condition: service_healthy }

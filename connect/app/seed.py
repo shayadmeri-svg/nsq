@@ -21,6 +21,7 @@ DEMO_ORG = os.environ.get("PLANT_SIM_ORG", "") or "eurveda-demo"
 DEMO = "Demo setting for the simulated line — replace with your validated range"
 UOW = "Uniformity of weight: ±5 % for tablets over 250 mg (Ph. Eur. 2.9.5 / IP)"
 SIM_ENDPOINT = "opc.tcp://localhost:4840/eurveda-sim/"
+SIM_POLL_S = float(os.environ.get("CONNECT_SIM_POLL_S", "1"))  # the simulator updates every second: read it as often
 
 
 def _p(ideal: float, lo: float, hi: float, check: str = "continuous", source: str = DEMO) -> dict[str, Any]:
@@ -45,7 +46,7 @@ def seed_demo(db: Session) -> None:
                                                 ("COATER-1", "eurveda-sim-coater", "Simulated pan coater")]):
             p = catalog.PROFILE_BY_ID[prof]
             e = Equipment(plant_id=plant.id, name=name, type=p["type"], position=i, make=make, model="Eurveda simulator", protocol="opcua",
-                          connection={"endpoint": SIM_ENDPOINT, "poll_s": 5}, tag_map=dict(p["tags"]), batch_tag=p["batch_tag"],
+                          connection={"endpoint": SIM_ENDPOINT, "poll_s": SIM_POLL_S}, tag_map=dict(p["tags"]), batch_tag=p["batch_tag"],
                           product_tag=p["product_tag"], agent_id=agent.id if agent else None, profile_id=prof)
             db.add(e)
             db.flush()
@@ -74,4 +75,12 @@ def seed_demo(db: Session) -> None:
         db.flush()
         for e in db.scalars(select(Equipment).where(Equipment.plant_id == plant.id, Equipment.agent_id.is_(None))):
             e.agent_id = a.id
+        db.commit()
+    # simulator machines still on the old 5-second default read every SIM_POLL_S (a value someone set is left alone)
+    changed = False
+    for e in db.scalars(select(Equipment).where(Equipment.plant_id == plant.id, Equipment.profile_id.like("eurveda-sim-%"))):
+        if float((e.connection or {}).get("poll_s") or 5) == 5 and SIM_POLL_S != 5:
+            e.connection = {**(e.connection or {}), "poll_s": SIM_POLL_S}
+            changed = True
+    if changed:
         db.commit()

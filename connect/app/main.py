@@ -307,7 +307,7 @@ def live_snapshot(plant_id: int, user: dict = Depends(current_user), db: Session
 
 
 STREAM_HEARTBEAT_S = 15.0  # at most this long between frames, so proxies keep the connection and idle machines show as idle
-STREAM_MIN_GAP_S = 0.5     # readings arriving faster than this are sent together
+STREAM_MIN_GAP_S = 0.25    # readings arriving within this are sent together
 
 
 @app.get(f"{P}/plants/{{plant_id}}/stream")
