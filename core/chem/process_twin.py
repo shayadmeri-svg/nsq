@@ -210,8 +210,50 @@ def _api_rsd_random(dose_mg: float, d50_um: float, gsd: float, rho: float) -> fl
 def evaluate(mol: Molecule, x: dict[str, float], form: Optional[dict[str, Any]] = None, specs: Optional[dict[str, Any]] = None,
              fast: bool = True) -> dict[str, Any]:
     """Every quality test for one set of process parameters. `fast` uses a coarser dissolution grid (for Monte Carlo)."""
+    return evaluate_many(mol, [x], form, specs, fast)[0]
+
+
+def evaluate_many(mol: Molecule, xs: list[dict[str, float]], form: Optional[dict[str, Any]] = None,
+                  specs: Optional[dict[str, Any]] = None, fast: bool = True) -> list[dict[str, Any]]:
+    """`evaluate` for many parameter sets at once (a sweep, Monte Carlo draws, the batches of a stream).
+
+    The algebraic unit operations run per set; the dissolution model, which is most of the cost, runs once for the
+    whole list and only for the distinct (particle size, disintegration, break-up) inputs — a set whose change does
+    not reach dissolution (drying, potency, fill weight…) shares the simulation of the set it equals there."""
     F = {**FORMULATION, **(form or {})}
     S = {**SPECS, **(specs or {})}
+    pre = [_upstream(mol, x, F) for x in xs]
+    keys = [(p["v"]["api_d50_um"], max(p["dt_min"], 0.05), max(p["breakup"], 0.05)) for p in pre]
+    uniq = list(dict.fromkeys(keys))
+    kw = dict(bins=7, cohort_min=1.0, dt_s=4.0) if fast else {}
+    times, pct, _, _ = product.tablet_dissolution_many(mol.dose_mg, mol.cs37_mg_ml, mol.diff_cm2_s, d50_um=[u[0] for u in uniq], gsd=F["gsd"],
+                                                       density_g_cm3=mol.density, volume_ml=mol.volume_ml, rpm=F["rpm"],
+                                                       disintegration_min=[u[1] for u in uniq], granule_breakup_min=[u[2] for u in uniq],
+                                                       t_end_min=max(S["q_time_min"], 30.0), **kw)
+    row = {u: i for i, u in enumerate(uniq)}
+    out = []
+    for p, key in zip(pre, keys):
+        curve = pct[row[key]]
+        diss = float(np.interp(S["q_time_min"], times, curve))
+        values = {**p["values"], "dissolution": diss}
+        values = {k: values[k] for k in ("assay", "uniformity", "dissolution", "disintegration", "lod", "strength")}
+        fails = {
+            "assay": not (S["assay_lo"] <= values["assay"] <= S["assay_hi"]),
+            "uniformity": values["uniformity"] > S["av_max"],
+            "dissolution": diss < S["q_pct"],
+            "disintegration": values["disintegration"] > S["dt_max_min"],
+            "lod": values["lod"] > S["lod_max"],
+            "strength": values["strength"] < S["tensile_min"],
+        }
+        e = {"values": {k: round(v_, 3) for k, v_ in values.items()}, "fails": fails, "intermediate": {k: round(v_, 4) for k, v_ in p["inter"].items()}}
+        if not fast:
+            e["curve"] = {"times_min": times, "pct": curve.tolist()}
+        out.append(e)
+    return out
+
+
+def _upstream(mol: Molecule, x: dict[str, float], F: dict[str, Any]) -> dict[str, Any]:
+    """Everything up to dissolution for one parameter set: the algebraic unit operations, and dissolution's inputs."""
     v = {p.id: float(x.get(p.id, p.nominal)) for p in PARAMS}
     tablet_mg = F["tablet_mg"] or (mol.dose_mg / 0.8 if mol.dose_mg > 250 else max(200.0, mol.dose_mg + 20))
     diameter_mm = F["diameter_mm"] or 10.0 * (tablet_mg / 400.0) ** (1 / 3)
@@ -254,31 +296,12 @@ def evaluate(mol: Molecule, x: dict[str, float], form: Optional[dict[str, Any]] 
     wet_slow = math.cos(math.radians(F["contact_angle_deg"])) / cos_t
     dt_min = (t_pen_s / 60 + F["bond_min_per_mpa"] * F["sigma0_mpa"] * math.exp(-F["rd_b"] * eps)) * wet_slow
 
-    # dissolution: tablet model
     breakup = F["breakup_ref_min"] * (v["granulation_liquid_pct"] / 25.0) ** F["breakup_exponent"]
-    kw = dict(bins=7, cohort_min=1.0, dt_s=4.0) if fast else {}
-    tab = product.tablet_dissolution(mol.dose_mg, mol.cs37_mg_ml, mol.diff_cm2_s, d50_um=v["api_d50_um"], gsd=F["gsd"],
-                                     density_g_cm3=mol.density, volume_ml=mol.volume_ml, rpm=F["rpm"],
-                                     disintegration_min=max(dt_min, 0.05), granule_breakup_min=max(breakup, 0.05),
-                                     t_end_min=max(S["q_time_min"], 30.0), **kw)
-    diss = float(np.interp(S["q_time_min"], tab["times_min"], tab["pct"]))
-
-    values = {"assay": assay, "uniformity": av, "dissolution": diss, "disintegration": dt_min, "lod": lod, "strength": tensile}
-    fails = {
-        "assay": not (S["assay_lo"] <= assay <= S["assay_hi"]),
-        "uniformity": av > S["av_max"],
-        "dissolution": diss < S["q_pct"],
-        "disintegration": dt_min > S["dt_max_min"],
-        "lod": lod > S["lod_max"],
-        "strength": tensile < S["tensile_min"],
-    }
     inter = {"porosity": eps, "contact_angle_deg": theta, "rsd_random_pct": rsd_rand, "rsd_mix_pct": rsd_mix, "content_sd_pct": s_pct,
              "granule_breakup_min": breakup, "water_kg": water_kg, "evap_kg_min": cap_kg_min, "tablet_mg": tablet_mg,
              "thickness_mm": 2 * half_thick_m * 1000, "diameter_mm": diameter_mm, "wetting_s": t_pen_s}
-    out = {"values": {k: round(v_, 3) for k, v_ in values.items()}, "fails": fails, "intermediate": {k: round(v_, 4) for k, v_ in inter.items()}}
-    if not fast:
-        out["curve"] = {"times_min": tab["times_min"], "pct": tab["pct"]}
-    return out
+    return {"v": v, "dt_min": dt_min, "breakup": breakup, "inter": inter,
+            "values": {"assay": assay, "uniformity": av, "disintegration": dt_min, "lod": lod, "strength": tensile}}
 
 
 def _limit_value(cqa: str, S: dict[str, Any]) -> list[tuple[str, float]]:
@@ -292,14 +315,13 @@ def tipping_points(mol: Molecule, x: dict[str, float], form=None, specs=None, n:
     over the parameter's search range and linear interpolation between the bracketing points."""
     S = {**SPECS, **(specs or {})}
     out: dict[str, dict[str, Any]] = {}
-    for p in _ps():
+    grids = {p.id: np.linspace(p.sweep[0], p.sweep[1], n) for p in _ps()}
+    evals = evaluate_many(mol, [{**x, pid: float(g)} for pid, grid in grids.items() for g in grid], form, specs)
+    for i, p in enumerate(_ps()):
         cqas = [c for c, ps in EDGES.items() if p.id in ps]
-        grid = np.linspace(p.sweep[0], p.sweep[1], n)
-        vals = {c: [] for c in cqas}
-        for g in grid:
-            r = evaluate(mol, {**x, p.id: float(g)}, form, specs)
-            for c in cqas:
-                vals[c].append(r["values"][c])
+        grid = grids[p.id]
+        sweep = evals[i * n:(i + 1) * n]
+        vals = {c: [r["values"][c] for r in sweep] for c in cqas}
         res = {}
         for c in cqas:
             y = np.array(vals[c])
@@ -337,11 +359,8 @@ def morris(mol: Molecule, x: dict[str, float], form=None, specs=None, r: int = 6
         bounds.append([c - half, c + half])
     problem = {"num_vars": len(names), "names": names, "bounds": bounds}
     X = ms.sample(problem, N=r, num_levels=4, seed=seed)
-    Y = {c["id"]: [] for c in CQAS}
-    for row in X:
-        e = evaluate(mol, dict(zip(names, map(float, row))), form, specs)
-        for k in Y:
-            Y[k].append(e["values"][k])
+    evals = evaluate_many(mol, [dict(zip(names, map(float, row))) for row in X], form, specs)
+    Y = {c["id"]: [e["values"][c["id"]] for e in evals] for c in CQAS}
     out = {}
     for k, ys in Y.items():
         a = ma.analyze(problem, X, np.array(ys), num_levels=4, print_to_console=False, seed=seed)
@@ -358,13 +377,15 @@ def monte_carlo(mol: Molecule, x: dict[str, float], form=None, specs=None, n: in
     rng = np.random.default_rng(seed)
     fails = {c["id"]: 0 for c in CQAS}
     any_fail = 0
+    draws = []
     for _ in range(n):
         xs = {p.id: float(rng.normal(x.get(p.id, p.nominal), (p.hi - p.lo) / 6)) for p in _ps()}
         xs["weight_rsd_pct"] = max(xs["weight_rsd_pct"], 0.05)
         xs["api_d50_um"] = max(xs["api_d50_um"], 1.0)
         xs["blend_min"] = max(xs["blend_min"], 0.1)
         xs["drying_min"] = max(xs["drying_min"], 1.0)
-        e = evaluate(mol, xs, form, specs)
+        draws.append(xs)
+    for e in evaluate_many(mol, draws, form, specs):
         hit = False
         for k, f in e["fails"].items():
             if f and k not in (withheld or {}):
@@ -503,8 +524,7 @@ def _run(mol, overrides, form, specs, analyses, withheld, baseline, nor) -> dict
     x = dict(base)
     injected = {k: float(v) for k, v in (overrides or {}).items() if k in _pb() and v is not None}
     x.update(injected)
-    nominal = evaluate(mol, base, form, specs, fast=False)
-    current = evaluate(mol, x, form, specs, fast=False) if injected else nominal
+    nominal, current = evaluate_many(mol, [base, x], form, specs, fast=False) if injected else [evaluate(mol, base, form, specs, fast=False)] * 2
     out: dict[str, Any] = {
         "unit_ops": [{**u, "params": [{**p.__dict__, "sweep": list(p.sweep), "current": x[p.id], "injected": p.id in injected,
                                        "base": base[p.id], "plant": p.id in (baseline or {}) or p.id in (nor or {})}

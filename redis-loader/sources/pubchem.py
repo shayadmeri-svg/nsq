@@ -307,24 +307,12 @@ def lookup(names: list[str]) -> dict[str, Any]:
 
 
 def _targets() -> list[dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    p = data_dir() / "generated" / "candidates.json"
-    if p.exists():
-        for c in json.loads(p.read_text(encoding="utf-8")):
-            out[c["key"]] = {"key": c["key"], "names": c.get("names") or [c["key"]]}
-    entered = data_dir() / "generated" / "molecules.json"
-    if entered.exists():
-        for m in json.loads(entered.read_text(encoding="utf-8")):
-            if m.get("added"):
-                v = m.get("values") or {}
-                out.setdefault(m["key"], {"key": m["key"], "names": [v.get("api_name") or m["name"], *(v.get("aliases") or [])]})
-    seed = data_dir() / "structures_seed.json"
-    if seed.exists():
-        for k, v in json.loads(seed.read_text(encoding="utf-8")).get("molecules", {}).items():
-            out.setdefault(k, {"key": k, "names": [v.get("name") or k]})
+    import identity  # core/: the one definition of what is tracked
+
+    out = identity.tracked(data_dir())
     if not out:
         raise RuntimeError("No molecules to look up yet: run 'Build molecule universe' first.")
-    return list(out.values())
+    return out
 
 
 def run(ctx: Ctx) -> int:

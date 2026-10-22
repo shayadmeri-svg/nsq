@@ -313,9 +313,9 @@ def analysis(slug: str, body: dict[str, Any] = Body(default={}), user: User = De
             prof, mol, form, withheld, _ = lab.twin_molecule(key, _dose(rows))
             from chem import process_twin as twin
 
-            def predict(values: dict[str, float]) -> dict[str, float]:  # noqa: F811 — the twin's view of one batch
-                v = twin.evaluate(mol, values, form)["values"]
-                return {k: round(float(x), 3) for k, x in v.items() if k not in (withheld or {})}
+            def predict(sets: list[dict[str, float]]) -> list[dict[str, float]]:  # noqa: F811 — the twin's view of each batch
+                return [{k: round(float(x), 3) for k, x in e["values"].items() if k not in (withheld or {})}
+                        for e in twin.evaluate_many(mol, sets, form)]
 
             molecule = {"key": key, "name": prof["name"], "dose_mg": mol.dose_mg, "withheld": withheld or {}}
         except KeyError:
@@ -485,8 +485,8 @@ def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current
 
     merged = bd.merge([{"name": d.name, "batches": d.batches} for d in live_ds])
 
-    def predict(values: dict[str, float]) -> dict[str, float]:
-        return {k: float(v) for k, v in twin.evaluate(mol, values, form)["values"].items() if k not in (withheld or {})}
+    def predict(sets: list[dict[str, float]]) -> list[dict[str, float]]:
+        return [{k: float(v) for k, v in e["values"].items() if k not in (withheld or {})} for e in twin.evaluate_many(mol, sets, form)]
 
     # Calibration and the model's bias against this plant's measured results (uploaded files) change only when the
     # files do: computed once per file set, not on every 5-second refresh.
@@ -503,10 +503,10 @@ def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current
     cal, bias = hit
     sp = bd.specs_for()
     by_cqa = {cqa: f for f, cqa in bd.CQA_FIELDS.items()}
-    for b in dict.fromkeys(m["batch_no"] for m in machines):
-        vals = (merged.get(b) or {}).get("values", {})
-        params = {k: v for k, v in vals.items() if k in bd.PARAM_IDS}
-        ev = twin.evaluate(mol, {**cal["baseline"], **params}, form)
+    on_line = {b: {k: v for k, v in (merged.get(b) or {}).get("values", {}).items() if k in bd.PARAM_IDS}
+               for b in dict.fromkeys(m["batch_no"] for m in machines)}
+    evals = twin.evaluate_many(mol, [{**cal["baseline"], **params} for params in on_line.values()], form)  # every batch on the line at once
+    for (b, params), ev in zip(on_line.items(), evals):
         pred = []
         for c in twin.CQAS:
             if c["id"] in (withheld or {}):

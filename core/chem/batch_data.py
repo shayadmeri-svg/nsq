@@ -598,7 +598,8 @@ def diagnose(b: str, rec: dict[str, Any], charts: dict[str, dict[str, Any]], spe
 def analyse(batches: dict[str, dict[str, Any]], specs: Optional[dict[str, Any]] = None,
             predict: Optional[Any] = None) -> dict[str, Any]:
     """Charts for every field, the batches outside a limit with their diagnosis, and the twin calibration.
-    `predict(values) -> {cqa: value}`: the twin's prediction for one batch's parameters (optional)."""
+    `predict([values, …]) -> [{cqa: value}, …]`: the twin's predictions for the batches' parameters, all in one call
+    (optional)."""
     sp = specs_for(specs)
     order = _order(batches)
     fields = sorted({k for r in batches.values() for k in r["values"]}, key=lambda k: (["cqa", "param", "raw"].index(F.get(k, {}).get("kind", "raw"))
@@ -607,10 +608,9 @@ def analyse(batches: dict[str, dict[str, Any]], specs: Optional[dict[str, Any]] 
     cal = calibration(charts)
     preds: dict[str, dict[str, float]] = {}
     if predict:
-        for b in order:
-            pv = {k: batches[b]["values"][k] for k in PARAM_IDS if k in batches[b]["values"]}
-            if pv:
-                preds[b] = predict({**cal["baseline"], **pv})
+        pvs = {b: pv for b in order if (pv := {k: batches[b]["values"][k] for k in PARAM_IDS if k in batches[b]["values"]})}
+        if pvs:
+            preds = dict(zip(pvs, predict([{**cal["baseline"], **pv} for pv in pvs.values()])))
     diag = [d for b in order if (d := diagnose(b, batches[b], charts, sp, preds.get(b)))]
     check = {}
     for fid, cqa in CQA_FIELDS.items():

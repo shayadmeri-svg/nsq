@@ -13,6 +13,7 @@ import math
 import os
 import re
 from collections import Counter, defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Optional
 
 import numpy as np
@@ -486,15 +487,22 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
         else:
             why = d["pka"].get("why_not") or "pKa unknown"
             withheld.append(f"weak {d['ionisable'][0]} ({why}): enter the pKa, since solubility depends on pH")
-    # FDA's recommended method sets the medium volume, pH and sampling window unless the user changed them.
-    meth = fda_method(key)
+    # The pharmacopoeial chain (limits.py: IP → Ph. Int. → FDA's method) sets the medium, pH, sampling window and Q
+    # unless the user changed them.
+    from . import limits
+
+    lim = limits.resolve(key)
+    meth = limits.method(lim)
     volume = float(p["volume_ml"]) if p.get("volume_ml") not in (None, "") else float((meth or {}).get("volume_ml") or 900)
     ph = float(p["ph"]) if p.get("ph") not in (None, "") else float((meth or {}).get("ph") or 6.8)
     t_end = float(p["t_end_min"]) if p.get("t_end_min") not in (None, "") else max(60.0, max((meth or {}).get("times_min") or [60.0]))
     diff = float(p.get("diffusivity") or d["diffusivity_cm2_s"])
     d50, gsd_, dens = float(p.get("d50_um", 20)), float(p.get("gsd", 1.8)), float(p.get("density", 1.3))
-    q_pct, q_time = float(p.get("q_pct", 75)), float(p.get("q_time_min", 45))
-    # Paddle speed: typed > FDA's method > 50 rpm (assumed)
+    qf, tf = lim["fields"]["q_pct"], lim["fields"]["q_time_min"]
+    q_pct = float(p["q_pct"]) if p.get("q_pct") not in (None, "") else float(qf["value"])
+    q_time = float(p["q_time_min"]) if p.get("q_time_min") not in (None, "") else float(tf["value"])
+    q_kind = "user" if any(p.get(x) not in (None, "") for x in ("q_pct", "q_time_min")) else ("source" if qf["source"] != "default" else "assumption")
+    # Paddle speed: typed > the chain's method > 50 rpm (assumed)
     if p.get("rpm") not in (None, ""):
         rpm, rpm_kind = float(p["rpm"]), "user"
     elif meth and meth.get("rpm"):
@@ -572,7 +580,8 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
         v_ = p.get(k)
         return dflt if v_ in (None, "") else float(v_)
 
-    assumed = [k for k, v in DISSOLUTION_DEFAULTS.items() if _given(k, v) == v and not (k == "volume_ml" and meth and meth.get("volume_ml"))]
+    assumed = [k for k, v in DISSOLUTION_DEFAULTS.items() if _given(k, v) == v and not (k == "volume_ml" and meth and meth.get("volume_ml"))
+               and not (k in ("q_pct", "q_time_min") and q_kind != "assumption")]
     sol_label = sol.get("model")
     if cs_kind != "user":
         sol_label = (f"{cs:.3g} mg/mL at 37 °C, extrapolated from {sol.get('display_mg_ml')} mg/mL at 25 °C ({sol.get('model')}) "
@@ -588,21 +597,24 @@ def dissolution(key: str, p: dict[str, Any]) -> dict[str, Any]:
                                             "url": sol.get("url")},
                        "medium": {"volume_ml": volume, "ph": ph, "t_end_min": t_end,
                                   "kind": "source" if meth and not any(p.get(x) not in (None, "") for x in ("volume_ml", "ph")) else ("user" if any(p.get(x) not in (None, "") for x in ("volume_ml", "ph")) else "assumption"),
-                                  "label": (f"FDA method: {meth.get('dosage_form')}, {meth.get('apparatus')} {meth.get('rpm_text') or ''} rpm, "
-                                            f"{meth.get('medium')}, {meth.get('volume_text')} mL, sampling {meth.get('times_text')} min") if meth else
-                                           "no FDA method with a medium for this tablet/capsule: USP-style 900 mL, pH 6.8 assumed",
+                                  "label": meth["label"] if meth else
+                                           "no pharmacopoeial or FDA method with a medium for this tablet/capsule: USP-style 900 mL, pH 6.8 assumed",
                                   "url": (meth or {}).get("url")},
                        "pka": {"value": pka, "kind": pka_kind, "ionization": ion, "label": d["pka"].get("source") if pka_kind in ("source", "estimate") else None,
                                "url": d["pka"].get("url")},
                        "diffusivity": {"value": d["diffusivity_cm2_s"], "kind": "estimate", "label": d["diffusivity_note"]},
-                       "rpm": {"value": rpm, "kind": rpm_kind, "label": "FDA method" if rpm_kind == "source" else None},
+                       "rpm": {"value": rpm, "kind": rpm_kind, "label": meth["label"] if rpm_kind == "source" else None},
+                       "q": {"value": q_pct, "time_min": q_time, "kind": q_kind, "url": qf["url"] if q_kind == "source" else None,
+                             "label": (f"Q from {qf['label']}, {qf['monograph']}" + (f" ({qf['note']})" if qf.get("note") else "")) if q_kind == "source"
+                                      else "no pharmacopoeia in the chain gives Q for this molecule: generic 75% at 45 min" if q_kind == "assumption" else None},
                        "disintegration_min": {"value": dis, "kind": dis_kind,
                                               "label": "fitted to your points" if dis_kind == "fitted" else "enter the measured disintegration time (IP test)" if dis_kind == "assumption" else None},
                        "granule_breakup_min": {"value": gb, "kind": gb_kind, "label": "fitted to your points" if gb_kind == "fitted" else None}},
-            "assumed": assumed, "fda_method": meth}
+            "assumed": assumed, "fda_method": meth, "limits": lim}
 
 
 _twin_cache: dict[str, Any] = {}
+_IO = ThreadPoolExecutor(max_workers=4, thread_name_prefix="lab-io")  # outbound API calls, off the compute path
 _TABLET = re.compile(r"\btab(let)?s?\b|caplet", re.I)
 # Modified-release products: the twin is an immediate-release tablet, so their records are left out
 _MODIFIED = re.compile(r"\b(sr|er|xr|xl|cr|mr|dr|od|extended|sustained|prolonged|controlled|modified|delayed|gastro-?resistant|"
@@ -617,10 +629,11 @@ def _ir_tablet_recall(x: dict[str, Any]) -> bool:
     return bool(re.search(r"tablet", d, re.I)) and not _MODIFIED.search(d) and not _COMBO.search(head)
 
 
-def twin_records(key: str) -> dict[str, Any]:
+def twin_records(key: str, recalls: Optional[Future] = None) -> dict[str, Any]:
     """The public records behind the twin's error scenarios for one molecule, matched on their own text:
     CDSCO NSQ notices for single-ingredient tablets of it, and FDA recalls (openFDA enforcement) naming it.
-    Per quality test: how many records name the test, with up to three quoted."""
+    Per quality test: how many records name the test, with up to three quoted.
+    `recalls`: the openFDA fetch already started (see process_twin), else it is made here."""
     from chem import process_twin as twin
 
     from . import evidence
@@ -635,7 +648,7 @@ def twin_records(key: str) -> dict[str, Any]:
               and (lambda i: len(i) == 1 and i[0] in keys)(insights.product_ingredients(n))}
         rows = df[names.isin(ok)]
     texts = rows["NSQ Result"].fillna("").astype(str) if not rows.empty else []
-    rc_all = evidence.recalls_all(key)
+    rc_all = recalls.result() if recalls is not None else evidence.recalls_all(key)
     rc = {**rc_all, "items": [x for x in rc_all.get("items", []) if _ir_tablet_recall(x)]}
     tests: dict[str, Any] = {}
     for c in twin.CQAS:
@@ -729,17 +742,26 @@ def process_twin(key: str, p: dict[str, Any]) -> dict[str, Any]:
     ck = _json.dumps([key, overrides, specs, form, p.get("dose_mg"), baseline, nor], sort_keys=True, default=str)
     if ck in _twin_cache:
         return _twin_cache[ck]
+    from . import evidence
+
+    recalls = _IO.submit(evidence.recalls_all, key)  # a network call: runs while the molecule and its records are read
     prof, mol, mform, withheld, diss = twin_molecule(key, p.get("dose_mg"))
     form = {**mform, **form}
+    from . import limits
+
+    lim = diss.get("limits") or limits.resolve(key)
+    specs = {**limits.twin_specs(lim), **specs}  # the molecule's pharmacopoeial limits, unless the user typed others
     d = prof["derived"]
     dose, cs = mol.dose_mg, mol.cs37_mg_ml
-    recs = twin_records(key)
+    recs = twin_records(key, recalls)
     mol.alerts = recs["tablet_notices"]
     mol.test_alerts = {k: v["cdsco"] for k, v in recs["tests"].items()}
     out = twin.run(mol, overrides, form, specs, withheld=withheld, baseline=baseline or None, nor=nor or None)
     nominal_run = out if not out["injected"] else process_twin(key, {**p, "overrides": {}})
     out["scenarios"] = twin_scenarios(nominal_run, recs) if not out["injected"] else nominal_run["scenarios"]
     out["records"] = {k: v for k, v in recs.items() if k != "tests"}
+    out["spec_basis"] = {**out["spec_basis"], **limits.spec_basis(lim)}
+    out["limits"] = lim
     out["molecule"] = {"key": key, "name": prof["name"], "dose_mg": dose, "dose_kind": diss["inputs"]["dose_mg"]["kind"],
                        "solubility_mg_ml": cs, "solubility_label": diss["inputs"]["solubility_mg_ml"]["label"],
                        "medium": diss["inputs"]["medium"]["label"], "diffusivity": d["diffusivity_cm2_s"], "alerts": mol.alerts}

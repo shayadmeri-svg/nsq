@@ -70,21 +70,55 @@ def _build_frame() -> tuple[pd.DataFrame, str]:
     return df, "computed"
 
 
+def _fresh_frame() -> tuple[float, pd.DataFrame, str]:
+    df, source = _build_frame()
+    if "Parsed_Date" in df.columns:
+        df["Parsed_Date"] = pd.to_datetime(df["Parsed_Date"], errors="coerce")
+    return time.monotonic() + settings.frame_ttl_s, mark_spurious(df), source
+
+
 def frame() -> pd.DataFrame:
-    """The enriched NSQ frame (all alerts), cached for FRAME_TTL_S."""
+    """The enriched NSQ frame (all alerts). Only the first load waits for the build; once the copy is FRAME_TTL_S
+    old it is rebuilt in the background while requests keep reading it, so no request stalls on a refresh."""
     global _frame
-    now = time.monotonic()
     cached = _frame
-    if cached is not None and now < cached[0]:
+    if cached is not None:
+        if time.monotonic() >= cached[0]:
+            _refresh_in_background()
         return cached[1]
     with _lock:
-        if _frame is None or time.monotonic() >= _frame[0]:
-            df, source = _build_frame()
-            if "Parsed_Date" in df.columns:
-                df["Parsed_Date"] = pd.to_datetime(df["Parsed_Date"], errors="coerce")
-            df = mark_spurious(df)
-            _frame = (time.monotonic() + settings.frame_ttl_s, df, source)
+        if _frame is None:
+            _frame = _fresh_frame()
         return _frame[1]
+
+
+_refreshing = threading.Lock()
+_generation = 0  # bumped by invalidate(), so a refresh started before it cannot put older data back
+
+
+def _refresh_in_background() -> None:
+    if not _refreshing.acquire(blocking=False):
+        return  # one refresh at a time
+    gen = _generation
+
+    def work() -> None:
+        global _frame
+        try:
+            fresh = _fresh_frame()
+            with _lock:
+                if gen == _generation:
+                    _frame = fresh
+        except Exception as exc:  # keep serving the copy we have
+            log.warning("NSQ frame refresh failed: %s", exc)
+        finally:
+            _refreshing.release()
+
+    threading.Thread(target=work, name="nsq-frame-refresh", daemon=True).start()
+
+
+def warm() -> None:
+    """Build the frame off the request path at start-up, so the first visitor does not wait for it."""
+    threading.Thread(target=frame, name="nsq-frame-warm", daemon=True).start()
 
 
 def frame_source() -> str:
@@ -114,8 +148,9 @@ def cdmo() -> dict[str, Any]:
 
 
 def invalidate() -> None:
-    global _frame, _cdmo
+    global _frame, _cdmo, _generation
     with _lock:
+        _generation += 1
         _frame = None
         _cdmo = None
 

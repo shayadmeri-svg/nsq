@@ -43,6 +43,14 @@ def engines(user: User = Depends(current_user)):
     return lab.engines()
 
 
+@router.get("/molecule/{key}/limits")
+def limits(key: str, user: User = Depends(current_user)):
+    """The molecule's pharmacopoeial limits, each from the first source in the chain that has it (app/limits.py)."""
+    from .. import limits as lim
+
+    return lim.resolve(key)
+
+
 @router.post("/molecule/{key}/dissolution")
 def dissolution(key: str, body: dict[str, Any] = Body(default={}), user: User = Depends(current_user)):
     return _run(lab.dissolution, key, body)

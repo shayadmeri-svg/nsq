@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import quote
 
-from .common import Ctx, Unreachable, http_get, now_iso, read_normalized, write_normalized
+from .common import Ctx, Unreachable, data_dir, http_get, now_iso, read_normalized, write_normalized
 from .pubchem import _targets
 
 BASE = "https://extranet.edqm.eu"
@@ -52,7 +52,7 @@ SCHEDULE = {
     "15.1": ("189 / November 2027", "2028-04", "2029-01-01"), "15.2": ("190 / March 2028", "2028-07", "2029-04-01"),
     "15.3": ("191 / June 2028", "2028-10", "2029-07-01"),
 }
-_SALTS = r"\b(hcl|hbr|besylate|mesylate|tosylate|hydrochloride|dihydrochloride|hydrobromide|sodium|potassium|calcium|magnesium|besilate|mesilate|maleate|fumarate|tartrate|" \
+_SALTS = r"\b\d+(?:\.\d+)?-hydrate\b|\b(hydrate|hcl|hbr|hydrobromide|besylate|mesylate|tosylate|hydrochloride|dihydrochloride|hydrobromide|sodium|potassium|calcium|magnesium|besilate|mesilate|maleate|fumarate|tartrate|" \
          r"succinate|citrate|sulfate|sulphate|phosphate|acetate|monohydrate|dihydrate|trihydrate|hemihydrate|sesquihydrate|anhydrous|" \
          r"hyclate|bromide|chloride|nitrate|lactate|gluconate|tosilate|camsilate|dipropionate|propionate|valerate|" \
          r"medoxomil|axetil|proxetil|pivoxil|disodium|and|for|injection|tablets|capsules|oral|solution|suspension)\b|\(.*?\)|,"
@@ -73,10 +73,12 @@ def _get(ctx: Ctx, path: str, cache_name: str) -> str:
 
 
 def search(ctx: Ctx, name: str) -> list[tuple[str, str]]:
-    h = _get(ctx, f"/4DLink1/4DCGI/Query_SW?vSelectName=1&vContains=1&vtsubName={quote(name)}&SWTP=1&OK=Search",
-             f"q_{re.sub(r'[^a-z0-9]+', '_', name.lower())}.html")
+    # vSelectName: 1 French, 2 English, 3 Latin name; vContains: 1 contains
+    h = _get(ctx, f"/4DLink1/4DCGI/Query_SW?vSelectName=2&vContains=1&vtsubName={quote(name)}&SWTP=1&OK=Search",
+             f"qen_{re.sub(r'[^a-z0-9]+', '_', name.lower())}.html")
     out = []
-    for r in re.findall(r"<tr[^>]*>(.*?)</tr>", h, flags=re.S):
+    # EDQM's result rows are not closed (no </tr>): split on each row's opening tag
+    for r in re.split(r"<tr\b[^>]*>", h)[1:]:
         c = [_clean(x) for x in re.findall(r"<td[^>]*>(.*?)</td>", r, flags=re.S)]
         if len(c) >= 2 and c[0].isdigit():
             out.append((c[0], c[1]))
@@ -158,9 +160,17 @@ def lookup(ctx: Ctx, names: list[str]) -> dict[str, Any]:
 
 
 def run(ctx: Ctx) -> int:
+    import identity  # core/
     import ingredients as ing  # core/
 
     prev = (read_normalized("edqm_kd") or {}).get("data", {})
+    resolver = identity.load(data_dir())
+    syn = {k: v.get("synonyms") or [] for k, v in ((read_normalized("pubchem_synonyms") or {}).get("data") or {}).items()}
+
+    def search_names(t: dict[str, Any]) -> list[str]:
+        """Every name Ph. Eur. might use: tracked names, the US name, then the INN and other synonyms."""
+        return [n for n in dict.fromkeys([*t["names"], *(ing.us_name(ing.ingredient_key(n)) for n in t["names"]),
+                                          *resolver.search_names(t["key"], syn.get(t["key"]))]) if n]
     if ctx.from_file:
         data = json.loads(ctx.from_file.read_text(encoding="utf-8"))
         data = data.get("data", data)
@@ -169,19 +179,23 @@ def run(ctx: Ctx) -> int:
     limit = ctx.limit or int(ctx.options.get("limit", 200))
     now = datetime.now(timezone.utc)
 
-    def stale(key: str) -> bool:
-        f = (prev.get(key) or {}).get("fetched_at")
-        return ctx.force or not f or (now - datetime.fromisoformat(f)) > timedelta(days=30)
+    def stale(t: dict[str, Any]) -> bool:
+        p = prev.get(t["key"]) or {}
+        f = p.get("fetched_at")
+        if ctx.force or ctx.options.get("reparse") or not f or (now - datetime.fromisoformat(f)) > timedelta(days=30):
+            return True
+        # not found under the names tried then, and the molecule has more names now (e.g. its INN): ask again
+        return not p.get("found") and bool(set(search_names(t)) - set(p.get("searched") or [p.get("query")]))
 
     targets = _targets()
-    due = [t for t in targets if t["key"] not in prev] if ctx.options.get("missing_only") else [t for t in targets if stale(t["key"])]
+    due = [t for t in targets if t["key"] not in prev] if ctx.options.get("missing_only") else [t for t in targets if stale(t)]
     todo = due[:limit]
     ctx.log(f"{len(targets)} molecules, {len(due)} due, looking up {len(todo)} this run")
     data, done = dict(prev), 0
     for i, t in enumerate(todo, 1):
-        names = list(dict.fromkeys([*t["names"], *(ing.us_name(ing.ingredient_key(n)) for n in t["names"])]))
+        names = search_names(t)
         try:
-            r = lookup(ctx, [n for n in names if n])
+            r = {**lookup(ctx, names), "searched": names}
             data[t["key"]] = r
             done += 1
             if r["found"]:
@@ -197,6 +211,11 @@ def run(ctx: Ctx) -> int:
             break
         except Exception as exc:
             ctx.log(f"  {t['key']}: {exc}")
-    write_normalized(ctx, META, data, sum(1 for v in data.values() if v.get("found")),
-                     extra={"queried_this_run": done, "schedule": SCHEDULE, "schedule_source": SCHEDULE_SOURCE})
+    found = [k for k, v in data.items() if v.get("found")]
+    cov = {"entries": len(targets), "mapped": len(found), "by_method": {}, "unmapped": [],
+           "tracked_total": len(targets), "tracked_covered": sorted(found),
+           "tracked_missing": sorted({t["key"] for t in targets} - set(found)),
+           "note": "searched by every name of each tracked molecule; missing = no Ph. Eur. monograph under any of them"}
+    write_normalized(ctx, META, data, len(found),
+                     extra={"queried_this_run": done, "schedule": SCHEDULE, "schedule_source": SCHEDULE_SOURCE, "coverage": cov})
     return len(data)

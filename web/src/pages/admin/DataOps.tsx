@@ -1,11 +1,12 @@
 // Admin · Data operations: everything that keeps the data current, in one place —
 // update jobs and sources, their schedules, and the map of where each dataset flows.
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Network, RefreshCcw } from "lucide-react";
+import { CalendarClock, Network, RefreshCcw, ScanSearch } from "lucide-react";
 import { motion } from "motion/react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { Coverage } from "./Coverage";
 import { DataMap } from "./DataMap";
 import { Jobs } from "./Jobs";
 import { Pipelines } from "./Pipelines";
@@ -14,6 +15,7 @@ const TABS = [
   { id: "update", label: "Update & sources", icon: RefreshCcw, hint: "Update everything, each source's data and its job, run history" },
   { id: "schedules", label: "Schedules", icon: CalendarClock, hint: "When each source and pipeline runs on its own" },
   { id: "map", label: "Data map", icon: Network, hint: "Where every dataset comes from, where it lives, what changes it and which screens read it" },
+  { id: "coverage", label: "Coverage", icon: ScanSearch, hint: "How much of the tracked molecule set each official source covers, and the names it could not map" },
 ] as const;
 
 // Old addresses keep working
@@ -71,6 +73,7 @@ export function DataOps() {
         {tab === "update" && <Jobs />}
         {tab === "schedules" && <Pipelines />}
         {tab === "map" && <DataMap />}
+        {tab === "coverage" && <Coverage />}
       </motion.div>
     </>
   );

@@ -177,6 +177,25 @@ services:
     restart: unless-stopped
     networks: [nsq-net]
 
+  # HTTPS (profile "https"): Caddy takes 80/443 and proxies to the gateway. On the server set DOMAIN, and
+  # GATEWAY_PORT=127.0.0.1:8080 so the gateway is no longer published on 80 itself.
+  caddy:
+    image: caddy:2.8.4-alpine
+    container_name: nsq-caddy
+    profiles: [https]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [gateway]
+    restart: unless-stopped
+    networks: [nsq-net]
+
 networks:
   nsq-net:
     driver: bridge
@@ -184,3 +203,5 @@ networks:
 volumes:
   redis-data:
   pg-data:
+  caddy-data:
+  caddy-config:

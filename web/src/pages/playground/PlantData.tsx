@@ -568,7 +568,8 @@ function BatchDrawer({ a, batch, onClose, onReplay }: { a: any; batch: string | 
 }
 
 // --- the page --------------------------------------------------------------------------------------------------------------
-export function PlantData() {
+// `view` comes from the Playground tab (Batches or Simulated line); `onView` switches tabs without losing state here.
+export function PlantData({ view, onView }: { view: "batches" | "live"; onView: (v: "batches" | "live") => void }) {
   const params = useParams();
   const [sp, setSp] = useSearchParams();
   const { data: me } = useMe();
@@ -578,7 +579,8 @@ export function PlantData() {
   // admins land on the plant simulator's organisation (backend DEMO_ORG) when it exists
   const orgList: any[] = orgs.data?.orgs ?? [];
   const slug = params.slug ?? me?.org?.slug ?? sp.get("org") ?? (orgList.find((o) => o.slug === "eurveda-demo") ?? orgList[0])?.slug ?? "";
-  const view = (sp.get("view") === "live" || sp.get("src") === "scada" || sp.get("tab") === "live" ? "live" : "batches") as "batches" | "live";
+  // old links (?view=live, ?src=scada) open the simulated line
+  useEffect(() => { if (view === "batches" && (sp.get("view") === "live" || sp.get("src") === "scada" || sp.get("tab") === "live")) onView("live"); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const molecule = sp.get("m") ?? "";
   const setParam = (k: string, v: string) => { const n2 = new URLSearchParams(sp); if (v) n2.set(k, v); else n2.delete(k); n2.delete("src"); n2.delete("tab"); n2.delete("data"); setSp(n2, { replace: true }); };
   const formats = useQuery({ queryKey: ["pd-formats", slug], queryFn: () => api<any>(`/api/plant-data/${slug}/formats`), enabled: !!slug, staleTime: 3600_000 });
@@ -603,7 +605,7 @@ export function PlantData() {
   };
   const replayParams = (label: string, p: Record<string, number>) => {
     setReplay({ id: `${label}:${Date.now()}`, label, set: p }); setSel(null);
-    if (view !== "batches") setParam("view", "");
+    if (view !== "batches") onView("batches");
     setTimeout(() => treeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
   };
   const replayBatch = (b: string) => {
@@ -619,9 +621,6 @@ export function PlantData() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Segmented value={view} onChange={(v) => setParam("view", v === "batches" ? "" : v)} options={[
-          { value: "batches", label: <span className="flex items-center gap-1.5 px-1 text-[13px]"><Layers size={14} /> Batches</span> },
-          { value: "live", label: <span className="flex items-center gap-1.5 px-1 text-[13px]"><Radio size={14} /> Live line</span> }]} />
         {me?.is_platform && !params.slug && (
           <div className="w-52"><SearchSelect size="sm" value={slug} onChange={(v) => setParam("org", v)} searchPlaceholder="Search an organisation…"
             options={orgList.map((o: any) => ({ value: o.slug, label: o.name, sub: o.city }))} /></div>)}
@@ -638,7 +637,7 @@ export function PlantData() {
               <div className="text-[22px] font-semibold tracking-tight">Your batches, against their limits</div>
               <p className="mt-1 max-w-lg text-sm text-ink-muted">Upload batch records or equipment exports, or watch the simulated line stream batches in real time.</p>
               <div className="mt-5 flex gap-2"><Button onClick={() => setUpload(true)}><UploadCloud size={15} /> Upload data</Button>
-                <Button variant="secondary" onClick={() => setParam("view", "live")}><Radio size={15} /> Watch the live line</Button></div>
+                <Button variant="secondary" onClick={() => onView("live")}><Radio size={15} /> Watch the simulated line</Button></div>
             </div>
           ) : !a ? <div className="space-y-4"><Skeleton className="h-28" /><Skeleton className="h-72" /><div className="text-center text-xs text-ink-muted">Reading your batches…</div></div> : (
             <>

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import api_filings, cdsco_plants, cdsco_wc, chembl, edqm_kd, fda_dissolution, fda_labels, health_signals, ord, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, patent_families, pubchem, purple_book
+from . import api_filings, jp, cdsco_plants, cdsco_wc, chembl, edqm_kd, fda_dissolution, fda_labels, health_signals, ord, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, patent_families, ph_int, pubchem, pubchem_synonyms, purple_book
 from .common import Ctx
 
 CDSCO_META = {
@@ -26,11 +26,14 @@ SOURCES: dict[str, dict[str, Any]] = {
     "ema": {**ema.META, "run": ema.run, "group": "molecules"},
     "clinical_trials": {**clinical_trials.META, "run": clinical_trials.run, "group": "demand"},
     "pubchem": {**pubchem.META, "run": pubchem.run, "group": "chemistry"},
+    "pubchem_synonyms": {**pubchem_synonyms.META, "run": pubchem_synonyms.run, "group": "chemistry", "min_interval_days": 30},
     "chembl": {**chembl.META, "run": chembl.run, "group": "molecules", "min_interval_days": 7},
     "patent_families": {**patent_families.META, "run": patent_families.run, "group": "molecules", "min_interval_days": 7},
     "fda_labels": {**fda_labels.META, "run": fda_labels.run, "group": "chemistry", "min_interval_days": 7},
     "fda_dissolution": {**fda_dissolution.META, "run": fda_dissolution.run, "group": "chemistry", "min_interval_days": 7},
     "edqm_kd": {**edqm_kd.META, "run": edqm_kd.run, "group": "molecules", "min_interval_days": 7},
+    "ph_int": {**ph_int.META, "run": ph_int.run, "group": "chemistry", "min_interval_days": 7},
+    "jp": {**jp.META, "run": jp.run, "group": "chemistry", "min_interval_days": 7},
     "cdsco_plants": {**cdsco_plants.META, "run": cdsco_plants.run, "group": "sites", "min_interval_days": 7, "healthy": cdsco_plants.healthy},
     "cdsco_wc": {**cdsco_wc.META, "run": cdsco_wc.run, "group": "sites", "min_interval_days": 3},
     "eudragmdp": {**eudragmdp.META, "run": eudragmdp.run, "group": "sites", "min_interval_days": 7},

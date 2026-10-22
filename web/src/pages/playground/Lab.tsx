@@ -157,7 +157,7 @@ function Dissolution({ mkey, p }: { mkey: string; p: any }) {
   const dose0 = p.derived.dose_mg ?? null;
   // volume, pH and paddle speed start empty: the server takes them from FDA's dissolution method when there is one;
   // disintegration and granule break-up start empty too (assumed until you enter a measurement or measured points)
-  const init = { dose_mg: dose0 as number | null, d50_um: 20, gsd: 1.8, volume_ml: null as number | null, q_pct: 75, q_time_min: 45, ph: null as number | null,
+  const init = { dose_mg: dose0 as number | null, d50_um: 20, gsd: 1.8, volume_ml: null as number | null, q_pct: null as number | null, q_time_min: null as number | null, ph: null as number | null,
     rpm: null as number | null, disintegration_min: null as number | null, granule_breakup_min: null as number | null, ionization: "auto" as Ion, pka: null as number | null };
   const [f, setF] = useState(init);
   const [measTxt, setMeasTxt] = useState("");
@@ -193,8 +193,11 @@ function Dissolution({ mkey, p }: { mkey: string; p: any }) {
             kind={f.volume_ml == null ? r?.inputs.medium.kind : "user"} hint={r?.inputs.medium.label} />
           {r?.fda_method && f.volume_ml == null && <div className="-mt-1 text-[10.5px] text-ink-muted">{r.inputs.medium.label}</div>}
           <IonControls f={{ ...f, ph: f.ph ?? r?.inputs.medium.ph ?? 6.8 }} set={set} p={p} />
-          <div className="text-[10.5px] text-ink-muted">Generic Q: enter the monograph's</div>
-          <div className="grid grid-cols-2 gap-2"><Num label="Q" unit="%" value={f.q_pct} onChange={set("q_pct")} dflt={75} /><Num label="at" unit="min" value={f.q_time_min} onChange={set("q_time_min")} dflt={45} /></div>
+          <div className="text-[10.5px] text-ink-muted">{r?.inputs.q?.kind === "source" ? r.inputs.q.label : "Generic Q: enter the monograph's"}</div>
+          <div className="grid grid-cols-2 gap-2"><Num label="Q" unit="%" value={f.q_pct ?? r?.inputs.q?.value ?? null} onChange={set("q_pct")}
+            kind={f.q_pct == null ? r?.inputs.q?.kind : "user"} hint={r?.inputs.q?.label} />
+            <Num label="at" unit="min" value={f.q_time_min ?? r?.inputs.q?.time_min ?? null} onChange={set("q_time_min")}
+              kind={f.q_time_min == null ? r?.inputs.q?.kind : "user"} hint={r?.inputs.q?.label} /></div>
           <label className="block text-xs"><div className="mb-1 font-medium text-ink-soft">Your measured profile <span className="text-ink-faint">(min, % — one per line)</span></div>
             <textarea value={measTxt} onChange={(e) => setMeasTxt(e.target.value)} rows={4} placeholder={"5, 32\n10, 61\n15, 80\n30, 96"} className="input w-full font-mono text-xs" /></label>
           <label className="block text-xs"><div className="mb-1 font-medium text-ink-soft">Reference profile for f2 <span className="text-ink-faint">(innovator / biobatch)</span></div>

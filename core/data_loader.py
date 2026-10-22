@@ -13,6 +13,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -231,8 +232,16 @@ def _load_predictions_from_redis() -> dict:
     return out
 
 
-def _derive_company_fields(line: str) -> pd.Series:
-    """Row-level wrapper around the company-ontology resolver."""
+def _company_ontology() -> dict[str, dict[str, Any]] | None:
+    """The company ontology, read once for a whole frame (None: let each row read it, e.g. Redis is down)."""
+    try:
+        return load_ontology()
+    except Exception:
+        return None
+
+
+def _derive_company_fields(line: str, ontology: dict[str, dict[str, Any]] | None = None) -> pd.Series:
+    """Row-level wrapper around the company-ontology resolver (`ontology`: read once by the caller for all rows)."""
     raw = "" if line is None else str(line)
     raw_company = extract_company_name(raw)
     city = extract_city(raw)
@@ -242,7 +251,7 @@ def _derive_company_fields(line: str) -> pd.Series:
     canonical = ""
     key = ""
     try:
-        key, record, _created = resolve_or_create(raw_company, raw)
+        key, record, _created = resolve_or_create(raw_company, raw, ontology_cache=ontology)
         canonical = record.get("canonical_name", "") if record else ""
         if record:
             if not city and record.get("city"):
@@ -461,7 +470,7 @@ def _load_and_preprocess() -> pd.DataFrame:
         if "Mfg_Company" not in df.columns or df["Mfg_Company"].isna().any() or (df["Mfg_Company"] == "").any():
             mask = df.get("Mfg_Company", pd.Series(dtype=str)).fillna("") == "" if "Mfg_Company" in df.columns else pd.Series([True] * len(df))
             if mask.any():
-                derived = df.loc[mask, "Manufactured By"].apply(_derive_company_fields)
+                derived = df.loc[mask, "Manufactured By"].apply(_derive_company_fields, ontology=_company_ontology())
                 for col in derived.columns:
                     if col not in df.columns:
                         df[col] = ""
@@ -475,7 +484,7 @@ def _load_and_preprocess() -> pd.DataFrame:
         or "Mfg_Website" not in df.columns
     ):
         df[["Mfg_Company", "Mfg_Company_Canonical", "Mfg_City", "Mfg_Website", "Mfg_Ontology_Key"]] = (
-            df["Manufactured By"].apply(_derive_company_fields)
+            df["Manufactured By"].apply(_derive_company_fields, ontology=_company_ontology())
         )
 
     # 13. Harmonize product names for grouping.

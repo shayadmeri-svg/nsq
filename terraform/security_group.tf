@@ -18,6 +18,13 @@ resource "aws_security_group" "app" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  ingress {
+    description = "HTTPS - Caddy in front of the gateway (Let's Encrypt)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   # Everything is served through the gateway on :80 (add :443 when TLS is
   # terminated here). The Streamlit / engine / API container ports are no

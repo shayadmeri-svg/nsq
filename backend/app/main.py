@@ -139,6 +139,8 @@ async def lifespan(app: FastAPI):
     rename_retired_plants()
     restore_user_plants()
     scheduler.start()
+    if scheduler.ENABLED:  # with the background jobs (off in tests): load the NSQ frame before the first request needs it
+        data.warm()
     yield
     scheduler.stop()
 

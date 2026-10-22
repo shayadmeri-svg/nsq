@@ -342,6 +342,15 @@ def update_org(slug: str, body: OrgPatch, request: Request, actor: User = Depend
     return {"org": {**org_payload(org), "stats": _org_stats(db, org)}}
 
 
+@router.get("/coverage")
+def coverage(actor: User = Depends(require_platform)):
+    """Per official source: entries mapped to tracked molecules (and how), names it could not map, molecules missing;
+    per molecule: which sources cover it and where its limits come from."""
+    from .. import coverage as cov
+
+    return cov.report()
+
+
 @router.get("/manufacturers")
 def manufacturers(q: str = "", limit: int = Query(20, le=100), actor: User = Depends(require_platform)):
     return {"manufacturers": insights.manufacturer_search(q, limit)}

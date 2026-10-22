@@ -43,6 +43,7 @@ import os
 import re
 import unicodedata
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any
 
 import redis
@@ -579,7 +580,14 @@ def product_key(raw: str) -> str:
     """
     if not raw:
         return ""
-    s = _strip_accents(str(raw).lower())
+    key = _product_key(str(raw))
+    return PRODUCT_CANONICAL_OVERRIDES.get(key, key)
+
+
+@lru_cache(maxsize=1 << 16)
+def _product_key(raw: str) -> str:
+    """product_key steps 1–8 (a pure function of the name; fuzzy matching calls it for every alias on every row)."""
+    s = _strip_accents(raw.lower())
     # Drop parenthetical brand names: "(Telma 40)", "(CALXIA 500 )"
     s = re.sub(r"\s*\([^)]*\)\s*", " ", s)
     # Replace & and + with spaces before the alphanumeric filter, so
@@ -603,10 +611,7 @@ def product_key(raw: str) -> str:
         if re.fullmatch(r"\d+(\.\d+)?", tok):
             continue
         tokens.append(tok)
-    key = " ".join(sorted(tokens)).strip()
-    if key in PRODUCT_CANONICAL_OVERRIDES:
-        return PRODUCT_CANONICAL_OVERRIDES[key]
-    return key
+    return " ".join(sorted(tokens)).strip()
 
 
 _STRENGTH = re.compile(r"\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|g|gm|ml|iu|i\.u\.|%|w/v|w/w|v/v|lakh)\b(?:\s*/\s*\d*(?:\.\d+)?\s*(?:ml|g|gm|mg))?",
@@ -841,6 +846,8 @@ def resolve_or_create(
     raw_line: str,
     client: redis.Redis | None = None,
     threshold: float | None = None,
+    *,
+    ontology_cache: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any], bool]:
     """Return (normalized_key, record, was_created).
 
@@ -849,9 +856,13 @@ def resolve_or_create(
     name is appended to its `aliases`. Otherwise a new record is
     created from the city/state/website extracted from `raw_line` and
     persisted to Redis.
+
+    `ontology_cache`: the ontology already read with load_ontology(), for
+    a caller resolving many rows (it is kept in step with every write);
+    without it the whole ontology is read from Redis on each call.
     """
     r = client or get_redis_client()
-    ontology = load_ontology(r)
+    ontology = ontology_cache if ontology_cache is not None else load_ontology(r)
     thr = threshold if threshold is not None else FUZZY_THRESHOLD
 
     raw = (raw_company or "").strip()

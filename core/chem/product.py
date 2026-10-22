@@ -140,60 +140,15 @@ def tablet_dissolution(dose_mg: float, cs_mg_ml: float, diff_cm2_s: float, *, d5
         raise ValueError("dose, solubility and particle size must be positive")
     if disintegration_min <= 0 or granule_breakup_min <= 0:
         raise ValueError("disintegration and granule break-up times must be positive")
-    z = np.linspace(-2.5, 2.5, bins)
-    w = np.exp(-z ** 2 / 2)
-    w /= w.sum()
-    radii0 = (d50_um * gsd ** z) / 2 * 1e-4  # cm
-    rho = density_g_cm3
-    vol_const = rho * 4 / 3 * math.pi
-    pmass0 = vol_const * radii0 ** 3  # g per particle in each size class
-    cs = cs_mg_ml * 1e-3
-    total = dose_mg * 1e-3
+    times, pct, tab, gran = tablet_dissolution_many(dose_mg, cs_mg_ml, diff_cm2_s, d50_um=[d50_um], gsd=gsd, density_g_cm3=density_g_cm3,
+                                                    volume_ml=volume_ml, rpm=rpm, disintegration_min=[disintegration_min],
+                                                    weibull_beta=weibull_beta, granule_breakup_min=[granule_breakup_min],
+                                                    t_end_min=t_end_min, bins=bins, cohort_min=cohort_min, dt_s=dt_s)
     delta_um = levich_layer_um(rpm, diff_cm2_s)
-    hmax = delta_um * 1e-4
-    tau = weibull_scale(disintegration_min, weibull_beta)
-    kg = math.log(2) / (granule_breakup_min * 60)  # 1/s
-
-    dt = float(dt_s)
-    steps = int(t_end_min * 60 / dt)
-    every = max(1, int(round(cohort_min * 60 / dt)))
-    granules = 0.0  # g of drug held in granules
-    released_prev = 0.0  # tablet fraction released so far
-    R = np.zeros((0, bins))
-    N = np.zeros((0, bins))
-    pending = 0.0  # particle mass released since the last cohort
-    rec_t, rec_p, rec_tab, rec_gran = [0.0], [0.0], [100.0], [0.0]
-    record = max(1, steps // 180)
-    for k in range(1, steps + 1):
-        t = k * dt
-        frac = 1 - math.exp(-((t / 60) / tau) ** weibull_beta)
-        granules += (frac - released_prev) * total
-        released_prev = frac
-        freed = granules * (1 - math.exp(-kg * dt))
-        granules -= freed
-        pending += freed
-        if k % every == 0 and pending > 0:
-            R = np.vstack([R, radii0])
-            N = np.vstack([N, pending * w / pmass0])
-            pending = 0.0
-        undissolved = float(np.sum(N * vol_const * R ** 3)) if R.size else 0.0
-        dissolved = total - (1 - released_prev) * total - granules - pending - undissolved
-        c = max(dissolved, 0.0) / volume_ml
-        if R.size:
-            drive = diff_cm2_s * (cs - c) / rho
-            big = R > hmax
-            R = np.where(big, R - drive / hmax * dt, np.sqrt(np.maximum(R ** 2 - 2 * drive * dt, 0.0)))
-            R = np.maximum(R, 0.0)
-        if k % record == 0 or k == steps:
-            undissolved = float(np.sum(N * vol_const * R ** 3)) if R.size else 0.0
-            dissolved = total - (1 - released_prev) * total - granules - pending - undissolved
-            rec_t.append(round(t / 60, 3))
-            rec_p.append(round(100 * max(dissolved, 0.0) / total, 2))
-            rec_tab.append(round(100 * (1 - released_prev), 2))
-            rec_gran.append(round(100 * granules / total, 2))
     sink = cs_mg_ml * volume_ml / dose_mg
-    return {"times_min": rec_t, "pct": rec_p, "tablet_pct": rec_tab, "granule_pct": rec_gran,
-            "diffusion_layer_um": round(delta_um, 1), "weibull_tau_min": round(tau, 3), "sink_index": round(sink, 2),
+    return {"times_min": times, "pct": pct[0].tolist(), "tablet_pct": tab[0].tolist(), "granule_pct": gran[0].tolist(),
+            "diffusion_layer_um": round(delta_um, 1), "weibull_tau_min": round(weibull_scale(disintegration_min, weibull_beta), 3),
+            "sink_index": round(sink, 2),
             "assumptions": [
                 f"Disintegration: Weibull, β {weibull_beta:g}, 95% of the tablet broken up at {disintegration_min:g} min",
                 f"Granules release primary particles first order, half-life {granule_breakup_min:g} min",
@@ -201,6 +156,74 @@ def tablet_dissolution(dose_mg: float, cs_mg_ml: float, diff_cm2_s: float, *, d5
                 f"Diffusion layer ceiling from the Levich rotating-disc relation at {rpm:g} rpm (a paddle is approximated as a disc)",
                 f"Perfectly mixed {volume_ml:g} mL vessel; no coning, no floating, no gelling excipients",
             ]}
+
+
+def tablet_dissolution_many(dose_mg: float, cs_mg_ml: float, diff_cm2_s: float, *, d50_um, disintegration_min, granule_breakup_min,
+                            gsd: float = 1.8, density_g_cm3: float = 1.3, volume_ml: float = 900.0, rpm: float = 50.0,
+                            weibull_beta: float = 1.5, t_end_min: float = 60.0, bins: int = 15, cohort_min: float = 0.25,
+                            dt_s: float = 1.0) -> tuple[list[float], np.ndarray, np.ndarray, np.ndarray]:
+    """`tablet_dissolution` for many tablets of one molecule at once: d50, disintegration and granule break-up are
+    arrays (one per scenario), every step advances all of them together. Returns (times_min, % dissolved,
+    % tablet left, % in granules), the last three of shape (scenarios, time points).
+
+    Same equations and time step as the single-tablet model; cohorts are preallocated (one slot per release
+    interval; a cohort released with nothing pending carries no particles), so the state is one array."""
+    d50 = np.asarray(d50_um, dtype=float)
+    S = d50.size
+    z = np.linspace(-2.5, 2.5, bins)
+    w = np.exp(-z ** 2 / 2)
+    w /= w.sum()
+    radii0 = (d50[:, None] * gsd ** z[None, :]) / 2 * 1e-4  # cm, (S, bins)
+    rho = density_g_cm3
+    vol_const = rho * 4 / 3 * math.pi
+    pmass0 = vol_const * radii0 ** 3  # g per particle in each size class
+    cs = cs_mg_ml * 1e-3
+    total = dose_mg * 1e-3
+    hmax = levich_layer_um(rpm, diff_cm2_s) * 1e-4
+    tau = np.asarray(disintegration_min, dtype=float) / (-math.log(0.05)) ** (1 / weibull_beta)
+    kg = math.log(2) / (np.asarray(granule_breakup_min, dtype=float) * 60)  # 1/s
+    if np.any(d50 <= 0) or np.any(tau <= 0) or np.any(kg <= 0):
+        raise ValueError("particle size, disintegration and granule break-up times must be positive")
+    freed_frac = 1 - np.exp(-kg * float(dt_s))  # share of the granule mass freed per step
+
+    dt = float(dt_s)
+    steps = int(t_end_min * 60 / dt)
+    every = max(1, int(round(cohort_min * 60 / dt)))
+    R = np.zeros((S, steps // every, bins))
+    N = np.zeros_like(R)
+    n = 0  # cohorts released so far
+    granules = np.zeros(S)
+    released_prev = np.zeros(S)
+    pending = np.zeros(S)
+    record = max(1, steps // 180)
+    rec_t, rec_p, rec_tab, rec_gran = [0.0], [np.zeros(S)], [np.full(S, 100.0)], [np.zeros(S)]
+    for k in range(1, steps + 1):
+        t = k * dt
+        frac = 1 - np.exp(-((t / 60) / tau) ** weibull_beta)
+        granules += (frac - released_prev) * total
+        released_prev = frac
+        freed = granules * freed_frac
+        granules -= freed
+        pending += freed
+        if k % every == 0:
+            R[:, n] = radii0
+            N[:, n] = pending[:, None] * w / pmass0
+            pending = np.zeros(S)
+            n += 1
+        if n:
+            Rn = R[:, :n]
+            undissolved = np.sum(N[:, :n] * vol_const * Rn ** 3, axis=(1, 2))
+            c = np.maximum(total - (1 - released_prev) * total - granules - pending - undissolved, 0.0) / volume_ml
+            drive = (diff_cm2_s * (cs - c) / rho)[:, None, None]
+            R[:, :n] = np.maximum(np.where(Rn > hmax, Rn - drive / hmax * dt, np.sqrt(np.maximum(Rn ** 2 - 2 * drive * dt, 0.0))), 0.0)
+        if k % record == 0 or k == steps:
+            undissolved = np.sum(N[:, :n] * vol_const * R[:, :n] ** 3, axis=(1, 2)) if n else 0.0
+            dissolved = total - (1 - released_prev) * total - granules - pending - undissolved
+            rec_t.append(round(t / 60, 3))
+            rec_p.append(np.round(100 * np.maximum(dissolved, 0.0) / total, 2))
+            rec_tab.append(np.round(100 * (1 - released_prev), 2))
+            rec_gran.append(np.round(100 * granules / total, 2))
+    return rec_t, np.stack(rec_p, axis=1), np.stack(rec_tab, axis=1), np.stack(rec_gran, axis=1)
 
 
 def f2(reference: list[tuple[float, float]], test: list[tuple[float, float]]) -> dict[str, Any]:

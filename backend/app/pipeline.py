@@ -61,7 +61,7 @@ _SRC_NODE = {"orange_book": "ext_orange", "purple_book": "ext_purple", "ema": "e
              "fda_recalls": "ext_fdasites", "cdsco_plants": "ext_cdsco_plants", "eudragmdp": "ext_eudragmdp",
              "fda_inspections": "ext_fda_insp", "fda_dmf": "ext_filings", "edqm_cep": "ext_filings", "ord": "ext_ord",
              "nfhs": "ext_health", "idsp": "ext_health", "comtrade": "ext_comtrade", "cdsco_wc": "ext_cdsco_wc",
-             "chembl": "ext_chembl", "patent_families": "ext_patents", "fda_labels": "ext_fdalabels", "fda_dissolution": "ext_fdalabels", "edqm_kd": "ext_edqm"}
+             "chembl": "ext_chembl", "patent_families": "ext_patents", "fda_labels": "ext_fdalabels", "fda_dissolution": "ext_fdalabels", "edqm_kd": "ext_edqm", "ph_int": "ext_edqm"}
 
 STAGES = [
     ("prepare", "Prepare", "Export the app's own edits so the builds can apply them"),

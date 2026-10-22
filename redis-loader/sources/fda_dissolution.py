@@ -14,7 +14,7 @@ import html as _html
 import re
 from typing import Any
 
-from .common import Ctx, download, write_normalized
+from .common import Ctx, data_dir, download, write_normalized
 
 URL = "https://www.accessdata.fda.gov/scripts/cder/dissolution/dsp_getallData.cfm"
 META = {
@@ -53,19 +53,27 @@ def parse(html: str) -> list[dict[str, Any]]:
 
 
 def run(ctx: Ctx) -> int:
+    import identity  # core/
     import ingredients as ing  # core/
 
     path = ctx.from_file or download(ctx, URL, "dissolution_all.html")
     rows = parse(path.read_text(encoding="utf-8", errors="replace"))
+    resolver = identity.load(data_dir())
     data: dict[str, list[dict[str, Any]]] = {}
+    names = []
     for r in rows:
         if r["combination"]:
             continue
+        names.append(r["drug"])
+        m = resolver.resolve(r["drug"], online=bool(ctx.options.get("online", True)))
+        keys = {m.key} if m else set()  # the tracked molecule, whatever FDA calls it
         k = ing.ingredient_key(r["drug"])
-        if k:
-            data.setdefault(k, []).append(r)
-            base = k.split()[0]
-            if base != k:
-                data.setdefault(base, []).append(r)
-    write_normalized(ctx, META, data, len(rows), extra={"methods": len(rows), "ingredients": len(data)})
+        if k:  # and the ingredient keys, for lookups by any name
+            keys |= {k, k.split()[0]}
+        for key in keys:
+            data.setdefault(key, []).append({**r, "matched": {"method": m.method, "via": m.via} if m else None})
+    cov = identity.coverage(resolver, names, online=bool(ctx.options.get("online", True)))
+    ctx.log(f"coverage: {cov['mapped']}/{cov['entries']} drug names map to a tracked molecule "
+            f"({', '.join(f'{k} {v}' for k, v in cov['by_method'].items() if v)}); tracked covered {len(cov['tracked_covered'])}/{cov['tracked_total']}")
+    write_normalized(ctx, META, data, len(rows), extra={"methods": len(rows), "ingredients": len(data), "coverage": cov})
     return len(rows)
