@@ -19,25 +19,39 @@ const ZONE: Record<string, string> = { ok: "bg-emerald-500", warn: "bg-amber-400
 const fmt = (v: number | null | undefined) => (v == null ? "—" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-IN") : String(Number(v.toPrecision(4))));
 const ago = (iso?: string | null) => { if (!iso) return "never"; const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000); return s < 60 ? `${Math.round(s)} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
 
-/** The live snapshot: server-sent events every 2 s, with a poll as fallback. */
+/** A tick from the stream onto the state: machines replace theirs, each signal's new readings extend its history,
+ *  and any other section the tick carries replaces the old one. */
+function merge(prev: any, tick: any) {
+  if (!prev) return prev;
+  const old = new Map<number, any>((prev.equipment ?? []).map((e: any) => [e.id, e]));
+  const equipment = (tick.equipment ?? []).map((e: any) => {
+    const was = new Map<string, any>((old.get(e.id)?.signals ?? []).map((s: any) => [s.id, s]));
+    return { ...e, signals: e.signals.map(({ append, ...s }: any) => ({ ...s, history: [...(was.get(s.id)?.history ?? []), ...(append ?? [])].slice(-60) })) };
+  });
+  return { ...prev, ...tick, equipment };
+}
+
+/** The live state: one snapshot when the stream opens, then a tick whenever a machine reports (and every 15 s).
+ *  The browser reconnects a dropped stream by itself (a deploy, a network blip); while it is down the page polls. */
 function useLive(plantId: number | null) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
+  const [connected, setConnected] = useState(false);
   useEffect(() => {
     if (!plantId) return;
     setData(null);
-    let es: EventSource | null = null;
     let timer: any = null;
     const poll = async () => { try { setData(await api<any>(`/api/connect/plants/${plantId}/live`)); setErr(null); } catch (e) { setErr(e); } };
-    poll();
-    try {
-      es = new EventSource(`/api/connect/plants/${plantId}/stream`, { withCredentials: true });
-      es.onmessage = (m) => { try { setData(JSON.parse(m.data)); setErr(null); } catch { /* ignore a partial frame */ } };
-      es.onerror = () => { es?.close(); es = null; if (!timer) timer = setInterval(poll, 4000); };
-    } catch { timer = setInterval(poll, 4000); }
-    return () => { es?.close(); if (timer) clearInterval(timer); };
+    const startPolling = () => { if (!timer) timer = setInterval(poll, 4000); };
+    const stopPolling = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const es = new EventSource(`/api/connect/plants/${plantId}/stream`, { withCredentials: true });
+    es.onopen = () => { setConnected(true); stopPolling(); };
+    es.addEventListener("snapshot", (m) => { try { setData(JSON.parse((m as MessageEvent).data)); setErr(null); } catch { /* partial frame */ } });
+    es.addEventListener("tick", (m) => { try { const t = JSON.parse((m as MessageEvent).data); setData((d: any) => merge(d, t)); } catch { /* partial frame */ } });
+    es.onerror = () => { setConnected(false); if (es.readyState === EventSource.CLOSED) { poll(); startPolling(); } else startPolling(); };
+    return () => { es.close(); stopPolling(); };
   }, [plantId]);
-  return { data, err };
+  return { data, err, connected };
 }
 
 function Spark({ data, color }: { data: number[]; color: string }) {
@@ -111,7 +125,7 @@ export function PlantMonitor() {
   const plants = useQuery({ queryKey: ["cx-plants"], queryFn: () => api<any>("/api/connect/plants"), retry: 1 });
   const [pid, setPid] = useState<number | null>(null);
   const plantId = pid ?? plants.data?.plants?.[0]?.id ?? null;
-  const { data: d, err } = useLive(plantId);
+  const { data: d, err, connected } = useLive(plantId);
   const [setup, setSetup] = useState(false);
   const eqName = useMemo(() => Object.fromEntries((d?.equipment ?? []).map((e: any) => [e.id, e.name])), [d]);
   const ack = async (id: number) => { try { await post(`/api/connect/alarms/${id}/ack`); toast("Acknowledged"); } catch (e) { toast((e as Error).message, "error"); } };
@@ -130,7 +144,8 @@ export function PlantMonitor() {
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-300">
               <span className="relative flex h-2 w-2">{agentsOn > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />}<span className={cn("relative inline-flex h-2 w-2 rounded-full", agentsOn ? "bg-emerald-400" : "bg-slate-500")} /></span>
-              {agentsOn ? "Live" : "Waiting for the plant agent"}</div>
+              {agentsOn ? "Live" : "Waiting for the plant agent"}
+              {!connected && <span className="font-normal normal-case tracking-normal text-slate-400">· reconnecting, updating every 4 s</span>}</div>
             {plants.data.plants.length > 1
               ? <div className="mt-1 w-72"><SearchSelect size="sm" value={String(plantId)} onChange={(v) => setPid(Number(v))} options={plants.data.plants.map((p: any) => ({ value: String(p.id), label: p.name }))} /></div>
               : <div className="mt-0.5 truncate text-[22px] font-semibold tracking-tight">{plant?.name}</div>}

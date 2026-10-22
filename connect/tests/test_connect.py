@@ -120,3 +120,50 @@ def test_mapping_suggestions_for_camel_case_tags():
 def test_zones():
     par = {"lo": 10, "hi": 20}
     assert [live.zone(v, par) for v in (9, 11, 15, 19, 21)] == ["alarm", "warn", "ok", "warn", "alarm"]
+
+
+def test_bus_wakes_streams_and_never_misses_a_change():
+    import asyncio
+
+    async def go():
+        bus = live.Bus()
+        bus.bind(asyncio.get_running_loop())
+        assert await bus.wait(1, 0, 0.05) == 0           # nothing happened: returns after the timeout
+        bus.notify(1)
+        await asyncio.sleep(0)
+        assert await bus.wait(1, 0, 5) == 1               # a change before waiting is not lost
+        waiter = asyncio.create_task(bus.wait(1, 1, 5))
+        await asyncio.sleep(0.01)
+        bus.notify(1)
+        assert await asyncio.wait_for(waiter, 1) == 2     # a change while waiting wakes it at once
+
+    asyncio.run(go())
+
+
+def test_incremental_snapshot_sends_only_new_readings(c):
+    pid = _plant(c)
+    t = datetime.now(timezone.utc)
+    _push(c, "BLENDER-1", "PCM-9", "PCM500", {"blend_min": 1.0}, t)
+    marks: dict = {}
+    from app.db import SessionLocal
+
+    with SessionLocal() as db:
+        full = live.snapshot(db, pid, track=marks)
+        blend = next(s for e in full["equipment"] if e["name"] == "BLENDER-1" for s in e["signals"] if s["id"] == "blend_min")
+        assert blend["history"][-1] == 1.0 and "append" not in blend
+        _push(c, "BLENDER-1", "PCM-9", "PCM500", {"blend_min": 2.0}, t + timedelta(seconds=3))
+        tick = live.snapshot(db, pid, since=dict(marks), track=marks)
+        blend = next(s for e in tick["equipment"] if e["name"] == "BLENDER-1" for s in e["signals"] if s["id"] == "blend_min")
+        assert blend["append"] == [2.0] and "history" not in blend
+
+
+def test_stream_opens_with_a_snapshot(c):
+    with c.stream("GET", f"/api/connect/plants/{_plant(c)}/stream", headers=H) as r:
+        assert r.headers["content-type"].startswith("text/event-stream")
+        lines = []
+        for line in r.iter_lines():
+            lines.append(line)
+            if line.startswith("data:"):
+                break
+    assert "retry: 3000" in lines and "event: snapshot" in lines
+    assert '"equipment"' in lines[-1] and '"history"' in lines[-1]

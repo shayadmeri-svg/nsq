@@ -12,6 +12,15 @@ name: nsq-platform
 # Secrets come from .env (gitignored): REDIS_URL (Upstash), POSTGRES_PASSWORD,
 # SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD (first boot), APP_BASE_URL.
 
+# Every container's log rotates (10 MB × 3) so logs never fill the disk.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+# Memory on a 4 GB host (t3.medium, ~3.8 GB usable). Each limit is a ceiling that keeps one service from starving the
+# rest, sized from measured use (API ~650 MB with the NSQ data loaded, Connect ~60 MB): typical total ~1.6 GB, the
+# ceilings add up to more because they do not all peak together; a 2 GB swapfile (deploy.sh) absorbs image builds.
+# oom_score_adj: under host memory pressure the kernel ends the demo and optional services first, the data stores last.
 services:
   redis:
     image: redis:7-alpine
@@ -26,6 +35,10 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    mem_limit: 384m          # maxmemory 256 MB + room for the append-only rewrite
+    oom_score_adj: -500
+    stop_grace_period: 20s   # time to flush the append-only file
+    logging: *logging
     networks: [nsq-net]
 
   # Local Postgres, always on. The api uses it whenever DATABASE_URL is unset in .env
@@ -34,6 +47,8 @@ services:
   postgres:
     image: postgres:18-alpine
     container_name: nsq-postgres
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "effective_cache_size=384MB", "-c", "work_mem=8MB",
+              "-c", "maintenance_work_mem=64MB", "-c", "max_connections=60"]
     environment:
       - POSTGRES_USER=nsq
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-nsq-local-only}
@@ -47,6 +62,10 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    mem_limit: 640m
+    oom_score_adj: -500
+    stop_grace_period: 30s   # a clean shutdown checkpoints instead of recovering on the next start
+    logging: *logging
     networks: [nsq-net]
 
   api:
@@ -94,6 +113,9 @@ services:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
     restart: unless-stopped
+    mem_limit: 1536m
+    stop_grace_period: 25s   # finish requests in flight; uvicorn closes event streams after 15 s
+    logging: *logging
     networks: [nsq-net]
 
   sim:
@@ -103,6 +125,9 @@ services:
       context: .
       dockerfile: sim/Dockerfile
     restart: unless-stopped
+    mem_limit: 512m
+    oom_score_adj: 500       # optional: the Lab falls back to its built-in engine
+    logging: *logging
     expose:
       - "8010"
     networks: [nsq-net]
@@ -123,7 +148,10 @@ services:
     mem_limit: 256m
     depends_on:
       postgres: { condition: service_healthy }
+      api: { condition: service_healthy }
     restart: unless-stopped
+    stop_grace_period: 25s
+    logging: *logging
     networks: [nsq-net]
 
   plant-sim:
@@ -141,12 +169,14 @@ services:
       - EURVEDA_TOKEN=${PLANT_SIM_TOKEN:-}
       - EURVEDA_URL=http://api:8001
       - CONNECT_URL=http://connect:8020
-    mem_limit: 448m
+    mem_limit: 384m
+    oom_score_adj: 800       # the demo goes first under memory pressure
     logging:  # the agent logs every push: keep at most ~10 MB
       driver: json-file
       options: { max-size: "5m", max-file: "2" }
     depends_on:
       api: { condition: service_healthy }
+      connect: { condition: service_healthy }
     restart: unless-stopped
     networks: [nsq-net]
 
@@ -157,6 +187,8 @@ services:
     container_name: nsq-web
     expose: ["80"]
     restart: unless-stopped
+    mem_limit: 64m
+    logging: *logging
     networks: [nsq-net]
 
   gateway:
@@ -169,12 +201,15 @@ services:
     depends_on:
       api: { condition: service_healthy }
       web: { condition: service_healthy }
+      connect: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
       timeout: 5s
       retries: 3
     restart: unless-stopped
+    mem_limit: 96m
+    logging: *logging
     networks: [nsq-net]
 
   # HTTPS (profile "https"): Caddy takes 80/443 and proxies to the gateway. On the server set DOMAIN, and
@@ -192,8 +227,16 @@ services:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    depends_on: [gateway]
+    depends_on:
+      gateway: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
+    mem_limit: 128m
+    logging: *logging
     networks: [nsq-net]
 
 networks:

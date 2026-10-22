@@ -34,7 +34,7 @@ def report() -> dict[str, Any]:
         sources.append({"id": sid, "label": label, "gives": gives, "loaded": bool(f), "retrieved_at": f.get("retrieved_at"),
                         "entries": cov.get("entries"), "mapped": cov.get("mapped"), "by_method": cov.get("by_method") or {},
                         "unmapped": cov.get("unmapped") or [], "tracked_covered": len(cov.get("tracked_covered") or []),
-                        "tracked_missing": cov.get("tracked_missing") or [], "note": cov.get("note")})
+                        "tracked_missing": cov.get("tracked_missing") or [], "note": cov.get("note"), "issues": f.get("issues") or []})
     have = {s["id"]: set((signals._load(s["id"]).get("coverage") or {}).get("tracked_covered") or []) for s in sources}
     molecules = []
     for key in sorted(resolver.keys):

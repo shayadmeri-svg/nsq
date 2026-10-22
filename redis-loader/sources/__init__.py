@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import api_filings, jp, cdsco_plants, cdsco_wc, chembl, edqm_kd, fda_dissolution, fda_labels, health_signals, ord, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, patent_families, ph_int, pubchem, pubchem_synonyms, purple_book
+from . import api_filings, ip, jp, cdsco_plants, cdsco_wc, chembl, edqm_kd, fda_dissolution, fda_labels, health_signals, ord, clinical_trials, ema, eudragmdp, fda_inspections, fda_sites, orange_book, patent_families, ph_int, pubchem, pubchem_synonyms, purple_book
 from .common import Ctx
 
 CDSCO_META = {
@@ -32,6 +32,7 @@ SOURCES: dict[str, dict[str, Any]] = {
     "fda_labels": {**fda_labels.META, "run": fda_labels.run, "group": "chemistry", "min_interval_days": 7},
     "fda_dissolution": {**fda_dissolution.META, "run": fda_dissolution.run, "group": "chemistry", "min_interval_days": 7},
     "edqm_kd": {**edqm_kd.META, "run": edqm_kd.run, "group": "molecules", "min_interval_days": 7},
+    "ip": {**ip.META, "run": ip.run, "group": "chemistry"},
     "ph_int": {**ph_int.META, "run": ph_int.run, "group": "chemistry", "min_interval_days": 7},
     "jp": {**jp.META, "run": jp.run, "group": "chemistry", "min_interval_days": 7},
     "cdsco_plants": {**cdsco_plants.META, "run": cdsco_plants.run, "group": "sites", "min_interval_days": 7, "healthy": cdsco_plants.healthy},

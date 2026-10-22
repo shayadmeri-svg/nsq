@@ -4,6 +4,7 @@ the process-model API, plus auth, admin and jobs."""
 from __future__ import annotations
 
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -11,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select, text
 
-from . import data, scheduler
+from . import data, live_bus, scheduler
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .models import JobRun, Org, Plant, User, utcnow
@@ -139,6 +140,7 @@ async def lifespan(app: FastAPI):
     rename_retired_plants()
     restore_user_plants()
     scheduler.start()
+    live_bus.BUS.bind(asyncio.get_running_loop())
     if scheduler.ENABLED:  # with the background jobs (off in tests): load the NSQ frame before the first request needs it
         data.warm()
     yield

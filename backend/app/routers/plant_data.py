@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from chem import batch_data as bd
 
-from .. import features, insights, lab
+from .. import features, insights, lab, live_bus
 from ..audit import audit
 from ..db import get_db
 from ..models import BatchDataset, PlantConnector, PlantSimConfig, User
@@ -440,6 +440,43 @@ def delete_connector(slug: str, cid: int, request: Request, user: User = Depends
     return {"ok": True}
 
 
+@router.get("/live/stream")
+async def live_stream(slug: str, request: Request, molecule: Optional[str] = None, user: User = Depends(current_user)):
+    """Server-sent events: the /live payload when the stream opens, then again whenever this organisation's machines
+    report (at most every 2 s; every 20 s regardless, so a machine going quiet shows). The browser reconnects a dropped
+    stream after `retry` milliseconds."""
+    import asyncio
+
+    from fastapi.responses import StreamingResponse
+    from starlette.concurrency import run_in_threadpool
+
+    from ..db import SessionLocal
+
+    with SessionLocal() as db:
+        org_id = org_for_user(db, slug, user).id
+
+    def payload() -> str:
+        with SessionLocal() as db:
+            return json.dumps(live(slug, molecule, user, db), default=str, separators=(",", ":"))
+
+    async def gen():
+        seen = live_bus.BUS.version[org_id]
+        last = await run_in_threadpool(payload)
+        yield f"retry: 3000\nevent: live\ndata: {last}\n\n"
+        while not await request.is_disconnected():
+            seen = await live_bus.BUS.wait(org_id, seen, 20.0)
+            await asyncio.sleep(2.0)  # the agent pushes machine by machine: one frame for the burst
+            seen = live_bus.BUS.version[org_id]
+            body = await run_in_threadpool(payload)
+            if body != last:
+                last = body
+                yield f"event: live\ndata: {body}\n\n"
+            else:
+                yield ": nothing new\n\n"  # keeps proxies from closing an idle connection
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+
+
 @router.get("/live")
 def live(slug: str, molecule: Optional[str] = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """What the machines are doing now, and the twin's forecast for each batch they are running: each quality test
@@ -652,6 +689,8 @@ def ingest(body: dict[str, Any] = Body(...), authorization: str = Header(""), db
     c.agent = {k: str(v)[:120] for k, v in (body.get("agent") or {}).items()}
     c.last_seen_at = datetime.now(timezone.utc)
     db.commit()
+    if groups:
+        live_bus.BUS.notify(c.org_id)  # wake this organisation's live streams
     return {"accepted": sum(len(v) for v in groups.values()), "rejected": rejected, "machines": sorted(m for m, _ in groups)}
 
 

@@ -1,8 +1,7 @@
 """Pharmacopoeial limits for a molecule's immediate-release tablet: each value from the first source that has it.
 
-    1. Indian Pharmacopoeia      data/sources/ip.json, when IPC's data is licensed and imported (same shape as
-                                 ph_int.json); until then the product's own IP limits are entered per product in
-                                 Plant setup (Eurveda Connect)
+    1. Indian Pharmacopoeia      data/sources/ip.json, loaded from data/ip_seed.json (limits entered by hand with
+                                 their monograph reference; same shape as ph_int.json)
     2. International Pharmacopoeia (WHO)   tablet / capsule monographs: assay limits, dissolution test and Q
     3. Japanese Pharmacopoeia (MHLW, English)   the same, for the JP's tablet / capsule monographs
     4. FDA Dissolution Methods Database    the dissolution method (medium, volume, speed, sampling times); where it refers
@@ -25,7 +24,7 @@ from . import pharmacopoeia
 DEFAULTS = {"assay_lo": 95.0, "assay_hi": 105.0, "q_pct": 75.0, "q_time_min": 45.0, "dt_max_min": 15.0}
 
 SOURCES = {
-    "ip": {"label": "Indian Pharmacopoeia", "url": "https://www.iponline.ipc.gov.in/", "licence": "IPC licence"},
+    "ip": {"label": "Indian Pharmacopoeia", "url": "https://www.iponline.ipc.gov.in/", "licence": "IPC; limits entered from the licensed edition"},
     "ph_int": {"label": "The International Pharmacopoeia (WHO)", "url": "https://digicollections.net/phint/",
                "licence": "CC BY-NC-SA 3.0 IGO"},
     "jp": {"label": "The Japanese Pharmacopoeia (MHLW)", "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000066597.html",
@@ -57,7 +56,11 @@ def _monograph(source: str, key: str) -> Optional[dict[str, Any]]:
 
 
 def _val(value: Any, source: str, mono: Optional[dict[str, Any]] = None, text: Optional[str] = None, note: Optional[str] = None) -> dict[str, Any]:
-    return {"value": value, "source": source, **SOURCES[source], "monograph": (mono or {}).get("title"),
+    ref = (mono or {}).get("reference") or {}
+    title = (mono or {}).get("title")
+    if title and ref:  # a hand-entered limit cites edition, volume and page
+        title = f"{title} ({', '.join(x for x in (ref.get('edition'), ref.get('volume') and 'vol. ' + ref['volume'], ref.get('page') and 'p. ' + ref['page']) if x)})"
+    return {"value": value, "source": source, **SOURCES[source], "monograph": title,
             "url": (mono or {}).get("url") or SOURCES[source]["url"], "text": text, "note": note}
 
 

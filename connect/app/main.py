@@ -17,7 +17,7 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -36,7 +36,10 @@ async def _sweeper() -> None:
     while True:
         await asyncio.sleep(10)
         try:
-            await run_in_threadpool(lambda: live.sweep(SessionLocal()))
+            def sweep() -> None:
+                with SessionLocal() as db:
+                    live.sweep(db)
+            await run_in_threadpool(sweep)
         except Exception as exc:  # noqa: BLE001 — never stop the sweeper
             log.warning("sweep failed: %s", exc)
 
@@ -46,6 +49,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         seed_demo(db)
+    live.BUS.bind(asyncio.get_running_loop())
     task = asyncio.create_task(_sweeper())
     yield
     task.cancel()
@@ -302,21 +306,50 @@ def live_snapshot(plant_id: int, user: dict = Depends(current_user), db: Session
     return live.snapshot(db, plant_id)
 
 
+STREAM_HEARTBEAT_S = 15.0  # at most this long between frames, so proxies keep the connection and idle machines show as idle
+STREAM_MIN_GAP_S = 0.5     # readings arriving faster than this are sent together
+
+
 @app.get(f"{P}/plants/{{plant_id}}/stream")
-async def stream(plant_id: int, user: dict = Depends(current_user)):
-    """Server-sent events: the live snapshot every 2 seconds."""
+async def stream(plant_id: int, request: Request, user: dict = Depends(current_user)):
+    """Server-sent events. On connect, `snapshot`: the whole live state with each signal's recent history. Then, when a
+    machine reports (or a step finishes, or an alarm is acknowledged), `tick`: each machine without history, each
+    signal's new readings as `append`, and only the other sections that changed. A tick also goes out every 15 s,
+    so time-based states (a machine going idle) reach the screen; `retry` tells the browser to reconnect in 3 s."""
     with SessionLocal() as db:
         plant_for(db, plant_id, user)
 
+    def frame(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, default=str, separators=(',', ':'))}\n\n"
+
     async def gen():
-        while True:
-            def snap():
-                with SessionLocal() as db:
-                    return live.snapshot(db, plant_id)
-            data = await run_in_threadpool(snap)
-            yield f"data: {json.dumps(data, default=str)}\n\n"
-            await asyncio.sleep(2)
-    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        marks: dict = {}
+        sent: dict[str, str] = {}
+        seen = live.BUS.version[plant_id]
+
+        def snap(since):
+            with SessionLocal() as db:
+                return live.snapshot(db, plant_id, since=since, track=marks)
+
+        full = await run_in_threadpool(snap, None)
+        sent = {k: json.dumps(v, default=str) for k, v in full.items() if k not in ("equipment", "now")}
+        yield "retry: 3000\n\n" + frame("snapshot", full)
+        while not await request.is_disconnected():
+            seen = await live.BUS.wait(plant_id, seen, STREAM_HEARTBEAT_S)
+            await asyncio.sleep(STREAM_MIN_GAP_S)  # let a burst of readings settle into one frame
+            seen = live.BUS.version[plant_id]
+            d = await run_in_threadpool(snap, dict(marks))
+            tick = {"now": d["now"], "equipment": d["equipment"]}
+            for k, v in d.items():
+                if k in ("equipment", "now"):
+                    continue
+                enc = json.dumps(v, default=str)
+                if sent.get(k) != enc:
+                    tick[k], sent[k] = v, enc
+            yield frame("tick", tick)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 
 
 @app.post(f"{P}/alarms/{{aid}}/ack")
@@ -325,6 +358,7 @@ def ack(aid: int, user: dict = Depends(current_user), db: Session = Depends(get_
     plant_for(db, a.plant_id, user)
     a.acked_by, a.active = user.get("email", "?"), False
     db.commit()
+    live.BUS.notify(a.plant_id)
     return {"ok": True}
 
 

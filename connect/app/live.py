@@ -13,6 +13,8 @@ The zone shown on the dashboard: alarm (outside the range), warn (inside, in its
 
 from __future__ import annotations
 
+import asyncio
+
 import os
 import threading
 from collections import defaultdict, deque
@@ -33,6 +35,42 @@ _lock = threading.Lock()
 LATEST: dict[int, dict[str, Any]] = {}  # equipment id → {ts, batch, product_id, values}
 HIST: dict[tuple[int, str], deque] = defaultdict(lambda: deque(maxlen=HISTORY))
 CURRENT: dict[int, str] = {}  # equipment id → batch on it now
+
+
+class Bus:
+    """Change notices per plant for the live streams. Ingest runs in a worker thread and the streams in the event loop:
+    notify() bumps the plant's version and wakes its streams; a stream that rendered an older version never waits."""
+
+    def __init__(self) -> None:
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.version: dict[int, int] = defaultdict(int)
+        self._events: dict[int, asyncio.Event] = {}
+
+    def bind(self, loop: asyncio.AbstractEventLoop) -> None:
+        self.loop = loop
+
+    def notify(self, plant_id: int) -> None:
+        if self.loop and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(self._bump, plant_id)
+
+    def _bump(self, plant_id: int) -> None:
+        self.version[plant_id] += 1
+        ev = self._events.pop(plant_id, None)
+        if ev:
+            ev.set()
+
+    async def wait(self, plant_id: int, seen: int, timeout: float) -> int:
+        """The plant's version once it is past `seen`, or after `timeout` seconds."""
+        if self.version[plant_id] == seen:
+            ev = self._events.setdefault(plant_id, asyncio.Event())
+            try:
+                await asyncio.wait_for(ev.wait(), timeout)
+            except asyncio.TimeoutError:
+                pass
+        return self.version[plant_id]
+
+
+BUS = Bus()
 
 
 def _ts(v: Any) -> datetime:
@@ -157,6 +195,8 @@ def ingest(db: Session, agent: Agent, readings: list[dict[str, Any]]) -> dict[st
     db.add_all(rows)
     agent.info = {**(agent.info or {}), "last_push": utcnow().isoformat(), "machines": sorted(seen)}
     db.commit()
+    if seen:
+        BUS.notify(agent.plant_id)
     return {"accepted": len(readings) - rejected, "rejected": rejected, "machines": sorted(seen)}
 
 
@@ -169,9 +209,21 @@ def sweep(db: Session) -> None:
             e = db.get(Equipment, eid)
             if e:
                 finish_step(db, e, batch)
+                BUS.notify(e.plant_id)
             CURRENT[eid] = ""
     db.execute(delete(Reading).where(Reading.ts < now - timedelta(hours=RETAIN_H)))
     db.commit()
+
+
+def _points(eid: int, sig: str, since: Optional[dict[tuple[int, str], str]], track: Optional[dict[tuple[int, str], str]]) -> dict[str, list]:
+    with _lock:
+        h = list(HIST.get((eid, sig), []))[-60:]
+    if track is not None and h:
+        track[(eid, sig)] = h[-1][0]
+    if since is None:
+        return {"history": [x[1] for x in h]}
+    last = since.get((eid, sig), "")
+    return {"append": [x[1] for x in h if x[0] > last]}
 
 
 def history_from_db(db: Session, e: Equipment, minutes: int = 20) -> None:
@@ -187,7 +239,11 @@ def history_from_db(db: Session, e: Equipment, minutes: int = 20) -> None:
             LATEST.setdefault(e.id, {"ts": iso(last.ts), "batch": last.batch, "product_id": None, "product_label": "", "values": vals})
 
 
-def snapshot(db: Session, plant_id: int) -> dict[str, Any]:
+def snapshot(db: Session, plant_id: int, since: Optional[dict[tuple[int, str], str]] = None,
+             track: Optional[dict[tuple[int, str], str]] = None) -> dict[str, Any]:
+    """The live state of a plant. Each signal carries its last 60 readings as `history`; with `since` (the last reading
+    time already sent, per machine and signal) it carries only the readings after it, as `append`. `track` is filled
+    with the time of the last reading included, for the next call."""
     eqs = list(db.scalars(select(Equipment).where(Equipment.plant_id == plant_id).order_by(Equipment.position, Equipment.id)))
     products = list(db.scalars(select(Product).where(Product.plant_id == plant_id).order_by(Product.id)))
     pmap = {p.id: p for p in products}
@@ -214,7 +270,7 @@ def snapshot(db: Session, plant_id: int) -> dict[str, Any]:
             sigs.append({"id": s["id"], "label": s["label"], "unit": s["unit"], "key": s["key"], "value": v,
                          "ideal": par.get("ideal"), "lo": par.get("lo"), "hi": par.get("hi"), "check": par.get("check", "continuous"),
                          "zone": "end" if par.get("check") == "end" and v is not None and running else (zone(v, par) if v is not None and par else "none"),
-                         "history": [h[1] for h in list(HIST.get((e.id, s["id"]), []))[-60:]]})
+                         **_points(e.id, s["id"], since, track)})
         out_eq.append({"id": e.id, "name": e.name, "type": e.type, "type_label": t.get("label", e.type), "stage": t.get("stage", ""),
                        "make": e.make, "model": e.model, "protocol": e.protocol,
                        "status": "not connected" if not e.tag_map else "running" if running else "idle" if lt else "no data",

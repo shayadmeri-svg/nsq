@@ -446,10 +446,28 @@ function Station({ m, cfg, speed, onTune, tick }: { m: any; cfg: any; speed: num
   );
 }
 
+/** The line's live payload: a server-sent stream that pushes when the machines report; polling only while it is down. */
+function useLiveLine(slug: string, molecule: string) {
+  const qc = useQueryClient();
+  const [streaming, setStreaming] = useState(false);
+  const key = ["plant-live", slug, molecule];
+  const qs = molecule ? `?molecule=${molecule}` : "";
+  const q = useQuery({ queryKey: key, queryFn: () => api<any>(`/api/plant-data/${slug}/live${qs}`),
+    refetchInterval: streaming ? false : 4000, placeholderData: keepPreviousData, enabled: !!slug });
+  useEffect(() => {
+    if (!slug) return;
+    const es = new EventSource(`/api/plant-data/${slug}/live/stream${qs}`, { withCredentials: true });
+    es.onopen = () => setStreaming(true);
+    es.addEventListener("live", (m) => { try { qc.setQueryData(key, JSON.parse((m as MessageEvent).data)); } catch { /* partial frame */ } });
+    es.onerror = () => setStreaming(false);
+    return () => es.close();
+  }, [slug, molecule]); // eslint-disable-line react-hooks/exhaustive-deps
+  return q;
+}
+
 function LiveLine({ slug, molecule, onReplay }: { slug: string; molecule: string; onReplay: (b: string, params: Record<string, number>) => void }) {
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["plant-live", slug, molecule], queryFn: () => api<any>(`/api/plant-data/${slug}/live${molecule ? `?molecule=${molecule}` : ""}`),
-    refetchInterval: 4000, placeholderData: keepPreviousData, enabled: !!slug });
+  const q = useLiveLine(slug, molecule);
   const sim = useSimConfig(slug);
   const [edit, setEdit] = useState<string | null>(null);
   const [all, setAll] = useState(false);

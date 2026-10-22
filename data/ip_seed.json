@@ -1,0 +1,49 @@
+{
+  "_about": "Indian Pharmacopoeia limits entered by hand for the demo: numbers and monograph references only, no monograph text. Loaded by the 'ip' source (redis-loader/sources/ip.py) into data/sources/ip.json, the first source in the limits chain (backend/app/limits.py). Add molecules by appending entries; check every value against your licensed IP edition before relying on it.",
+  "edition": "IP 2022",
+  "molecules": {
+    "paracetamol": {
+      "monographs": [
+        {
+          "title": "Paracetamol Tablets",
+          "other_names": ["Acetaminophen Tablets"],
+          "form": "tablets",
+          "ingredients": ["Paracetamol"],
+          "combination": false,
+          "reference": {"edition": "IP 2022", "volume": "III", "page": "3197–3198", "monograph": "Paracetamol Tablets"},
+          "usual_strengths_mg": [500, 650],
+          "assay": {"lo": 95.0, "hi": 105.0, "text": "Assay 95.0–105.0% of the stated amount of paracetamol (IP 2022, Paracetamol Tablets)"},
+          "dissolution": {"apparatus": "paddle", "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2", "volume_ml": 900.0,
+                          "medium": "phosphate buffer pH 5.8", "ph": 5.8, "rpm": 50.0, "time_min": 30.0, "q_pct": 80.0,
+                          "conditions_given": true,
+                          "text": "Paddle, 900 mL phosphate buffer pH 5.8, 50 rpm, 30 min; Q not less than 80% of the stated amount (IP 2022, Paracetamol Tablets)"},
+          "related_substances": {"4-aminophenol_pct_max": 0.1, "4-chloroacetanilide_ppm_max": 10, "any_other_pct_max": 0.25,
+                                 "text": "Related substances (LC): 4-aminophenol ≤ 0.1%, 4-chloroacetanilide ≤ 10 ppm, any other ≤ 0.25%"},
+          "other_tests": "Complies with the general monograph Tablets",
+          "storage": "Protected from light and moisture"
+        }
+      ]
+    },
+    "telmisartan": {
+      "monographs": [
+        {
+          "title": "Telmisartan Tablets",
+          "form": "tablets",
+          "ingredients": ["Telmisartan"],
+          "combination": false,
+          "reference": {"edition": "IP 2022", "volume": "III", "page": "3727–3728", "monograph": "Telmisartan Tablets"},
+          "usual_strengths_mg": [20, 40, 80],
+          "assay": {"lo": 90.0, "hi": 110.0, "text": "Assay 90.0–110.0% of the stated amount of telmisartan (IP 2022, Telmisartan Tablets)"},
+          "dissolution": {"apparatus": "paddle", "apparatus_ip": "Apparatus No. 2 (Paddle), IP 2.5.2", "volume_ml": 900.0,
+                          "medium": "phosphate buffer pH 7.5", "ph": 7.5, "rpm": 75.0, "time_min": 30.0, "q_pct": 75.0,
+                          "conditions_given": true,
+                          "text": "Paddle, 900 mL phosphate buffer pH 7.5, 75 rpm, 30 min; Q not less than 75% of the stated amount (IP 2022, Telmisartan Tablets)"},
+          "related_substances": {"any_secondary_pct_max": 0.5, "total_pct_max": 2.0,
+                                 "text": "Related substances (LC): any secondary peak ≤ 0.5%, sum of secondary peaks ≤ 2.0%"},
+          "other_tests": "Complies with the general monograph Tablets",
+          "storage": null
+        }
+      ]
+    }
+  }
+}

@@ -27,4 +27,6 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fs http://localhost:8001/api/health || exit 1
 # One worker on purpose: the job runner tracks running jobs in-process.
-ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# On stop: finish requests in flight, close event streams after 15 s (browsers reconnect after 3 s).
+ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips", "*",
+            "--timeout-graceful-shutdown", "15", "--timeout-keep-alive", "75"]

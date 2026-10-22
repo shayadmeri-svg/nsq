@@ -70,6 +70,9 @@ export function Coverage() {
                     <div className="mt-1 leading-relaxed text-ink-soft">{s.unmapped.join(", ")}</div>
                     <div className="mt-1 text-[10.5px] text-ink-faint">Checked against PubChem's compound for each name too: these are other drugs, not tracked molecules under another name.</div></details>}
                 </div>)}
+              {s.issues?.length > 0 && <details className="mt-2 text-xs"><summary className={cn("cursor-pointer", s.issues.some((i: any) => i.level === "error") ? "text-rose-600" : "text-amber-700")}>
+                Entry checks: {s.issues.filter((i: any) => i.level === "error").length} errors, {s.issues.filter((i: any) => i.level === "warning").length} warnings</summary>
+                <ul className="mt-1 space-y-0.5 text-ink-soft">{s.issues.map((i: any, n: number) => <li key={n}><b className={i.level === "error" ? "text-rose-600" : "text-amber-700"}>{i.level}</b> {i.key} · {i.title}: {i.message}</li>)}</ul></details>}
               {s.note && <div className="mt-1 text-[10.5px] text-ink-faint">{s.note}</div>}
             </div>))}
         </div>
