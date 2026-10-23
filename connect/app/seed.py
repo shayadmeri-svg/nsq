@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import catalog
+from . import catalog, lines
 from .auth import token_hash
 from .models import Agent, Equipment, Plant, Product
 
@@ -76,6 +76,7 @@ def seed_demo(db: Session) -> None:
         for e in db.scalars(select(Equipment).where(Equipment.plant_id == plant.id, Equipment.agent_id.is_(None))):
             e.agent_id = a.id
         db.commit()
+    seed_lines(db, plant)
     # simulator machines still on the old 5-second default read every SIM_POLL_S (a value someone set is left alone)
     changed = False
     for e in db.scalars(select(Equipment).where(Equipment.plant_id == plant.id, Equipment.profile_id.like("eurveda-sim-%"))):
@@ -84,3 +85,34 @@ def seed_demo(db: Session) -> None:
             changed = True
     if changed:
         db.commit()
+
+
+def seed_lines(db: Session, plant: Plant) -> None:
+    """The three dedicated lines (lines.py), added once: a line whose product exists already is left as it is, so
+    machines or limits changed in Plant setup are not overwritten (delete the product to have the line re-created)."""
+    agent = db.scalar(select(Agent).where(Agent.plant_id == plant.id).order_by(Agent.id))
+    have = {e.name: e for e in db.scalars(select(Equipment).where(Equipment.plant_id == plant.id))}
+    codes = {c for p in db.scalars(select(Product).where(Product.plant_id == plant.id)) for c in (p.codes or [])}
+    pos = len(have)
+    for ln in lines.LINES:
+        if ln["product"]["code"] in codes:
+            continue
+        route = []
+        for m in ln["machines"]:
+            e = have.get(m["name"])
+            if e is None:
+                prof = next(p for p in catalog.PROFILES if p["type"] == m["type"] and p["protocol"] == "opcua" and not p.get("hidden"))
+                pr = catalog.retarget(prof, m["name"])
+                e = Equipment(plant_id=plant.id, name=m["name"], type=m["type"], line=ln["line"], position=pos, make=m.get("make", ""), model="",
+                              protocol="opcua", connection={"endpoint": SIM_ENDPOINT, "poll_s": SIM_POLL_S}, tag_map=dict(pr["tags"]),
+                              batch_tag=pr["batch_tag"], product_tag=pr["product_tag"], agent_id=agent.id if agent else None, profile_id=prof["id"])
+                db.add(e)
+                db.flush()
+                have[m["name"]] = e
+                pos += 1
+            if m.get("params") is not None or catalog.TYPE_BY_ID[m["type"]]["batch"]:
+                route.append({"equipment_id": e.id, "params": dict(m.get("params") or {})})
+        pr_ = ln["product"]
+        db.add(Product(plant_id=plant.id, name=pr_["name"], molecule_key=pr_["molecule_key"], dosage_form=pr_["dosage_form"],
+                       codes=[pr_["code"]], color=pr_["color"], route=route))
+    db.commit()

@@ -3160,5 +3160,748 @@
   "db": 1,
   "port": 1102,
   "object": "AHU1"
+ },
+ "lines": {
+  "SFT-201": {
+   "line": "Line 2 \u00b7 Paracetamol",
+   "position": 0,
+   "minutes": 20,
+   "product": "PCM500-L2",
+   "sim": {
+    "throughput_kg_h": {
+     "setpoint": 800,
+     "noise": 15,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "motor_a": {
+     "setpoint": 4.2,
+     "noise": 0.1,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "run_min": {
+     "setpoint": 20,
+     "noise": 0,
+     "pattern": "ramp",
+     "amplitude": 20,
+     "per": "reading"
+    }
+   }
+  },
+  "RMG-201": {
+   "line": "Line 2 \u00b7 Paracetamol",
+   "position": 1,
+   "minutes": 25,
+   "product": "PCM500-L2",
+   "sim": {
+    "dry_mix_kg": {
+     "setpoint": 200,
+     "noise": 0,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "binder_kg": {
+     "setpoint": 44,
+     "noise": 0.8,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "wet_mix_min": {
+     "setpoint": 3,
+     "noise": 0.15,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "impeller_kw": {
+     "setpoint": 18,
+     "noise": 0.4,
+     "pattern": "ramp",
+     "amplitude": 9,
+     "per": "reading"
+    }
+   }
+  },
+  "FBD-201": {
+   "line": "Line 2 \u00b7 Paracetamol",
+   "position": 2,
+   "minutes": 45,
+   "product": "PCM500-L2",
+   "sim": {
+    "inlet_c": {
+     "setpoint": 65,
+     "noise": 0.6,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "outlet_c": {
+     "setpoint": 42,
+     "noise": 0.4,
+     "pattern": "ramp",
+     "amplitude": 14,
+     "per": "reading"
+    },
+    "product_c": {
+     "setpoint": 45,
+     "noise": 0.4,
+     "pattern": "ramp",
+     "amplitude": 18,
+     "per": "reading"
+    },
+    "inlet_rh_pct": {
+     "setpoint": 8,
+     "noise": 0.5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "air_m3_h": {
+     "setpoint": 3000,
+     "noise": 40,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "lod_pct": {
+     "setpoint": 1.5,
+     "noise": 0.05,
+     "pattern": "ramp",
+     "amplitude": -16.5,
+     "per": "reading"
+    },
+    "elapsed_min": {
+     "setpoint": 45,
+     "noise": 0,
+     "pattern": "ramp",
+     "amplitude": 45,
+     "per": "reading"
+    }
+   }
+  },
+  "MIL-201": {
+   "line": "Line 2 \u00b7 Paracetamol",
+   "position": 3,
+   "minutes": 20,
+   "product": "PCM500-L2",
+   "sim": {
+    "rotor_rpm": {
+     "setpoint": 1500,
+     "noise": 10,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "motor_kw": {
+     "setpoint": 5,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "feed_kg_h": {
+     "setpoint": 600,
+     "noise": 15,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "screen_mm": {
+     "setpoint": 1.5,
+     "noise": 0.0,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "BLD-201": {
+   "line": "Line 2 \u00b7 Paracetamol",
+   "position": 4,
+   "minutes": 25,
+   "product": "PCM500-L2",
+   "sim": {
+    "blend_min": {
+     "setpoint": 5,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "blender_rpm": {
+     "setpoint": 12,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "CMP-201": {
+   "line": "Line 2 \u00b7 Paracetamol",
+   "position": 5,
+   "minutes": 60,
+   "product": "PCM500-L2",
+   "sim": {
+    "force_kn": {
+     "setpoint": 15,
+     "noise": 0.5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "precompression_kn": {
+     "setpoint": 3,
+     "noise": 0.15,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "tablet_weight_mg": {
+     "setpoint": 600,
+     "noise": 3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "press_rpm": {
+     "setpoint": 30,
+     "noise": 0.3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "punch_diameter_mm": {
+     "setpoint": 12.7,
+     "noise": 0.0,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "STP-201": {
+   "line": "Line 2 \u00b7 Paracetamol",
+   "position": 6,
+   "minutes": 50,
+   "product": "PCM500-L2",
+   "sim": {
+    "sealing_c": {
+     "setpoint": 175,
+     "noise": 1.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "speed_cpm": {
+     "setpoint": 120,
+     "noise": 2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "SFT-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 0,
+   "minutes": 20,
+   "product": "AZI500-L3",
+   "sim": {
+    "throughput_kg_h": {
+     "setpoint": 600,
+     "noise": 12,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "motor_a": {
+     "setpoint": 3.8,
+     "noise": 0.1,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "run_min": {
+     "setpoint": 20,
+     "noise": 0,
+     "pattern": "ramp",
+     "amplitude": 20,
+     "per": "reading"
+    }
+   }
+  },
+  "RMG-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 1,
+   "minutes": 25,
+   "product": "AZI500-L3",
+   "sim": {
+    "dry_mix_kg": {
+     "setpoint": 150,
+     "noise": 0,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "binder_kg": {
+     "setpoint": 30,
+     "noise": 0.6,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "wet_mix_min": {
+     "setpoint": 4,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "impeller_kw": {
+     "setpoint": 14,
+     "noise": 0.3,
+     "pattern": "ramp",
+     "amplitude": 7,
+     "per": "reading"
+    }
+   }
+  },
+  "FBD-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 2,
+   "minutes": 60,
+   "product": "AZI500-L3",
+   "sim": {
+    "inlet_c": {
+     "setpoint": 50,
+     "noise": 0.5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "outlet_c": {
+     "setpoint": 36,
+     "noise": 0.4,
+     "pattern": "ramp",
+     "amplitude": 10,
+     "per": "reading"
+    },
+    "product_c": {
+     "setpoint": 38,
+     "noise": 0.4,
+     "pattern": "ramp",
+     "amplitude": 12,
+     "per": "reading"
+    },
+    "inlet_rh_pct": {
+     "setpoint": 10,
+     "noise": 0.5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "air_m3_h": {
+     "setpoint": 2500,
+     "noise": 35,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "lod_pct": {
+     "setpoint": 4.5,
+     "noise": 0.06,
+     "pattern": "ramp",
+     "amplitude": -14,
+     "per": "reading"
+    },
+    "elapsed_min": {
+     "setpoint": 60,
+     "noise": 0,
+     "pattern": "ramp",
+     "amplitude": 60,
+     "per": "reading"
+    }
+   }
+  },
+  "MIL-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 3,
+   "minutes": 20,
+   "product": "AZI500-L3",
+   "sim": {
+    "rotor_rpm": {
+     "setpoint": 1200,
+     "noise": 10,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "motor_kw": {
+     "setpoint": 4,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "feed_kg_h": {
+     "setpoint": 450,
+     "noise": 12,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "screen_mm": {
+     "setpoint": 1.2,
+     "noise": 0.0,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "BLD-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 4,
+   "minutes": 25,
+   "product": "AZI500-L3",
+   "sim": {
+    "blend_min": {
+     "setpoint": 6,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "blender_rpm": {
+     "setpoint": 10,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "CMP-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 5,
+   "minutes": 60,
+   "product": "AZI500-L3",
+   "sim": {
+    "force_kn": {
+     "setpoint": 20,
+     "noise": 0.6,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "precompression_kn": {
+     "setpoint": 4,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "tablet_weight_mg": {
+     "setpoint": 800,
+     "noise": 4,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "press_rpm": {
+     "setpoint": 25,
+     "noise": 0.3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "punch_diameter_mm": {
+     "setpoint": 19,
+     "noise": 0.0,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "COT-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 6,
+   "minutes": 90,
+   "product": "AZI500-L3",
+   "sim": {
+    "weight_gain_pct": {
+     "setpoint": 3.0,
+     "noise": 0.02,
+     "pattern": "ramp",
+     "amplitude": 3.0,
+     "per": "reading"
+    },
+    "coat_inlet_c": {
+     "setpoint": 58,
+     "noise": 0.5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "exhaust_c": {
+     "setpoint": 42,
+     "noise": 0.4,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "spray_g_min": {
+     "setpoint": 120,
+     "noise": 3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "pan_rpm": {
+     "setpoint": 7,
+     "noise": 0.1,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "atomizing_bar": {
+     "setpoint": 2.0,
+     "noise": 0.03,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "BLS-301": {
+   "line": "Line 3 \u00b7 Azithromycin",
+   "position": 7,
+   "minutes": 50,
+   "product": "AZI500-L3",
+   "sim": {
+    "sealing_c": {
+     "setpoint": 190,
+     "noise": 1.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "forming_c": {
+     "setpoint": 130,
+     "noise": 1,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "speed_cpm": {
+     "setpoint": 200,
+     "noise": 3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "rejects": {
+     "setpoint": 4,
+     "noise": 1,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "FBP-401": {
+   "line": "Line 4 \u00b7 Telmisartan",
+   "position": 0,
+   "minutes": 75,
+   "product": "TEL80-L4",
+   "sim": {
+    "product_c": {
+     "setpoint": 38,
+     "noise": 0.4,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "spray_g_min": {
+     "setpoint": 250,
+     "noise": 5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "inlet_c": {
+     "setpoint": 65,
+     "noise": 0.6,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "exhaust_c": {
+     "setpoint": 35,
+     "noise": 0.4,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "atomizing_bar": {
+     "setpoint": 2.5,
+     "noise": 0.04,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "air_m3_h": {
+     "setpoint": 2000,
+     "noise": 30,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "filter_dp_pa": {
+     "setpoint": 1200,
+     "noise": 40,
+     "pattern": "ramp",
+     "amplitude": 600,
+     "per": "reading"
+    }
+   }
+  },
+  "BLD-401": {
+   "line": "Line 4 \u00b7 Telmisartan",
+   "position": 1,
+   "minutes": 25,
+   "product": "TEL80-L4",
+   "sim": {
+    "blend_min": {
+     "setpoint": 10,
+     "noise": 0.3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "batch"
+    },
+    "blender_rpm": {
+     "setpoint": 10,
+     "noise": 0.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "CMP-401": {
+   "line": "Line 4 \u00b7 Telmisartan",
+   "position": 2,
+   "minutes": 60,
+   "product": "TEL80-L4",
+   "sim": {
+    "force_kn": {
+     "setpoint": 10,
+     "noise": 0.4,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "precompression_kn": {
+     "setpoint": 2,
+     "noise": 0.1,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "tablet_weight_mg": {
+     "setpoint": 480,
+     "noise": 2.5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "press_rpm": {
+     "setpoint": 35,
+     "noise": 0.3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "punch_diameter_mm": {
+     "setpoint": 11,
+     "noise": 0.0,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "BLS-401": {
+   "line": "Line 4 \u00b7 Telmisartan",
+   "position": 3,
+   "minutes": 50,
+   "product": "TEL80-L4",
+   "sim": {
+    "sealing_c": {
+     "setpoint": 200,
+     "noise": 1.2,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "forming_c": {
+     "setpoint": 25,
+     "noise": 0.3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "speed_cpm": {
+     "setpoint": 150,
+     "noise": 3,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "rejects": {
+     "setpoint": 3,
+     "noise": 1,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  },
+  "HVAC-401": {
+   "line": "Line 4 \u00b7 Telmisartan",
+   "position": 4,
+   "minutes": 0,
+   "product": "TEL80-L4",
+   "sim": {
+    "room_c": {
+     "setpoint": 22,
+     "noise": 0.15,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    },
+    "room_rh_pct": {
+     "setpoint": 35,
+     "noise": 0.6,
+     "pattern": "sine",
+     "amplitude": 2.5,
+     "per": "reading"
+    },
+    "dp_pa": {
+     "setpoint": 15,
+     "noise": 0.5,
+     "pattern": "steady",
+     "amplitude": 0.0,
+     "per": "reading"
+    }
+   }
+  }
  }
 }

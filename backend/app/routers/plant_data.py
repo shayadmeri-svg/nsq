@@ -710,9 +710,13 @@ _LINE = ("RMG-1", "FBD-1", "BLENDER-1", "PRESS-1", "COATER-1")
 _KEEP_PHYSICS = {"AUTOCLAVE-1": "autoclave", "HVAC-ROOM-1": "hvac_room"}  # the simulator's own cycles for these two
 
 
-def _sim_types() -> dict[str, Any]:
+def _sim_file() -> dict[str, Any]:
     p = AGENT_DIR / "sim_machines.json"
-    return json.loads(p.read_text(encoding="utf-8")).get("types", {}) if p.exists() else {}
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def _sim_types() -> dict[str, Any]:
+    return _sim_file().get("types", {})
 
 
 def _cx_plant(db: Session, *, slug: Optional[str] = None, token: Optional[str] = None) -> Optional[int]:
@@ -739,7 +743,8 @@ def _extra_machines(db: Session, plant: Optional[int]) -> dict[str, dict[str, An
     except Exception:  # noqa: BLE001
         db.rollback()
         return {}
-    types, out = _sim_types(), {}
+    f = _sim_file()
+    types, dedicated, out = f.get("types", {}), f.get("lines", {}), {}
     for name, typ, make, model in rows:
         t = types.get(typ)
         if name in _LINE or name in _KEEP_PHYSICS or not t:
@@ -753,6 +758,14 @@ def _extra_machines(db: Session, plant: Optional[int]) -> dict[str, dict[str, An
                                 "var": sg["var"]}
         out[name] = {"label": f"{t['label']}{' · ' + ' '.join(x for x in (make, model) if x) if (make or model) else ''}", "format": typ,
                      "type": typ, "extra": True, "batch": t["batch"], "enabled": True, "duration_min": 60, "signals": sig}
+        d = dedicated.get(name)
+        if d and d.get("type", typ) == typ:  # a machine of a dedicated line (Connect's lines.py): its line, step and process values
+            for fld, over in (d.get("sim") or {}).items():
+                if fld in sig:
+                    sig[fld].update(over)
+                    sig[fld]["min"], sig[fld]["max"] = min(sig[fld]["min"], over["setpoint"]), max(sig[fld]["max"], over["setpoint"])
+            out[name].update(line=d["line"], position=d["position"], product=d["product"], duration_min=max(1.0, float(d["minutes"] or 1)))
+            out[name]["label"] = f"{d['line']} · {out[name]['label']}"
     return out
 
 
@@ -790,7 +803,7 @@ def _clean(cfg: dict[str, Any], extra: Optional[dict[str, Any]] = None) -> dict[
                 sv["var"] = sdef["var"]
             am["signals"][f] = sv
         if a.get("extra"):
-            am.update(extra=True, type=a["type"], batch=a["batch"])
+            am.update(extra=True, type=a["type"], batch=a["batch"], **{k: a[k] for k in ("line", "position", "product") if k in a})
         out["apparatus"][m] = am
     return out
 

@@ -241,6 +241,60 @@ class Generic:
         return batch, vals, ""
 
 
+class LineFlow:
+    """A dedicated line (machines set up in Connect with a `line`, in `position` order, each `duration_min` per batch):
+    batch n starts at the first station and moves down the line one takt at a time, like the original line. Batch-wise
+    signals (per = batch) are drawn once per batch; ramps follow the step's progress; an idle station sends its
+    resting values. A station with no duration (a room, a utility) runs continuously alongside."""
+
+    def __init__(self, eng: "Engine", code: str, rng: random.Random):
+        self.eng, self.code, self.rng = eng, code, rng
+        self.n, self.t, self.takt, self.draws = 1, 0.0, 30.0, {}
+        tag = code.rsplit("-", 1)[-1] if "-" in code else ""
+        self.batch_prefix = f"{code[:3]}-{tag}-{eng.prefix}" if tag else f"{code[:3]}{eng.prefix}"
+
+    def stations(self) -> list[str]:
+        A = self.eng.cfg.get("apparatus", {})
+        return sorted((m for m, a in A.items() if a.get("extra") and a.get("product") == self.code and a.get("batch") and a.get("enabled", True)),
+                      key=lambda m: A[m].get("position", 0))
+
+    def step(self, dt: float) -> None:
+        A = self.eng.cfg["apparatus"]
+        st = self.stations()
+        self.takt = max([float(A[m].get("duration_min", 30)) for m in st] or [30.0]) + float(self.eng.cfg.get("handling_min", 5))
+        self.t += dt
+        if self.t >= self.takt:
+            self.n, self.t = self.n + 1, 0.0
+            self.draws = {k: v for k, v in self.draws.items() if k[1] > self.n - len(st) - 2}
+
+    def readings(self) -> dict[str, tuple[str, dict[str, float], str]]:
+        A, out = self.eng.cfg["apparatus"], {}
+        for i, m in enumerate(self.stations()):
+            a, b = A[m], self.n - i
+            dur = float(a.get("duration_min", 30))
+            if b < 1 or self.t > dur:
+                out[m] = ("", {f: self._rest(s) for f, s in a["signals"].items()}, "")
+                continue
+            pr = self.t / max(1e-6, dur)
+            vals = {}
+            for f, s in a["signals"].items():
+                if s.get("per") == "batch":
+                    vals[f] = self.draws.setdefault((m, b, f), self.eng.value(m, f, b, 1.0))
+                else:
+                    vals[f] = self.eng.value(m, f, b, pr)
+            out[m] = (f"{self.batch_prefix}{b:03d}", vals, self.code)
+        return out
+
+    @staticmethod
+    def _rest(s: dict[str, Any]) -> float:
+        unit = s.get("unit", "")
+        if unit == "°C":
+            return min(float(s["max"]), max(float(s["min"]), 25.0))
+        if unit.startswith("%RH"):
+            return 45.0
+        return float(s.get("min", 0)) if s.get("per") != "batch" else 0.0
+
+
 def sim_machines() -> dict[str, Any]:
     p = HERE / "sim_machines.json"
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"machines": []}
@@ -392,6 +446,7 @@ async def main(a: argparse.Namespace) -> None:
     for m in extra["machines"]:
         await serve(m["name"], m["object"], {sg["field"]: sg["var"] for sg in m["signals"]})
     connected: dict[str, str] = {}  # machines set up in Connect (Sim engine "extra" apparatus) → the key their nodes are under
+    flows: dict[str, LineFlow] = {}  # dedicated lines, by the product code they make
     s7 = extra.get("s7")
     s7_machine = next((m for m in extra["machines"] if s7 and m["type"] == s7["type"]), None)
     s7db = None
@@ -428,12 +483,22 @@ async def main(a: argparse.Namespace) -> None:
             eng.step(float(eng.cfg.get("speed", 30)) / 60.0)
             util.step(eng.clock)
             every = {**eng.readings(), **util.readings(eng.clock), **{n: g.readings(eng.clock) for n, g in generic.items()}}
+            for code in {ap.get("product") for ap in eng.cfg["apparatus"].values() if ap.get("extra") and ap.get("product")}:
+                if code not in flows:
+                    flows[code] = LineFlow(eng, code, random.Random(len(flows) + a.seed))
+            sim_min = float(eng.cfg.get("speed", 30)) / 60.0 if eng.cfg.get("running", True) else 0.0
+            for fl in flows.values():
+                fl.step(sim_min)
+                every.update({connected[m]: r for m, r in fl.readings().items() if m in connected})
             for name, key in connected.items():
                 ap = eng.cfg["apparatus"].get(name)
-                if not ap or not ap.get("enabled", True):
+                if not ap or not ap.get("enabled", True) or (ap.get("product") and ap.get("batch")):
                     continue
                 b = eng.n
                 prod = eng.product(b)
+                if ap.get("product"):  # a room or utility of a dedicated line: continuous, tagged with nothing
+                    every[key] = ("", {f: eng.value(name, f, b, 1.0) for f in ap["signals"]}, "")
+                    continue
                 batch = f"{prod.get('code', '')[:3]}{eng.prefix}{b:03d}" if ap.get("batch") else ""
                 every[key] = (batch, {f: eng.value(name, f, b, min(1.0, eng.t / max(1e-6, eng.takt))) for f in ap["signals"]},
                               prod.get("code", "") if ap.get("batch") else "")

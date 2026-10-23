@@ -4,7 +4,7 @@ Run after changing connect/app/equipment.py:  python connect/export_sim_machines
 import json
 from pathlib import Path
 
-from app import catalog
+from app import catalog, lines
 
 LINE = {"rmg", "fbd", "blender", "press", "coater", "autoclave", "hvac_room"}  # simulated with their own physics
 out = []
@@ -20,5 +20,7 @@ types = {t["id"]: {"label": t["label"], "batch": t["batch"],
                                for s in t["signals"]]} for t in catalog.EQUIPMENT_TYPES}
 s7 = catalog.S7_SIM
 (Path(__file__).resolve().parents[1] / "edge-agent" / "sim_machines.json").write_text(
-    json.dumps({"machines": out, "types": types, "s7": {**s7, "object": catalog.sim_tags(s7["type"])[0]}}, indent=1) + "\n", encoding="utf-8")
+    json.dumps({"machines": out, "types": types, "s7": {**s7, "object": catalog.sim_tags(s7["type"])[0]},
+                # the dedicated lines' machines: line, order, minutes per batch, product, and what each signal sends
+                "lines": {n: {k: m[k] for k in ("line", "position", "minutes", "product", "sim")} for n, m in lines.MACHINES.items()}}, indent=1) + "\n", encoding="utf-8")
 print(len(out), "machines")
