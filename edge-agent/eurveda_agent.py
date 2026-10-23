@@ -491,6 +491,10 @@ def make_source(cfg: dict[str, Any]) -> Source:
     proto = cfg.get("protocol", "opcua")
     if proto not in SOURCES:
         raise ValueError(f"{cfg['name']}: unknown protocol {proto!r} ({' | '.join(SOURCES)})")
+    need = {"opcua": "endpoint", "modbus": "host", "modbus_tcp": "host", "s7": "host", "ethernet_ip": "host", "mqtt": "broker", "rest": "url",
+            "modbus_rtu": "serial_port", "serial_ascii": "serial_port"}.get(proto)
+    if need and not cfg.get(need):
+        raise ValueError(f"{cfg['name']}: no {need} set for this machine (Plant setup → Connections)")
     return SOURCES[proto](cfg)
 
 

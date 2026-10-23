@@ -145,6 +145,10 @@ def _apply_eq(e: Equipment, body: dict[str, Any]) -> None:
     if body.get("profile_id") and body["profile_id"] in catalog.PROFILE_BY_ID:  # a verified machine-model profile fills the mapping
         pr = catalog.PROFILE_BY_ID[body["profile_id"]]
         e.tag_map, e.batch_tag, e.product_tag, e.protocol = dict(pr["tags"]), pr["batch_tag"], pr.get("product_tag", ""), pr["protocol"]
+        if pr.get("verified") == "simulator" and pr["protocol"] == "opcua" and not (e.connection or {}).get("endpoint"):
+            e.connection = {**(e.connection or {}), "endpoint": "opc.tcp://localhost:4840/eurveda-sim/"}  # where the demo agent reaches it
+        elif pr["protocol"] == "s7" and not (e.connection or {}).get("host"):
+            e.connection = {**(e.connection or {}), "host": "localhost", "rack": "0", "slot": "1", "port": str(catalog.S7_SIM["port"])}
     pr = catalog.PROTOCOL_BY_ID[e.protocol]
     bad = catalog.bad_tags(e.protocol, {**(e.tag_map or {}), **({"batch tag": e.batch_tag, "product tag": e.product_tag} if e.protocol == "opcua" else {})})
     if bad:
@@ -277,6 +281,9 @@ def _job(db: Session, e: Equipment, kind: str, user: dict) -> dict[str, Any]:
         raise HTTPException(400, "Choose which plant agent reaches this machine first.")
     if not catalog.PROTOCOL_BY_ID[e.protocol].get("agent"):
         raise HTTPException(400, f"{catalog.PROTOCOL_BY_ID[e.protocol]['label']}: there is nothing for the plant agent to read.")
+    missing = [f["label"] for f in catalog.PROTOCOL_BY_ID[e.protocol].get("fields", []) if f.get("required") and not (e.connection or {}).get(f["id"])]
+    if missing:
+        raise HTTPException(400, f"{e.name}: enter the {', '.join(missing).lower()} first (Connections → {catalog.PROTOCOL_BY_ID[e.protocol]['label']}).")
     if kind == "browse" and e.protocol != "opcua":
         raise HTTPException(400, "Modbus has no tag names to browse: enter the register addresses from the machine's manual.")
     j = Job(agent_id=e.agent_id, equipment_id=e.id, kind=kind, request={"machine": _machine_cfg(e)})

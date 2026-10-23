@@ -802,4 +802,39 @@ def sim_config_for_agent(authorization: str = Header(""), db: Session = Depends(
     if c is None or not c.active:
         raise HTTPException(401, "Unknown or revoked connector token.")
     row = db.get(PlantSimConfig, c.org_id)
-    return {"config": _clean(_merged(row.config if row else None))}
+    cfg = _clean(_merged(row.config if row else None))
+    products = _connect_products(db, token, cfg)
+    return {"config": {**cfg, "products": products} if products else cfg}
+
+
+def _connect_products(db: Session, token: str, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """The products set up in Eurveda Connect for the plant this simulator's agent belongs to (same token), as the
+    simulator runs them: the code the machines report, the route through its machines, and each ideal value as an
+    offset from the machine's setpoint. Empty when Connect has no such plant (the simulator keeps its own two)."""
+    from sqlalchemy import text
+
+    try:
+        plant = db.execute(text("SELECT plant_id FROM cx_agents WHERE token_hash = :h"), {"h": _hash(token)}).scalar()
+        if plant is None:
+            return []
+        names = dict(db.execute(text("SELECT id, name FROM cx_equipment WHERE plant_id = :p"), {"p": plant}).all())
+        rows = db.execute(text("SELECT name, codes, route FROM cx_products WHERE plant_id = :p ORDER BY id"), {"p": plant}).all()
+    except Exception:  # noqa: BLE001 — Connect's tables absent (it has not started yet): the simulator's defaults apply
+        db.rollback()
+        return []
+    A, out = cfg["apparatus"], []
+    for name, codes, route in rows:
+        steps = [(names.get(st.get("equipment_id")), st.get("params") or {}) for st in route or []]
+        steps = [(m, params) for m, params in steps if m in A]
+        if not steps:
+            continue
+        offsets: dict[str, dict[str, float]] = {}
+        for m, params in steps:
+            for f, par in params.items():
+                ideal = (par or {}).get("ideal")
+                if ideal is not None and f in A[m]["signals"]:
+                    offsets.setdefault(m, {})[f] = float(ideal) - float(A[m]["signals"][f]["setpoint"])
+        lod = next((params.get("lod_pct", {}).get("ideal") for m, params in steps if m == "FBD-1" and params.get("lod_pct")), None)
+        out.append({"code": (codes or [name])[0], "label": name, "route": [m for m, _ in steps], "offsets": offsets,
+                    "lod_base": float(lod) if lod is not None else 1.6})
+    return out
