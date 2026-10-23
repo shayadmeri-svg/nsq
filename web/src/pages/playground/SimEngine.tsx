@@ -179,19 +179,22 @@ export function SimEngine({ slug, open, onClose, machines }: { slug: string; ope
               </span>))}
           </div>
 
-          {ORDER.map((m) => {
+          {[...ORDER, ...Object.keys(draft.apparatus).filter((k) => !ORDER.includes(k))].map((m, i, all) => {
             const a = draft.apparatus[m];
             if (!a) return null;
+            const first = a.extra && !draft.apparatus[all[i - 1]]?.extra;
             const quick = Object.entries(a.signals).filter(([, s]: any) => s.noise > 0 || s.pattern !== "steady").slice(0, 4);
             return (
-              <motion.div key={m} layout className={cn("rounded-2xl p-4 ring-1 ring-inset transition", a.enabled ? "bg-white ring-line" : "bg-slate-50 ring-line opacity-70")}>
+              <div key={m}>
+              {first && <div className="mb-2 mt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Other machines from Plant setup</div>}
+              <motion.div layout className={cn("rounded-2xl p-4 ring-1 ring-inset transition", a.enabled ? "bg-white ring-line" : "bg-slate-50 ring-line opacity-70")}>
                 <div className="flex items-center gap-3">
                   <button role="switch" aria-checked={a.enabled} onClick={() => set((c) => { c.apparatus[m].enabled = !c.apparatus[m].enabled; })}
                     className={cn("relative h-5 w-9 shrink-0 rounded-full transition", a.enabled ? "bg-brand-500" : "bg-slate-300")}>
                     <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", a.enabled ? "left-[18px]" : "left-0.5")} /></button>
                   <div className="min-w-0 flex-1"><div className="text-[14px] font-semibold">{m} <span className="font-normal text-ink-muted">· {a.label}</span></div>
-                    <div className="text-[11px] text-ink-muted">{batchOn[m] ? <>running <b className="font-mono text-gold-700">{batchOn[m]}</b></> : "idle or waiting for its first batch"}
-                      {m !== "FBD-1" && <> · runs {a.duration_min} min per batch</>}</div></div>
+                    <div className="text-[11px] text-ink-muted">{a.extra && !a.batch ? "runs continuously" : batchOn[m] ? <>running <b className="font-mono text-gold-700">{batchOn[m]}</b></> : "idle or waiting for its first batch"}
+                      {!a.extra && m !== "FBD-1" && <> · runs {a.duration_min} min per batch</>}</div></div>
                   <button onClick={() => setEdit(m)} className="rounded-lg p-2 text-ink-muted ring-1 ring-inset ring-line hover:bg-gold-50 hover:text-gold-700" title="All signals: setpoint, noise, range, pattern"><Settings2 size={16} /></button>
                 </div>
                 {a.enabled && (
@@ -211,11 +214,12 @@ export function SimEngine({ slug, open, onClose, machines }: { slug: string; ope
                           {g && <div className="text-[10px] text-ink-faint">green: {fmtv(g.lo)}–{fmtv(g.hi)} {s.unit} — {g.text}</div>}
                         </label>);
                     })}
-                    {m !== "FBD-1" && (
+                    {!a.extra && m !== "FBD-1" && (
                       <label className="flex items-center justify-between text-xs"><span className="font-medium text-ink-soft">Minutes per batch</span>
                         <Num value={a.duration_min} onChange={(v) => set((c) => { c.apparatus[m].duration_min = v; })} /></label>)}
                   </div>)}
               </motion.div>
+              </div>
             );
           })}
 

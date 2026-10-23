@@ -14,7 +14,11 @@ for t in catalog.EQUIPMENT_TYPES:
     obj, tags = catalog.sim_tags(t["id"])
     out.append({"type": t["id"], "name": f"{t['id'].upper().replace('_', '-')}-1", "object": obj, "batch": t["batch"],
                 "signals": [{"field": s["id"], "var": tags[s["id"]], "typical": s["typical"]} for s in t["signals"]]})
+# every type's signals, so the API can offer any machine set up in Connect in the Sim engine, and the simulator serve it
+types = {t["id"]: {"label": t["label"], "batch": t["batch"],
+                   "signals": [{"field": s["id"], "var": catalog._camel(s["id"]), "label": s["label"], "unit": s["unit"], "typical": s["typical"]}
+                               for s in t["signals"]]} for t in catalog.EQUIPMENT_TYPES}
 s7 = catalog.S7_SIM
 (Path(__file__).resolve().parents[1] / "edge-agent" / "sim_machines.json").write_text(
-    json.dumps({"machines": out, "s7": {**s7, "object": catalog.sim_tags(s7["type"])[0]}}, indent=1) + "\n", encoding="utf-8")
+    json.dumps({"machines": out, "types": types, "s7": {**s7, "object": catalog.sim_tags(s7["type"])[0]}}, indent=1) + "\n", encoding="utf-8")
 print(len(out), "machines")

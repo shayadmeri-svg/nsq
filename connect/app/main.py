@@ -143,7 +143,7 @@ def _apply_eq(e: Equipment, body: dict[str, Any]) -> None:
     if e.protocol not in catalog.PROTOCOL_BY_ID:
         raise HTTPException(400, f"Unknown protocol {e.protocol!r}.")
     if body.get("profile_id") and body["profile_id"] in catalog.PROFILE_BY_ID:  # a verified machine-model profile fills the mapping
-        pr = catalog.PROFILE_BY_ID[body["profile_id"]]
+        pr = catalog.retarget(catalog.PROFILE_BY_ID[body["profile_id"]], e.name)
         e.tag_map, e.batch_tag, e.product_tag, e.protocol = dict(pr["tags"]), pr["batch_tag"], pr.get("product_tag", ""), pr["protocol"]
         if pr.get("verified") == "simulator" and pr["protocol"] == "opcua" and not (e.connection or {}).get("endpoint"):
             e.connection = {**(e.connection or {}), "endpoint": "opc.tcp://localhost:4840/eurveda-sim/"}  # where the demo agent reaches it

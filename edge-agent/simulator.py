@@ -36,6 +36,7 @@ import logging
 import math
 import os
 import random
+import re
 import struct
 import time
 import urllib.request
@@ -378,12 +379,19 @@ async def main(a: argparse.Namespace) -> None:
         nodes[m]["_product"] = await obj.add_variable(ua.NodeId(f"{obj_name}.Product", idx), ua.QualifiedName("Product", idx), "")
     extra = sim_machines()
     generic = {m["name"]: Generic(m, random.Random(a.seed + i + 2), eng.prefix) for i, m in enumerate(extra["machines"])}
+    by_obj: dict[str, str] = {OBJECT[m]: m for m in OBJECT}  # simulated object → the key its nodes are under
+
+    async def serve(key: str, obj_name: str, fields: dict[str, str]) -> None:
+        """Add an object with a variable per signal (and BatchNo, Product) — at start, or when Connect adds a machine."""
+        obj = await server.nodes.objects.add_object(ua.NodeId(obj_name, idx), ua.QualifiedName(obj_name, idx))
+        nodes[key] = {f: await obj.add_variable(ua.NodeId(f"{obj_name}.{v}", idx), ua.QualifiedName(v, idx), 0.0) for f, v in fields.items()}
+        nodes[key]["_batch"] = await obj.add_variable(ua.NodeId(f"{obj_name}.BatchNo", idx), ua.QualifiedName("BatchNo", idx), "")
+        nodes[key]["_product"] = await obj.add_variable(ua.NodeId(f"{obj_name}.Product", idx), ua.QualifiedName("Product", idx), "")
+        by_obj[obj_name] = key
+
     for m in extra["machines"]:
-        obj = await server.nodes.objects.add_object(ua.NodeId(m["object"], idx), ua.QualifiedName(m["object"], idx))
-        nodes[m["name"]] = {sg["field"]: await obj.add_variable(ua.NodeId(f"{m['object']}.{sg['var']}", idx), ua.QualifiedName(sg["var"], idx), 0.0)
-                            for sg in m["signals"]}
-        nodes[m["name"]]["_batch"] = await obj.add_variable(ua.NodeId(f"{m['object']}.BatchNo", idx), ua.QualifiedName("BatchNo", idx), "")
-        nodes[m["name"]]["_product"] = await obj.add_variable(ua.NodeId(f"{m['object']}.Product", idx), ua.QualifiedName("Product", idx), "")
+        await serve(m["name"], m["object"], {sg["field"]: sg["var"] for sg in m["signals"]})
+    connected: dict[str, str] = {}  # machines set up in Connect (Sim engine "extra" apparatus) → the key their nodes are under
     s7 = extra.get("s7")
     s7_machine = next((m for m in extra["machines"] if s7 and m["type"] == s7["type"]), None)
     s7db = None
@@ -407,9 +415,28 @@ async def main(a: argparse.Namespace) -> None:
                     eng.apply(merge(base, cfg))
                 except Exception as exc:  # noqa: BLE001 — keep simulating with the last settings
                     log.warning("could not read settings from Eurveda: %s", exc)
+            for name, ap in eng.cfg.get("apparatus", {}).items():  # a machine added in Connect: serve it under its own name
+                if ap.get("extra") and name not in connected:
+                    obj_name = re.sub(r"[^A-Za-z0-9]", "", name).upper()
+                    if obj_name in by_obj:  # the simulator already serves this object (e.g. SIFTER-1): Sim engine settings now drive it
+                        generic.pop(by_obj[obj_name], None)
+                        connected[name] = by_obj[obj_name]
+                    else:
+                        await serve(name, obj_name, {f: sg.get("var") or "".join(w[:1].upper() + w[1:] for w in f.split("_")) for f, sg in ap["signals"].items()})
+                        connected[name] = name
+                    log.info("serving %s as %s", name, obj_name)
             eng.step(float(eng.cfg.get("speed", 30)) / 60.0)
             util.step(eng.clock)
             every = {**eng.readings(), **util.readings(eng.clock), **{n: g.readings(eng.clock) for n, g in generic.items()}}
+            for name, key in connected.items():
+                ap = eng.cfg["apparatus"].get(name)
+                if not ap or not ap.get("enabled", True):
+                    continue
+                b = eng.n
+                prod = eng.product(b)
+                batch = f"{prod.get('code', '')[:3]}{eng.prefix}{b:03d}" if ap.get("batch") else ""
+                every[key] = (batch, {f: eng.value(name, f, b, min(1.0, eng.t / max(1e-6, eng.takt))) for f in ap["signals"]},
+                              prod.get("code", "") if ap.get("batch") else "")
             if s7db is not None:
                 for i, sg in enumerate(s7_machine["signals"]):
                     s7db[4 * i:4 * i + 4] = struct.pack(">f", float(every[s7_machine["name"]][1][sg["field"]]))

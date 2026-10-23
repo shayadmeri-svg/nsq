@@ -157,6 +157,32 @@ for _old, _new in (("eurveda-sim-rmg", "rmg"), ("eurveda-sim-fbd", "fbd"), ("eur
 PROFILE_BY_ID = {p["id"]: p for p in PROFILES}
 
 
+# the simulator's own names for its original machines; any other machine is served under its name without symbols
+SIM_BUILTIN = {"RMG-1": "RMG1", "FBD-1": "FBD1", "BLENDER-1": "BLEND1", "PRESS-1": "PRESS1", "COATER-1": "COAT1",
+               "AUTOCLAVE-1": "AUTOCLAVE1", "HVAC-ROOM-1": "HVAC1"}
+
+
+def sim_object_for(machine_name: str) -> str:
+    return SIM_BUILTIN.get(machine_name) or re.sub(r"[^A-Za-z0-9]", "", machine_name).upper()
+
+
+def retarget(profile: dict[str, Any], machine_name: str) -> dict[str, Any]:
+    """A simulator machine model, pointed at this machine's own simulated object (RMG-2 → ns=2;s=RMG2.BinderKg):
+    the simulator serves every machine set up in Connect under its own name. Built-in names keep their objects; any
+    other machine's variables are its signal ids in CamelCase."""
+    if profile.get("verified") != "simulator" or profile["protocol"] != "opcua":
+        return profile
+    obj = sim_object_for(machine_name)
+    builtin = obj in SIM_BUILTIN.values()
+    t = TYPE_BY_ID[profile["type"]]
+    tags = ({f: v.replace(v.split(";s=", 1)[1].split(".", 1)[0], obj, 1) for f, v in profile["tags"].items()} if builtin and obj == sim_tags(t["id"])[0]
+            else {s["id"]: f"ns=2;s={obj}.{_camel(s['id'])}" for s in t["signals"]})
+    if builtin and obj != sim_tags(t["id"])[0]:  # a built-in name on another type (unlikely): generic variables
+        tags = {s["id"]: f"ns=2;s={obj}.{_camel(s['id'])}" for s in t["signals"]}
+    return {**profile, "tags": tags, "batch_tag": f"ns=2;s={obj}.BatchNo" if t["batch"] else "",
+            "product_tag": f"ns=2;s={obj}.Product" if t["batch"] else ""}
+
+
 def bad_tags(protocol: str, tags: dict[str, Any]) -> list[str]:
     """The entries of {field: address} that are not addresses in this protocol's syntax."""
     rx = PROTOCOL_BY_ID.get(protocol, {}).get("tag_rx")

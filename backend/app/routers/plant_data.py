@@ -704,8 +704,61 @@ def sim_defaults() -> dict[str, Any]:
     return json.loads((AGENT_DIR / "sim_defaults.json").read_text(encoding="utf-8"))
 
 
-def _merged(saved: Optional[dict[str, Any]]) -> dict[str, Any]:
+# The simulator's five line machines have their own physics (sim_defaults.json); every other machine set up in Eurveda
+# Connect is simulated from its type's signals (edge-agent/sim_machines.json, exported from Connect's catalogue).
+_LINE = ("RMG-1", "FBD-1", "BLENDER-1", "PRESS-1", "COATER-1")
+_KEEP_PHYSICS = {"AUTOCLAVE-1": "autoclave", "HVAC-ROOM-1": "hvac_room"}  # the simulator's own cycles for these two
+
+
+def _sim_types() -> dict[str, Any]:
+    p = AGENT_DIR / "sim_machines.json"
+    return json.loads(p.read_text(encoding="utf-8")).get("types", {}) if p.exists() else {}
+
+
+def _cx_plant(db: Session, *, slug: Optional[str] = None, token: Optional[str] = None) -> Optional[int]:
+    from sqlalchemy import text
+
+    try:
+        if token:
+            return db.execute(text("SELECT plant_id FROM cx_agents WHERE token_hash = :h"), {"h": _hash(token)}).scalar()
+        return db.execute(text("SELECT id FROM cx_plants WHERE org_slug = :s ORDER BY id LIMIT 1"), {"s": slug}).scalar()
+    except Exception:  # noqa: BLE001 — Connect's tables absent
+        db.rollback()
+        return None
+
+
+def _extra_machines(db: Session, plant: Optional[int]) -> dict[str, dict[str, Any]]:
+    """{machine: default settings} for the plant's Connect machines beyond the line's five, simulated from their type:
+    each signal starts mid-range (lower for counts), noise 1% of the range, steady."""
+    from sqlalchemy import text
+
+    if plant is None:
+        return {}
+    try:
+        rows = db.execute(text("SELECT name, type, make, model FROM cx_equipment WHERE plant_id = :p ORDER BY position, id"), {"p": plant}).all()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        return {}
+    types, out = _sim_types(), {}
+    for name, typ, make, model in rows:
+        t = types.get(typ)
+        if name in _LINE or name in _KEEP_PHYSICS or not t:
+            continue
+        sig = {}
+        for sg in t["signals"]:
+            lo, hi = (float(x) for x in sg["typical"])
+            sp = lo + (0.1 if sg["unit"] == "count" or sg["field"] == "rejects" else 0.45) * (hi - lo)
+            sig[sg["field"]] = {"label": sg["label"], "unit": sg["unit"], "per": "reading", "setpoint": round(sp, 4), "noise": round(0.01 * (hi - lo), 4),
+                                "min": lo, "max": hi, "pattern": "steady", "amplitude": round(0.05 * (hi - lo), 4), "every": 3, "period_min": 60,
+                                "var": sg["var"]}
+        out[name] = {"label": f"{t['label']}{' · ' + ' '.join(x for x in (make, model) if x) if (make or model) else ''}", "format": typ,
+                     "type": typ, "extra": True, "batch": t["batch"], "enabled": True, "duration_min": 60, "signals": sig}
+    return out
+
+
+def _merged(saved: Optional[dict[str, Any]], extra: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     base = sim_defaults()
+    base["apparatus"] = {**base["apparatus"], **(extra or {})}
 
     def merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         out = dict(a)
@@ -715,9 +768,10 @@ def _merged(saved: Optional[dict[str, Any]]) -> dict[str, Any]:
     return merge(base, saved or {})
 
 
-def _clean(cfg: dict[str, Any]) -> dict[str, Any]:
+def _clean(cfg: dict[str, Any], extra: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """Only known machines and signals, numbers as numbers, patterns from the list, min ≤ setpoint ≤ max."""
     base = sim_defaults()
+    base["apparatus"] = {**base["apparatus"], **(extra or {})}
     out: dict[str, Any] = {"running": bool(cfg.get("running", True)), "speed": max(1.0, min(240.0, float(cfg.get("speed", 30)))),
                            "handling_min": max(0.0, min(120.0, float(cfg.get("handling_min", 5)))), "apparatus": {}}
     for m, a in base["apparatus"].items():
@@ -732,7 +786,11 @@ def _clean(cfg: dict[str, Any]) -> dict[str, Any]:
             sv["noise"], sv["every"], sv["period_min"] = abs(sv["noise"]), max(1, int(sv["every"])), max(1.0, sv["period_min"])
             sv["pattern"] = g.get("pattern") if g.get("pattern") in PATTERNS else sdef.get("pattern", "steady")
             sv.update(label=sdef.get("label", f), unit=sdef.get("unit", ""), per=sdef.get("per", "reading"))
+            if sdef.get("var"):
+                sv["var"] = sdef["var"]
             am["signals"][f] = sv
+        if a.get("extra"):
+            am.update(extra=True, type=a["type"], batch=a["batch"])
         out["apparatus"][m] = am
     return out
 
@@ -772,9 +830,10 @@ def _guidance(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def get_sim_config(slug: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     org = org_for_user(db, slug, user)
     row = db.get(PlantSimConfig, org.id)
-    cfg = _clean(_merged(row.config if row else None))
+    extra = _extra_machines(db, _cx_plant(db, slug=slug))
+    cfg = _clean(_merged(row.config if row else None, extra), extra)
     sim = next((c for c in db.scalars(select(PlantConnector).where(PlantConnector.org_id == org.id)).all() if c.created_by == "PLANT_SIM_TOKEN"), None)
-    return {"config": cfg, "defaults": _clean(sim_defaults()), "guidance": _guidance(cfg), "patterns": PATTERNS,
+    return {"config": cfg, "defaults": _clean(_merged(None, extra), extra), "guidance": _guidance(cfg), "patterns": PATTERNS,
             "simulator": _conn(sim) if sim else None, "updated_by": row.updated_by if row else None,
             "updated_at": row.updated_at.isoformat() if row and row.updated_at else None}
 
@@ -782,8 +841,9 @@ def get_sim_config(slug: str, user: User = Depends(current_user), db: Session = 
 @router.put("/sim-config")
 def put_sim_config(slug: str, request: Request, body: dict[str, Any] = Body(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
     org = org_for_user(db, slug, user)
+    extra = _extra_machines(db, _cx_plant(db, slug=slug))
     try:
-        cfg = _clean(body.get("config") or {})
+        cfg = _clean(_merged(body.get("config") or {}, extra), extra)
     except (TypeError, ValueError) as exc:
         raise HTTPException(400, f"Bad simulator settings: {exc}") from exc
     row = db.get(PlantSimConfig, org.id) or PlantSimConfig(org_id=org.id)
@@ -802,7 +862,8 @@ def sim_config_for_agent(authorization: str = Header(""), db: Session = Depends(
     if c is None or not c.active:
         raise HTTPException(401, "Unknown or revoked connector token.")
     row = db.get(PlantSimConfig, c.org_id)
-    cfg = _clean(_merged(row.config if row else None))
+    extra = _extra_machines(db, _cx_plant(db, token=token))
+    cfg = _clean(_merged(row.config if row else None, extra), extra)
     products = _connect_products(db, token, cfg)
     return {"config": {**cfg, "products": products} if products else cfg}
 
@@ -825,7 +886,7 @@ def _connect_products(db: Session, token: str, cfg: dict[str, Any]) -> list[dict
     A, out = cfg["apparatus"], []
     for name, codes, route in rows:
         steps = [(names.get(st.get("equipment_id")), st.get("params") or {}) for st in route or []]
-        steps = [(m, params) for m, params in steps if m in A]
+        steps = [(m, params) for m, params in steps if m in A and m in _LINE]
         if not steps:
             continue
         offsets: dict[str, dict[str, float]] = {}

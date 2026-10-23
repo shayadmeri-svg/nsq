@@ -1321,6 +1321,1840 @@
    ]
   }
  ],
+ "types": {
+  "dispensing_booth": {
+   "label": "Dispensing / sampling booth (RLAF)",
+   "batch": false,
+   "signals": [
+    {
+     "field": "downflow_m_s",
+     "var": "DownflowMS",
+     "label": "Downflow air velocity",
+     "unit": "m/s",
+     "typical": [
+      0.3,
+      0.6
+     ]
+    },
+    {
+     "field": "hepa_dp_pa",
+     "var": "HepaDpPa",
+     "label": "HEPA filter differential pressure",
+     "unit": "Pa",
+     "typical": [
+      50,
+      450
+     ]
+    },
+    {
+     "field": "booth_c",
+     "var": "BoothC",
+     "label": "Booth temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      18,
+      27
+     ]
+    },
+    {
+     "field": "booth_rh_pct",
+     "var": "BoothRhPct",
+     "label": "Booth humidity",
+     "unit": "%RH",
+     "typical": [
+      30,
+      65
+     ]
+    }
+   ]
+  },
+  "balance": {
+   "label": "Weighing balance / floor scale",
+   "batch": true,
+   "signals": [
+    {
+     "field": "weight_kg",
+     "var": "WeightKg",
+     "label": "Net weight",
+     "unit": "kg",
+     "typical": [
+      0,
+      1000
+     ]
+    },
+    {
+     "field": "tare_kg",
+     "var": "TareKg",
+     "label": "Tare",
+     "unit": "kg",
+     "typical": [
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "sifter": {
+   "label": "Vibro sifter",
+   "batch": true,
+   "signals": [
+    {
+     "field": "throughput_kg_h",
+     "var": "ThroughputKgH",
+     "label": "Throughput",
+     "unit": "kg/h",
+     "typical": [
+      20,
+      1500
+     ]
+    },
+    {
+     "field": "motor_a",
+     "var": "MotorA",
+     "label": "Motor current",
+     "unit": "A",
+     "typical": [
+      0,
+      15
+     ]
+    },
+    {
+     "field": "run_min",
+     "var": "RunMin",
+     "label": "Run time",
+     "unit": "min",
+     "typical": [
+      0,
+      120
+     ]
+    }
+   ]
+  },
+  "mill": {
+   "label": "Multimill / conical mill",
+   "batch": true,
+   "signals": [
+    {
+     "field": "rotor_rpm",
+     "var": "RotorRpm",
+     "label": "Rotor / impeller speed",
+     "unit": "rpm",
+     "typical": [
+      300,
+      4500
+     ]
+    },
+    {
+     "field": "motor_kw",
+     "var": "MotorKw",
+     "label": "Motor power",
+     "unit": "kW",
+     "typical": [
+      0,
+      15
+     ]
+    },
+    {
+     "field": "feed_kg_h",
+     "var": "FeedKgH",
+     "label": "Feed rate",
+     "unit": "kg/h",
+     "typical": [
+      10,
+      1000
+     ]
+    },
+    {
+     "field": "screen_mm",
+     "var": "ScreenMm",
+     "label": "Screen size",
+     "unit": "mm",
+     "typical": [
+      0.5,
+      8
+     ]
+    }
+   ]
+  },
+  "rmg": {
+   "label": "Rapid mixer granulator",
+   "batch": true,
+   "signals": [
+    {
+     "field": "binder_kg",
+     "var": "BinderKg",
+     "label": "Binder solution added",
+     "unit": "kg",
+     "typical": [
+      5,
+      60
+     ]
+    },
+    {
+     "field": "dry_mix_kg",
+     "var": "DryMixKg",
+     "label": "Dry mix",
+     "unit": "kg",
+     "typical": [
+      20,
+      300
+     ]
+    },
+    {
+     "field": "wet_mix_min",
+     "var": "WetMixMin",
+     "label": "Wet mixing time",
+     "unit": "min",
+     "typical": [
+      0.5,
+      15
+     ]
+    },
+    {
+     "field": "impeller_kw",
+     "var": "ImpellerKw",
+     "label": "Impeller power",
+     "unit": "kW",
+     "typical": [
+      0,
+      30
+     ]
+    }
+   ]
+  },
+  "fbd": {
+   "label": "Fluid-bed dryer",
+   "batch": true,
+   "signals": [
+    {
+     "field": "lod_pct",
+     "var": "LodPct",
+     "label": "Loss on drying",
+     "unit": "%",
+     "typical": [
+      0,
+      25
+     ]
+    },
+    {
+     "field": "inlet_c",
+     "var": "InletC",
+     "label": "Inlet air temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      25,
+      95
+     ]
+    },
+    {
+     "field": "outlet_c",
+     "var": "OutletC",
+     "label": "Outlet air temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      20,
+      80
+     ]
+    },
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "label": "Product temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      20,
+      70
+     ]
+    },
+    {
+     "field": "inlet_rh_pct",
+     "var": "InletRhPct",
+     "label": "Inlet relative humidity",
+     "unit": "%",
+     "typical": [
+      0,
+      90
+     ]
+    },
+    {
+     "field": "air_m3_h",
+     "var": "AirM3H",
+     "label": "Air flow",
+     "unit": "m\u00b3/h",
+     "typical": [
+      500,
+      6000
+     ]
+    },
+    {
+     "field": "elapsed_min",
+     "var": "ElapsedMin",
+     "label": "Elapsed drying time",
+     "unit": "min",
+     "typical": [
+      0,
+      180
+     ]
+    }
+   ]
+  },
+  "fbp": {
+   "label": "Fluid-bed processor (granulating / Wurster coating)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "label": "Product temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      20,
+      60
+     ]
+    },
+    {
+     "field": "spray_g_min",
+     "var": "SprayGMin",
+     "label": "Spray rate",
+     "unit": "g/min",
+     "typical": [
+      10,
+      800
+     ]
+    },
+    {
+     "field": "inlet_c",
+     "var": "InletC",
+     "label": "Inlet air temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      30,
+      90
+     ]
+    },
+    {
+     "field": "exhaust_c",
+     "var": "ExhaustC",
+     "label": "Exhaust temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      20,
+      60
+     ]
+    },
+    {
+     "field": "atomizing_bar",
+     "var": "AtomizingBar",
+     "label": "Atomizing air pressure",
+     "unit": "bar",
+     "typical": [
+      0.5,
+      4
+     ]
+    },
+    {
+     "field": "air_m3_h",
+     "var": "AirM3H",
+     "label": "Process air flow",
+     "unit": "m\u00b3/h",
+     "typical": [
+      300,
+      8000
+     ]
+    },
+    {
+     "field": "filter_dp_pa",
+     "var": "FilterDpPa",
+     "label": "Filter differential pressure",
+     "unit": "Pa",
+     "typical": [
+      200,
+      3000
+     ]
+    }
+   ]
+  },
+  "tray_dryer": {
+   "label": "Tray dryer",
+   "batch": true,
+   "signals": [
+    {
+     "field": "chamber_c",
+     "var": "ChamberC",
+     "label": "Chamber temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      30,
+      90
+     ]
+    },
+    {
+     "field": "elapsed_min",
+     "var": "ElapsedMin",
+     "label": "Drying time",
+     "unit": "min",
+     "typical": [
+      0,
+      720
+     ]
+    }
+   ]
+  },
+  "roller_compactor": {
+   "label": "Roller compactor",
+   "batch": true,
+   "signals": [
+    {
+     "field": "roll_force_kn_cm",
+     "var": "RollForceKnCm",
+     "label": "Roll force",
+     "unit": "kN/cm",
+     "typical": [
+      2,
+      20
+     ]
+    },
+    {
+     "field": "roll_gap_mm",
+     "var": "RollGapMm",
+     "label": "Roll gap",
+     "unit": "mm",
+     "typical": [
+      1,
+      6
+     ]
+    },
+    {
+     "field": "roll_rpm",
+     "var": "RollRpm",
+     "label": "Roll speed",
+     "unit": "rpm",
+     "typical": [
+      1,
+      20
+     ]
+    },
+    {
+     "field": "screw_rpm",
+     "var": "ScrewRpm",
+     "label": "Feed screw speed",
+     "unit": "rpm",
+     "typical": [
+      5,
+      150
+     ]
+    }
+   ]
+  },
+  "blender": {
+   "label": "Blender (octagonal, bin, V, double-cone)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "blend_min",
+     "var": "BlendMin",
+     "label": "Blend time",
+     "unit": "min",
+     "typical": [
+      0.5,
+      40
+     ]
+    },
+    {
+     "field": "blender_rpm",
+     "var": "BlenderRpm",
+     "label": "Blender speed",
+     "unit": "rpm",
+     "typical": [
+      2,
+      40
+     ]
+    }
+   ]
+  },
+  "press": {
+   "label": "Tablet press",
+   "batch": true,
+   "signals": [
+    {
+     "field": "force_kn",
+     "var": "ForceKn",
+     "label": "Main compression force",
+     "unit": "kN",
+     "typical": [
+      1,
+      60
+     ]
+    },
+    {
+     "field": "tablet_weight_mg",
+     "var": "TabletWeightMg",
+     "label": "Tablet weight",
+     "unit": "mg",
+     "typical": [
+      100,
+      1500
+     ]
+    },
+    {
+     "field": "precompression_kn",
+     "var": "PrecompressionKn",
+     "label": "Pre-compression force",
+     "unit": "kN",
+     "typical": [
+      0,
+      10
+     ]
+    },
+    {
+     "field": "press_rpm",
+     "var": "PressRpm",
+     "label": "Turret speed",
+     "unit": "rpm",
+     "typical": [
+      5,
+      90
+     ]
+    },
+    {
+     "field": "punch_diameter_mm",
+     "var": "PunchDiameterMm",
+     "label": "Punch diameter",
+     "unit": "mm",
+     "typical": [
+      5,
+      25
+     ]
+    }
+   ]
+  },
+  "deduster_md": {
+   "label": "Deduster & metal detector",
+   "batch": true,
+   "signals": [
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "label": "Rejected tablets",
+     "unit": "count",
+     "typical": [
+      0,
+      500
+     ]
+    },
+    {
+     "field": "throughput_tph",
+     "var": "ThroughputTph",
+     "label": "Throughput",
+     "unit": "tablets/h",
+     "typical": [
+      10000,
+      500000
+     ]
+    }
+   ]
+  },
+  "capsule_filler": {
+   "label": "Capsule filler",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_weight_mg",
+     "var": "FillWeightMg",
+     "label": "Fill weight",
+     "unit": "mg",
+     "typical": [
+      50,
+      1000
+     ]
+    },
+    {
+     "field": "filler_speed_cph",
+     "var": "FillerSpeedCph",
+     "label": "Speed",
+     "unit": "capsules/h",
+     "typical": [
+      1000,
+      200000
+     ]
+    }
+   ]
+  },
+  "coater": {
+   "label": "Pan coater",
+   "batch": true,
+   "signals": [
+    {
+     "field": "weight_gain_pct",
+     "var": "WeightGainPct",
+     "label": "Coating weight gain",
+     "unit": "%",
+     "typical": [
+      0,
+      6
+     ]
+    },
+    {
+     "field": "coat_inlet_c",
+     "var": "CoatInletC",
+     "label": "Inlet air temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      30,
+      80
+     ]
+    },
+    {
+     "field": "exhaust_c",
+     "var": "ExhaustC",
+     "label": "Exhaust temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      25,
+      60
+     ]
+    },
+    {
+     "field": "spray_g_min",
+     "var": "SprayGMin",
+     "label": "Spray rate",
+     "unit": "g/min",
+     "typical": [
+      10,
+      400
+     ]
+    },
+    {
+     "field": "pan_rpm",
+     "var": "PanRpm",
+     "label": "Pan speed",
+     "unit": "rpm",
+     "typical": [
+      1,
+      20
+     ]
+    },
+    {
+     "field": "atomizing_bar",
+     "var": "AtomizingBar",
+     "label": "Atomizing air pressure",
+     "unit": "bar",
+     "typical": [
+      0.5,
+      4
+     ]
+    }
+   ]
+  },
+  "blister": {
+   "label": "Blister packing machine",
+   "batch": true,
+   "signals": [
+    {
+     "field": "sealing_c",
+     "var": "SealingC",
+     "label": "Sealing temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      140,
+      230
+     ]
+    },
+    {
+     "field": "forming_c",
+     "var": "FormingC",
+     "label": "Forming temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      100,
+      170
+     ]
+    },
+    {
+     "field": "speed_cpm",
+     "var": "SpeedCpm",
+     "label": "Speed",
+     "unit": "cycles/min",
+     "typical": [
+      10,
+      600
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "label": "Rejected blisters",
+     "unit": "count",
+     "typical": [
+      0,
+      500
+     ]
+    }
+   ]
+  },
+  "strip_packing": {
+   "label": "Strip packing machine",
+   "batch": true,
+   "signals": [
+    {
+     "field": "sealing_c",
+     "var": "SealingC",
+     "label": "Sealing temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      120,
+      220
+     ]
+    },
+    {
+     "field": "speed_cpm",
+     "var": "SpeedCpm",
+     "label": "Speed",
+     "unit": "strips/min",
+     "typical": [
+      10,
+      300
+     ]
+    }
+   ]
+  },
+  "bottle_line": {
+   "label": "Bottle line (counter, capper, induction sealer)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "capping_torque_ncm",
+     "var": "CappingTorqueNcm",
+     "label": "Capping torque",
+     "unit": "N\u00b7cm",
+     "typical": [
+      50,
+      400
+     ]
+    },
+    {
+     "field": "count_per_bottle",
+     "var": "CountPerBottle",
+     "label": "Count per bottle",
+     "unit": "units",
+     "typical": [
+      10,
+      1000
+     ]
+    },
+    {
+     "field": "induction_kw",
+     "var": "InductionKw",
+     "label": "Induction sealer power",
+     "unit": "kW",
+     "typical": [
+      0.5,
+      6
+     ]
+    },
+    {
+     "field": "speed_bpm",
+     "var": "SpeedBpm",
+     "label": "Speed",
+     "unit": "bottles/min",
+     "typical": [
+      10,
+      300
+     ]
+    }
+   ]
+  },
+  "cartonator": {
+   "label": "Cartonator",
+   "batch": true,
+   "signals": [
+    {
+     "field": "speed_cpm",
+     "var": "SpeedCpm",
+     "label": "Speed",
+     "unit": "cartons/min",
+     "typical": [
+      10,
+      500
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "label": "Rejected cartons",
+     "unit": "count",
+     "typical": [
+      0,
+      200
+     ]
+    }
+   ]
+  },
+  "checkweigher": {
+   "label": "Checkweigher",
+   "batch": true,
+   "signals": [
+    {
+     "field": "gross_g",
+     "var": "GrossG",
+     "label": "Gross weight",
+     "unit": "g",
+     "typical": [
+      1,
+      5000
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "label": "Rejected packs",
+     "unit": "count",
+     "typical": [
+      0,
+      200
+     ]
+    },
+    {
+     "field": "speed_ppm",
+     "var": "SpeedPpm",
+     "label": "Speed",
+     "unit": "packs/min",
+     "typical": [
+      10,
+      600
+     ]
+    }
+   ]
+  },
+  "serialization": {
+   "label": "Serialisation & aggregation (track and trace)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "codes_printed",
+     "var": "CodesPrinted",
+     "label": "Codes printed",
+     "unit": "count",
+     "typical": [
+      0,
+      1000000.0
+     ]
+    },
+    {
+     "field": "codes_verified",
+     "var": "CodesVerified",
+     "label": "Codes verified",
+     "unit": "count",
+     "typical": [
+      0,
+      1000000.0
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "label": "Rejects",
+     "unit": "count",
+     "typical": [
+      0,
+      1000
+     ]
+    }
+   ]
+  },
+  "labeller": {
+   "label": "Labeller",
+   "batch": true,
+   "signals": [
+    {
+     "field": "labels_applied",
+     "var": "LabelsApplied",
+     "label": "Labels applied",
+     "unit": "count",
+     "typical": [
+      0,
+      1000000.0
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "label": "Rejects",
+     "unit": "count",
+     "typical": [
+      0,
+      500
+     ]
+    },
+    {
+     "field": "speed_ppm",
+     "var": "SpeedPpm",
+     "label": "Speed",
+     "unit": "units/min",
+     "typical": [
+      10,
+      600
+     ]
+    }
+   ]
+  },
+  "liquid_vessel": {
+   "label": "Liquid manufacturing vessel",
+   "batch": true,
+   "signals": [
+    {
+     "field": "vessel_c",
+     "var": "VesselC",
+     "label": "Product temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      5,
+      90
+     ]
+    },
+    {
+     "field": "agitator_rpm",
+     "var": "AgitatorRpm",
+     "label": "Agitator speed",
+     "unit": "rpm",
+     "typical": [
+      10,
+      1500
+     ]
+    },
+    {
+     "field": "ph",
+     "var": "Ph",
+     "label": "pH",
+     "unit": "pH",
+     "typical": [
+      1,
+      13
+     ]
+    },
+    {
+     "field": "level_l",
+     "var": "LevelL",
+     "label": "Level",
+     "unit": "L",
+     "typical": [
+      0,
+      10000
+     ]
+    }
+   ]
+  },
+  "ointment_vessel": {
+   "label": "Ointment / cream manufacturing plant (vacuum)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "label": "Product temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      20,
+      85
+     ]
+    },
+    {
+     "field": "vacuum_mbar",
+     "var": "VacuumMbar",
+     "label": "Vacuum",
+     "unit": "mbar",
+     "typical": [
+      10,
+      1000
+     ]
+    },
+    {
+     "field": "agitator_rpm",
+     "var": "AgitatorRpm",
+     "label": "Anchor agitator speed",
+     "unit": "rpm",
+     "typical": [
+      5,
+      80
+     ]
+    },
+    {
+     "field": "homogenizer_rpm",
+     "var": "HomogenizerRpm",
+     "label": "Homogeniser speed",
+     "unit": "rpm",
+     "typical": [
+      500,
+      3600
+     ]
+    }
+   ]
+  },
+  "homogenizer": {
+   "label": "Homogeniser / colloid mill",
+   "batch": true,
+   "signals": [
+    {
+     "field": "rotor_rpm",
+     "var": "RotorRpm",
+     "label": "Rotor speed",
+     "unit": "rpm",
+     "typical": [
+      500,
+      10000
+     ]
+    },
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "label": "Product temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      10,
+      80
+     ]
+    },
+    {
+     "field": "pressure_bar",
+     "var": "PressureBar",
+     "label": "Homogenising pressure",
+     "unit": "bar",
+     "typical": [
+      0,
+      1000
+     ]
+    }
+   ]
+  },
+  "filtration": {
+   "label": "Filtration skid (clarifying / sterile)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "dp_bar",
+     "var": "DpBar",
+     "label": "Differential pressure",
+     "unit": "bar",
+     "typical": [
+      0,
+      3
+     ]
+    },
+    {
+     "field": "flow_l_h",
+     "var": "FlowLH",
+     "label": "Flow",
+     "unit": "L/h",
+     "typical": [
+      10,
+      10000
+     ]
+    },
+    {
+     "field": "inlet_bar",
+     "var": "InletBar",
+     "label": "Inlet pressure",
+     "unit": "bar",
+     "typical": [
+      0,
+      5
+     ]
+    }
+   ]
+  },
+  "filling_line": {
+   "label": "Liquid filling line",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_volume_ml",
+     "var": "FillVolumeMl",
+     "label": "Fill volume",
+     "unit": "mL",
+     "typical": [
+      1,
+      1000
+     ]
+    },
+    {
+     "field": "line_speed_bpm",
+     "var": "LineSpeedBpm",
+     "label": "Line speed",
+     "unit": "units/min",
+     "typical": [
+      10,
+      600
+     ]
+    }
+   ]
+  },
+  "tube_filler": {
+   "label": "Tube filling & sealing",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_weight_g",
+     "var": "FillWeightG",
+     "label": "Fill weight",
+     "unit": "g",
+     "typical": [
+      2,
+      250
+     ]
+    },
+    {
+     "field": "sealing_c",
+     "var": "SealingC",
+     "label": "Sealing temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      150,
+      450
+     ]
+    },
+    {
+     "field": "speed_tpm",
+     "var": "SpeedTpm",
+     "label": "Speed",
+     "unit": "tubes/min",
+     "typical": [
+      10,
+      300
+     ]
+    }
+   ]
+  },
+  "vial_washer": {
+   "label": "Vial / ampoule washer",
+   "batch": true,
+   "signals": [
+    {
+     "field": "wfi_c",
+     "var": "WfiC",
+     "label": "WFI temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      60,
+      95
+     ]
+    },
+    {
+     "field": "wfi_bar",
+     "var": "WfiBar",
+     "label": "WFI pressure",
+     "unit": "bar",
+     "typical": [
+      0.5,
+      4
+     ]
+    },
+    {
+     "field": "air_bar",
+     "var": "AirBar",
+     "label": "Compressed air pressure",
+     "unit": "bar",
+     "typical": [
+      0.5,
+      4
+     ]
+    },
+    {
+     "field": "speed_vpm",
+     "var": "SpeedVpm",
+     "label": "Speed",
+     "unit": "vials/min",
+     "typical": [
+      20,
+      600
+     ]
+    }
+   ]
+  },
+  "depyrogenation_tunnel": {
+   "label": "Depyrogenation tunnel",
+   "batch": true,
+   "signals": [
+    {
+     "field": "hot_zone_c",
+     "var": "HotZoneC",
+     "label": "Hot-zone temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      250,
+      350
+     ]
+    },
+    {
+     "field": "belt_mm_min",
+     "var": "BeltMmMin",
+     "label": "Belt speed",
+     "unit": "mm/min",
+     "typical": [
+      50,
+      500
+     ]
+    },
+    {
+     "field": "cooling_c",
+     "var": "CoolingC",
+     "label": "Cooling-zone temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      15,
+      60
+     ]
+    },
+    {
+     "field": "dp_pa",
+     "var": "DpPa",
+     "label": "Pressure to the room",
+     "unit": "Pa",
+     "typical": [
+      2,
+      30
+     ]
+    }
+   ]
+  },
+  "vial_filling": {
+   "label": "Vial / ampoule filling & stoppering",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_volume_ml",
+     "var": "FillVolumeMl",
+     "label": "Fill volume",
+     "unit": "mL",
+     "typical": [
+      0.5,
+      100
+     ]
+    },
+    {
+     "field": "speed_vpm",
+     "var": "SpeedVpm",
+     "label": "Speed",
+     "unit": "units/min",
+     "typical": [
+      20,
+      600
+     ]
+    },
+    {
+     "field": "laf_m_s",
+     "var": "LafMS",
+     "label": "Laminar airflow velocity",
+     "unit": "m/s",
+     "typical": [
+      0.36,
+      0.54
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "label": "Rejects",
+     "unit": "count",
+     "typical": [
+      0,
+      500
+     ]
+    }
+   ]
+  },
+  "isolator": {
+   "label": "Isolator / RABS",
+   "batch": true,
+   "signals": [
+    {
+     "field": "dp_pa",
+     "var": "DpPa",
+     "label": "Pressure to the room",
+     "unit": "Pa",
+     "typical": [
+      10,
+      100
+     ]
+    },
+    {
+     "field": "h2o2_ppm",
+     "var": "H2o2Ppm",
+     "label": "H\u2082O\u2082 concentration",
+     "unit": "ppm",
+     "typical": [
+      0,
+      1500
+     ]
+    },
+    {
+     "field": "particles_05_m3",
+     "var": "Particles05M3",
+     "label": "Particles \u2265 0.5 \u00b5m",
+     "unit": "per m\u00b3",
+     "typical": [
+      0,
+      3520
+     ]
+    }
+   ]
+  },
+  "lyophilizer": {
+   "label": "Freeze dryer (lyophiliser)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "shelf_c",
+     "var": "ShelfC",
+     "label": "Shelf temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      -55,
+      40
+     ]
+    },
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "label": "Product temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      -55,
+      40
+     ]
+    },
+    {
+     "field": "chamber_ubar",
+     "var": "ChamberUbar",
+     "label": "Chamber pressure",
+     "unit": "\u00b5bar",
+     "typical": [
+      20,
+      1000
+     ]
+    },
+    {
+     "field": "condenser_c",
+     "var": "CondenserC",
+     "label": "Condenser temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      -85,
+      -40
+     ]
+    }
+   ]
+  },
+  "autoclave": {
+   "label": "Autoclave / steam sterilizer",
+   "batch": true,
+   "signals": [
+    {
+     "field": "chamber_c",
+     "var": "ChamberC",
+     "label": "Chamber temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      20,
+      140
+     ]
+    },
+    {
+     "field": "chamber_bar",
+     "var": "ChamberBar",
+     "label": "Chamber pressure",
+     "unit": "bar",
+     "typical": [
+      0,
+      4
+     ]
+    },
+    {
+     "field": "f0_min",
+     "var": "F0Min",
+     "label": "F0",
+     "unit": "min",
+     "typical": [
+      0,
+      60
+     ]
+    }
+   ]
+  },
+  "pw_system": {
+   "label": "Purified water / WFI generation & loop",
+   "batch": false,
+   "signals": [
+    {
+     "field": "conductivity_us_cm",
+     "var": "ConductivityUsCm",
+     "label": "Conductivity",
+     "unit": "\u00b5S/cm",
+     "typical": [
+      0.05,
+      5
+     ]
+    },
+    {
+     "field": "toc_ppb",
+     "var": "TocPpb",
+     "label": "TOC",
+     "unit": "ppb",
+     "typical": [
+      10,
+      500
+     ]
+    },
+    {
+     "field": "loop_c",
+     "var": "LoopC",
+     "label": "Loop temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      15,
+      90
+     ]
+    },
+    {
+     "field": "flow_m3_h",
+     "var": "FlowM3H",
+     "label": "Loop flow",
+     "unit": "m\u00b3/h",
+     "typical": [
+      0.5,
+      30
+     ]
+    },
+    {
+     "field": "return_m_s",
+     "var": "ReturnMS",
+     "label": "Return velocity",
+     "unit": "m/s",
+     "typical": [
+      0.5,
+      3
+     ]
+    }
+   ]
+  },
+  "clean_steam": {
+   "label": "Pure (clean) steam generator",
+   "batch": false,
+   "signals": [
+    {
+     "field": "steam_bar",
+     "var": "SteamBar",
+     "label": "Steam pressure",
+     "unit": "bar",
+     "typical": [
+      1,
+      6
+     ]
+    },
+    {
+     "field": "steam_c",
+     "var": "SteamC",
+     "label": "Steam temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      110,
+      165
+     ]
+    },
+    {
+     "field": "condensate_us_cm",
+     "var": "CondensateUsCm",
+     "label": "Condensate conductivity",
+     "unit": "\u00b5S/cm",
+     "typical": [
+      0.1,
+      2
+     ]
+    }
+   ]
+  },
+  "compressed_air": {
+   "label": "Compressed air / nitrogen",
+   "batch": false,
+   "signals": [
+    {
+     "field": "pressure_bar",
+     "var": "PressureBar",
+     "label": "Header pressure",
+     "unit": "bar",
+     "typical": [
+      4,
+      10
+     ]
+    },
+    {
+     "field": "dew_point_c",
+     "var": "DewPointC",
+     "label": "Pressure dew point",
+     "unit": "\u00b0C",
+     "typical": [
+      -70,
+      5
+     ]
+    },
+    {
+     "field": "flow_nm3_h",
+     "var": "FlowNm3H",
+     "label": "Flow",
+     "unit": "Nm\u00b3/h",
+     "typical": [
+      10,
+      5000
+     ]
+    }
+   ]
+  },
+  "ahu": {
+   "label": "Air handling unit (AHU)",
+   "batch": false,
+   "signals": [
+    {
+     "field": "supply_c",
+     "var": "SupplyC",
+     "label": "Supply air temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      12,
+      26
+     ]
+    },
+    {
+     "field": "supply_rh_pct",
+     "var": "SupplyRhPct",
+     "label": "Supply air humidity",
+     "unit": "%RH",
+     "typical": [
+      20,
+      70
+     ]
+    },
+    {
+     "field": "filter_dp_pa",
+     "var": "FilterDpPa",
+     "label": "Final filter differential pressure",
+     "unit": "Pa",
+     "typical": [
+      100,
+      600
+     ]
+    },
+    {
+     "field": "airflow_m3_h",
+     "var": "AirflowM3H",
+     "label": "Supply air flow",
+     "unit": "m\u00b3/h",
+     "typical": [
+      1000,
+      60000
+     ]
+    },
+    {
+     "field": "fan_hz",
+     "var": "FanHz",
+     "label": "Supply fan speed",
+     "unit": "Hz",
+     "typical": [
+      20,
+      50
+     ]
+    }
+   ]
+  },
+  "hvac_room": {
+   "label": "Room / HVAC monitoring",
+   "batch": false,
+   "signals": [
+    {
+     "field": "room_c",
+     "var": "RoomC",
+     "label": "Room temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      15,
+      30
+     ]
+    },
+    {
+     "field": "room_rh_pct",
+     "var": "RoomRhPct",
+     "label": "Room humidity",
+     "unit": "%RH",
+     "typical": [
+      20,
+      70
+     ]
+    },
+    {
+     "field": "dp_pa",
+     "var": "DpPa",
+     "label": "Differential pressure",
+     "unit": "Pa",
+     "typical": [
+      0,
+      60
+     ]
+    }
+   ]
+  },
+  "particle_counter": {
+   "label": "Environmental monitoring (particle counter)",
+   "batch": false,
+   "signals": [
+    {
+     "field": "particles_05_m3",
+     "var": "Particles05M3",
+     "label": "Particles \u2265 0.5 \u00b5m",
+     "unit": "per m\u00b3",
+     "typical": [
+      0,
+      3520000
+     ]
+    },
+    {
+     "field": "particles_5_m3",
+     "var": "Particles5M3",
+     "label": "Particles \u2265 5 \u00b5m",
+     "unit": "per m\u00b3",
+     "typical": [
+      0,
+      29000
+     ]
+    }
+   ]
+  },
+  "dust_collector": {
+   "label": "Dust collector",
+   "batch": false,
+   "signals": [
+    {
+     "field": "dp_pa",
+     "var": "DpPa",
+     "label": "Filter differential pressure",
+     "unit": "Pa",
+     "typical": [
+      200,
+      2500
+     ]
+    },
+    {
+     "field": "fan_a",
+     "var": "FanA",
+     "label": "Fan current",
+     "unit": "A",
+     "typical": [
+      0,
+      60
+     ]
+    }
+   ]
+  },
+  "chiller": {
+   "label": "Chiller / brine plant",
+   "batch": false,
+   "signals": [
+    {
+     "field": "supply_c",
+     "var": "SupplyC",
+     "label": "Supply temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      -20,
+      15
+     ]
+    },
+    {
+     "field": "return_c",
+     "var": "ReturnC",
+     "label": "Return temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      -15,
+      20
+     ]
+    },
+    {
+     "field": "flow_m3_h",
+     "var": "FlowM3H",
+     "label": "Flow",
+     "unit": "m\u00b3/h",
+     "typical": [
+      5,
+      500
+     ]
+    }
+   ]
+  },
+  "boiler": {
+   "label": "Boiler",
+   "batch": false,
+   "signals": [
+    {
+     "field": "steam_bar",
+     "var": "SteamBar",
+     "label": "Steam pressure",
+     "unit": "bar",
+     "typical": [
+      3,
+      17
+     ]
+    },
+    {
+     "field": "feedwater_c",
+     "var": "FeedwaterC",
+     "label": "Feed-water temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      60,
+      110
+     ]
+    },
+    {
+     "field": "load_pct",
+     "var": "LoadPct",
+     "label": "Firing rate",
+     "unit": "%",
+     "typical": [
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "cold_room": {
+   "label": "Cold room / pharmaceutical refrigerator",
+   "batch": false,
+   "signals": [
+    {
+     "field": "temp_c",
+     "var": "TempC",
+     "label": "Temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      -25,
+      25
+     ]
+    },
+    {
+     "field": "door_open",
+     "var": "DoorOpen",
+     "label": "Door open",
+     "unit": "0/1",
+     "typical": [
+      0,
+      1
+     ]
+    }
+   ]
+  },
+  "stability_chamber": {
+   "label": "Stability chamber",
+   "batch": false,
+   "signals": [
+    {
+     "field": "chamber_c",
+     "var": "ChamberC",
+     "label": "Chamber temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      4,
+      60
+     ]
+    },
+    {
+     "field": "chamber_rh_pct",
+     "var": "ChamberRhPct",
+     "label": "Chamber humidity",
+     "unit": "%RH",
+     "typical": [
+      10,
+      95
+     ]
+    }
+   ]
+  },
+  "warehouse": {
+   "label": "Warehouse mapping / data loggers",
+   "batch": false,
+   "signals": [
+    {
+     "field": "temp_c",
+     "var": "TempC",
+     "label": "Temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      2,
+      35
+     ]
+    },
+    {
+     "field": "rh_pct",
+     "var": "RhPct",
+     "label": "Humidity",
+     "unit": "%RH",
+     "typical": [
+      20,
+      80
+     ]
+    }
+   ]
+  },
+  "dissolution_tester": {
+   "label": "Dissolution tester",
+   "batch": true,
+   "signals": [
+    {
+     "field": "bath_c",
+     "var": "BathC",
+     "label": "Bath / vessel temperature",
+     "unit": "\u00b0C",
+     "typical": [
+      36.5,
+      37.5
+     ]
+    },
+    {
+     "field": "rpm",
+     "var": "Rpm",
+     "label": "Paddle / basket speed",
+     "unit": "rpm",
+     "typical": [
+      25,
+      150
+     ]
+    }
+   ]
+  },
+  "hplc": {
+   "label": "HPLC / chromatography (via the CDS)",
+   "batch": true,
+   "signals": [
+    {
+     "field": "assay_pct",
+     "var": "AssayPct",
+     "label": "Assay result",
+     "unit": "% of label",
+     "typical": [
+      85,
+      115
+     ]
+    },
+    {
+     "field": "impurity_pct",
+     "var": "ImpurityPct",
+     "label": "Largest impurity",
+     "unit": "%",
+     "typical": [
+      0,
+      2
+     ]
+    }
+   ]
+  }
+ },
  "s7": {
   "type": "ahu",
   "db": 1,

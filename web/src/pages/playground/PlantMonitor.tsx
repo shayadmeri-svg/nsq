@@ -88,7 +88,7 @@ function Machine({ e }: { e: any }) {
           <div className="flex items-center gap-1.5 text-[14px] font-semibold">{e.name}
             {running && <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" /></span>}
             {e.alarms > 0 && <Badge tone="rose">{e.alarms}</Badge>}</div>
-          <div className="truncate text-[11px] text-ink-muted">{e.stage} · {e.type_label}</div>
+          <div className="truncate text-[11px] text-ink-muted" title={[e.make, e.model].filter(Boolean).join(" ") || undefined}>{e.stage} · {[e.make, e.model].filter(Boolean).join(" ") || e.type_label}</div>
         </div>
       </div>
       <div className="mt-3 h-7">
