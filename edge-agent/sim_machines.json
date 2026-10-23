@@ -1,0 +1,1330 @@
+{
+ "machines": [
+  {
+   "type": "dispensing_booth",
+   "name": "DISPENSING-BOOTH-1",
+   "object": "DISPENSINGBOOTH1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "downflow_m_s",
+     "var": "DownflowMS",
+     "typical": [
+      0.3,
+      0.6
+     ]
+    },
+    {
+     "field": "hepa_dp_pa",
+     "var": "HepaDpPa",
+     "typical": [
+      50,
+      450
+     ]
+    },
+    {
+     "field": "booth_c",
+     "var": "BoothC",
+     "typical": [
+      18,
+      27
+     ]
+    },
+    {
+     "field": "booth_rh_pct",
+     "var": "BoothRhPct",
+     "typical": [
+      30,
+      65
+     ]
+    }
+   ]
+  },
+  {
+   "type": "balance",
+   "name": "BALANCE-1",
+   "object": "BALANCE1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "weight_kg",
+     "var": "WeightKg",
+     "typical": [
+      0,
+      1000
+     ]
+    },
+    {
+     "field": "tare_kg",
+     "var": "TareKg",
+     "typical": [
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  {
+   "type": "sifter",
+   "name": "SIFTER-1",
+   "object": "SIFTER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "throughput_kg_h",
+     "var": "ThroughputKgH",
+     "typical": [
+      20,
+      1500
+     ]
+    },
+    {
+     "field": "motor_a",
+     "var": "MotorA",
+     "typical": [
+      0,
+      15
+     ]
+    },
+    {
+     "field": "run_min",
+     "var": "RunMin",
+     "typical": [
+      0,
+      120
+     ]
+    }
+   ]
+  },
+  {
+   "type": "mill",
+   "name": "MILL-1",
+   "object": "MILL1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "rotor_rpm",
+     "var": "RotorRpm",
+     "typical": [
+      300,
+      4500
+     ]
+    },
+    {
+     "field": "motor_kw",
+     "var": "MotorKw",
+     "typical": [
+      0,
+      15
+     ]
+    },
+    {
+     "field": "feed_kg_h",
+     "var": "FeedKgH",
+     "typical": [
+      10,
+      1000
+     ]
+    },
+    {
+     "field": "screen_mm",
+     "var": "ScreenMm",
+     "typical": [
+      0.5,
+      8
+     ]
+    }
+   ]
+  },
+  {
+   "type": "fbp",
+   "name": "FBP-1",
+   "object": "FBP1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "typical": [
+      20,
+      60
+     ]
+    },
+    {
+     "field": "spray_g_min",
+     "var": "SprayGMin",
+     "typical": [
+      10,
+      800
+     ]
+    },
+    {
+     "field": "inlet_c",
+     "var": "InletC",
+     "typical": [
+      30,
+      90
+     ]
+    },
+    {
+     "field": "exhaust_c",
+     "var": "ExhaustC",
+     "typical": [
+      20,
+      60
+     ]
+    },
+    {
+     "field": "atomizing_bar",
+     "var": "AtomizingBar",
+     "typical": [
+      0.5,
+      4
+     ]
+    },
+    {
+     "field": "air_m3_h",
+     "var": "AirM3H",
+     "typical": [
+      300,
+      8000
+     ]
+    },
+    {
+     "field": "filter_dp_pa",
+     "var": "FilterDpPa",
+     "typical": [
+      200,
+      3000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "tray_dryer",
+   "name": "TRAY-DRYER-1",
+   "object": "TRAYDRYER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "chamber_c",
+     "var": "ChamberC",
+     "typical": [
+      30,
+      90
+     ]
+    },
+    {
+     "field": "elapsed_min",
+     "var": "ElapsedMin",
+     "typical": [
+      0,
+      720
+     ]
+    }
+   ]
+  },
+  {
+   "type": "roller_compactor",
+   "name": "ROLLER-COMPACTOR-1",
+   "object": "ROLLERCOMPACTOR1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "roll_force_kn_cm",
+     "var": "RollForceKnCm",
+     "typical": [
+      2,
+      20
+     ]
+    },
+    {
+     "field": "roll_gap_mm",
+     "var": "RollGapMm",
+     "typical": [
+      1,
+      6
+     ]
+    },
+    {
+     "field": "roll_rpm",
+     "var": "RollRpm",
+     "typical": [
+      1,
+      20
+     ]
+    },
+    {
+     "field": "screw_rpm",
+     "var": "ScrewRpm",
+     "typical": [
+      5,
+      150
+     ]
+    }
+   ]
+  },
+  {
+   "type": "deduster_md",
+   "name": "DEDUSTER-MD-1",
+   "object": "DEDUSTERMD1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "typical": [
+      0,
+      500
+     ]
+    },
+    {
+     "field": "throughput_tph",
+     "var": "ThroughputTph",
+     "typical": [
+      10000,
+      500000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "capsule_filler",
+   "name": "CAPSULE-FILLER-1",
+   "object": "CAPSULEFILLER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_weight_mg",
+     "var": "FillWeightMg",
+     "typical": [
+      50,
+      1000
+     ]
+    },
+    {
+     "field": "filler_speed_cph",
+     "var": "FillerSpeedCph",
+     "typical": [
+      1000,
+      200000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "blister",
+   "name": "BLISTER-1",
+   "object": "BLISTER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "sealing_c",
+     "var": "SealingC",
+     "typical": [
+      140,
+      230
+     ]
+    },
+    {
+     "field": "forming_c",
+     "var": "FormingC",
+     "typical": [
+      100,
+      170
+     ]
+    },
+    {
+     "field": "speed_cpm",
+     "var": "SpeedCpm",
+     "typical": [
+      10,
+      600
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "typical": [
+      0,
+      500
+     ]
+    }
+   ]
+  },
+  {
+   "type": "strip_packing",
+   "name": "STRIP-PACKING-1",
+   "object": "STRIPPACKING1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "sealing_c",
+     "var": "SealingC",
+     "typical": [
+      120,
+      220
+     ]
+    },
+    {
+     "field": "speed_cpm",
+     "var": "SpeedCpm",
+     "typical": [
+      10,
+      300
+     ]
+    }
+   ]
+  },
+  {
+   "type": "bottle_line",
+   "name": "BOTTLE-LINE-1",
+   "object": "BOTTLELINE1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "capping_torque_ncm",
+     "var": "CappingTorqueNcm",
+     "typical": [
+      50,
+      400
+     ]
+    },
+    {
+     "field": "count_per_bottle",
+     "var": "CountPerBottle",
+     "typical": [
+      10,
+      1000
+     ]
+    },
+    {
+     "field": "induction_kw",
+     "var": "InductionKw",
+     "typical": [
+      0.5,
+      6
+     ]
+    },
+    {
+     "field": "speed_bpm",
+     "var": "SpeedBpm",
+     "typical": [
+      10,
+      300
+     ]
+    }
+   ]
+  },
+  {
+   "type": "cartonator",
+   "name": "CARTONATOR-1",
+   "object": "CARTONATOR1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "speed_cpm",
+     "var": "SpeedCpm",
+     "typical": [
+      10,
+      500
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "typical": [
+      0,
+      200
+     ]
+    }
+   ]
+  },
+  {
+   "type": "checkweigher",
+   "name": "CHECKWEIGHER-1",
+   "object": "CHECKWEIGHER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "gross_g",
+     "var": "GrossG",
+     "typical": [
+      1,
+      5000
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "typical": [
+      0,
+      200
+     ]
+    },
+    {
+     "field": "speed_ppm",
+     "var": "SpeedPpm",
+     "typical": [
+      10,
+      600
+     ]
+    }
+   ]
+  },
+  {
+   "type": "serialization",
+   "name": "SERIALIZATION-1",
+   "object": "SERIALIZATION1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "codes_printed",
+     "var": "CodesPrinted",
+     "typical": [
+      0,
+      1000000.0
+     ]
+    },
+    {
+     "field": "codes_verified",
+     "var": "CodesVerified",
+     "typical": [
+      0,
+      1000000.0
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "typical": [
+      0,
+      1000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "labeller",
+   "name": "LABELLER-1",
+   "object": "LABELLER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "labels_applied",
+     "var": "LabelsApplied",
+     "typical": [
+      0,
+      1000000.0
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "typical": [
+      0,
+      500
+     ]
+    },
+    {
+     "field": "speed_ppm",
+     "var": "SpeedPpm",
+     "typical": [
+      10,
+      600
+     ]
+    }
+   ]
+  },
+  {
+   "type": "liquid_vessel",
+   "name": "LIQUID-VESSEL-1",
+   "object": "LIQUIDVESSEL1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "vessel_c",
+     "var": "VesselC",
+     "typical": [
+      5,
+      90
+     ]
+    },
+    {
+     "field": "agitator_rpm",
+     "var": "AgitatorRpm",
+     "typical": [
+      10,
+      1500
+     ]
+    },
+    {
+     "field": "ph",
+     "var": "Ph",
+     "typical": [
+      1,
+      13
+     ]
+    },
+    {
+     "field": "level_l",
+     "var": "LevelL",
+     "typical": [
+      0,
+      10000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "ointment_vessel",
+   "name": "OINTMENT-VESSEL-1",
+   "object": "OINTMENTVESSEL1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "typical": [
+      20,
+      85
+     ]
+    },
+    {
+     "field": "vacuum_mbar",
+     "var": "VacuumMbar",
+     "typical": [
+      10,
+      1000
+     ]
+    },
+    {
+     "field": "agitator_rpm",
+     "var": "AgitatorRpm",
+     "typical": [
+      5,
+      80
+     ]
+    },
+    {
+     "field": "homogenizer_rpm",
+     "var": "HomogenizerRpm",
+     "typical": [
+      500,
+      3600
+     ]
+    }
+   ]
+  },
+  {
+   "type": "homogenizer",
+   "name": "HOMOGENIZER-1",
+   "object": "HOMOGENIZER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "rotor_rpm",
+     "var": "RotorRpm",
+     "typical": [
+      500,
+      10000
+     ]
+    },
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "typical": [
+      10,
+      80
+     ]
+    },
+    {
+     "field": "pressure_bar",
+     "var": "PressureBar",
+     "typical": [
+      0,
+      1000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "filtration",
+   "name": "FILTRATION-1",
+   "object": "FILTRATION1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "dp_bar",
+     "var": "DpBar",
+     "typical": [
+      0,
+      3
+     ]
+    },
+    {
+     "field": "flow_l_h",
+     "var": "FlowLH",
+     "typical": [
+      10,
+      10000
+     ]
+    },
+    {
+     "field": "inlet_bar",
+     "var": "InletBar",
+     "typical": [
+      0,
+      5
+     ]
+    }
+   ]
+  },
+  {
+   "type": "filling_line",
+   "name": "FILLING-LINE-1",
+   "object": "FILLINGLINE1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_volume_ml",
+     "var": "FillVolumeMl",
+     "typical": [
+      1,
+      1000
+     ]
+    },
+    {
+     "field": "line_speed_bpm",
+     "var": "LineSpeedBpm",
+     "typical": [
+      10,
+      600
+     ]
+    }
+   ]
+  },
+  {
+   "type": "tube_filler",
+   "name": "TUBE-FILLER-1",
+   "object": "TUBEFILLER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_weight_g",
+     "var": "FillWeightG",
+     "typical": [
+      2,
+      250
+     ]
+    },
+    {
+     "field": "sealing_c",
+     "var": "SealingC",
+     "typical": [
+      150,
+      450
+     ]
+    },
+    {
+     "field": "speed_tpm",
+     "var": "SpeedTpm",
+     "typical": [
+      10,
+      300
+     ]
+    }
+   ]
+  },
+  {
+   "type": "vial_washer",
+   "name": "VIAL-WASHER-1",
+   "object": "VIALWASHER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "wfi_c",
+     "var": "WfiC",
+     "typical": [
+      60,
+      95
+     ]
+    },
+    {
+     "field": "wfi_bar",
+     "var": "WfiBar",
+     "typical": [
+      0.5,
+      4
+     ]
+    },
+    {
+     "field": "air_bar",
+     "var": "AirBar",
+     "typical": [
+      0.5,
+      4
+     ]
+    },
+    {
+     "field": "speed_vpm",
+     "var": "SpeedVpm",
+     "typical": [
+      20,
+      600
+     ]
+    }
+   ]
+  },
+  {
+   "type": "depyrogenation_tunnel",
+   "name": "DEPYROGENATION-TUNNEL-1",
+   "object": "DEPYROGENATIONTUNNEL1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "hot_zone_c",
+     "var": "HotZoneC",
+     "typical": [
+      250,
+      350
+     ]
+    },
+    {
+     "field": "belt_mm_min",
+     "var": "BeltMmMin",
+     "typical": [
+      50,
+      500
+     ]
+    },
+    {
+     "field": "cooling_c",
+     "var": "CoolingC",
+     "typical": [
+      15,
+      60
+     ]
+    },
+    {
+     "field": "dp_pa",
+     "var": "DpPa",
+     "typical": [
+      2,
+      30
+     ]
+    }
+   ]
+  },
+  {
+   "type": "vial_filling",
+   "name": "VIAL-FILLING-1",
+   "object": "VIALFILLING1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "fill_volume_ml",
+     "var": "FillVolumeMl",
+     "typical": [
+      0.5,
+      100
+     ]
+    },
+    {
+     "field": "speed_vpm",
+     "var": "SpeedVpm",
+     "typical": [
+      20,
+      600
+     ]
+    },
+    {
+     "field": "laf_m_s",
+     "var": "LafMS",
+     "typical": [
+      0.36,
+      0.54
+     ]
+    },
+    {
+     "field": "rejects",
+     "var": "Rejects",
+     "typical": [
+      0,
+      500
+     ]
+    }
+   ]
+  },
+  {
+   "type": "isolator",
+   "name": "ISOLATOR-1",
+   "object": "ISOLATOR1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "dp_pa",
+     "var": "DpPa",
+     "typical": [
+      10,
+      100
+     ]
+    },
+    {
+     "field": "h2o2_ppm",
+     "var": "H2o2Ppm",
+     "typical": [
+      0,
+      1500
+     ]
+    },
+    {
+     "field": "particles_05_m3",
+     "var": "Particles05M3",
+     "typical": [
+      0,
+      3520
+     ]
+    }
+   ]
+  },
+  {
+   "type": "lyophilizer",
+   "name": "LYOPHILIZER-1",
+   "object": "LYOPHILIZER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "shelf_c",
+     "var": "ShelfC",
+     "typical": [
+      -55,
+      40
+     ]
+    },
+    {
+     "field": "product_c",
+     "var": "ProductC",
+     "typical": [
+      -55,
+      40
+     ]
+    },
+    {
+     "field": "chamber_ubar",
+     "var": "ChamberUbar",
+     "typical": [
+      20,
+      1000
+     ]
+    },
+    {
+     "field": "condenser_c",
+     "var": "CondenserC",
+     "typical": [
+      -85,
+      -40
+     ]
+    }
+   ]
+  },
+  {
+   "type": "pw_system",
+   "name": "PW-SYSTEM-1",
+   "object": "PWSYSTEM1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "conductivity_us_cm",
+     "var": "ConductivityUsCm",
+     "typical": [
+      0.05,
+      5
+     ]
+    },
+    {
+     "field": "toc_ppb",
+     "var": "TocPpb",
+     "typical": [
+      10,
+      500
+     ]
+    },
+    {
+     "field": "loop_c",
+     "var": "LoopC",
+     "typical": [
+      15,
+      90
+     ]
+    },
+    {
+     "field": "flow_m3_h",
+     "var": "FlowM3H",
+     "typical": [
+      0.5,
+      30
+     ]
+    },
+    {
+     "field": "return_m_s",
+     "var": "ReturnMS",
+     "typical": [
+      0.5,
+      3
+     ]
+    }
+   ]
+  },
+  {
+   "type": "clean_steam",
+   "name": "CLEAN-STEAM-1",
+   "object": "CLEANSTEAM1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "steam_bar",
+     "var": "SteamBar",
+     "typical": [
+      1,
+      6
+     ]
+    },
+    {
+     "field": "steam_c",
+     "var": "SteamC",
+     "typical": [
+      110,
+      165
+     ]
+    },
+    {
+     "field": "condensate_us_cm",
+     "var": "CondensateUsCm",
+     "typical": [
+      0.1,
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "type": "compressed_air",
+   "name": "COMPRESSED-AIR-1",
+   "object": "COMPRESSEDAIR1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "pressure_bar",
+     "var": "PressureBar",
+     "typical": [
+      4,
+      10
+     ]
+    },
+    {
+     "field": "dew_point_c",
+     "var": "DewPointC",
+     "typical": [
+      -70,
+      5
+     ]
+    },
+    {
+     "field": "flow_nm3_h",
+     "var": "FlowNm3H",
+     "typical": [
+      10,
+      5000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "ahu",
+   "name": "AHU-1",
+   "object": "AHU1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "supply_c",
+     "var": "SupplyC",
+     "typical": [
+      12,
+      26
+     ]
+    },
+    {
+     "field": "supply_rh_pct",
+     "var": "SupplyRhPct",
+     "typical": [
+      20,
+      70
+     ]
+    },
+    {
+     "field": "filter_dp_pa",
+     "var": "FilterDpPa",
+     "typical": [
+      100,
+      600
+     ]
+    },
+    {
+     "field": "airflow_m3_h",
+     "var": "AirflowM3H",
+     "typical": [
+      1000,
+      60000
+     ]
+    },
+    {
+     "field": "fan_hz",
+     "var": "FanHz",
+     "typical": [
+      20,
+      50
+     ]
+    }
+   ]
+  },
+  {
+   "type": "particle_counter",
+   "name": "PARTICLE-COUNTER-1",
+   "object": "PARTICLECOUNTER1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "particles_05_m3",
+     "var": "Particles05M3",
+     "typical": [
+      0,
+      3520000
+     ]
+    },
+    {
+     "field": "particles_5_m3",
+     "var": "Particles5M3",
+     "typical": [
+      0,
+      29000
+     ]
+    }
+   ]
+  },
+  {
+   "type": "dust_collector",
+   "name": "DUST-COLLECTOR-1",
+   "object": "DUSTCOLLECTOR1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "dp_pa",
+     "var": "DpPa",
+     "typical": [
+      200,
+      2500
+     ]
+    },
+    {
+     "field": "fan_a",
+     "var": "FanA",
+     "typical": [
+      0,
+      60
+     ]
+    }
+   ]
+  },
+  {
+   "type": "chiller",
+   "name": "CHILLER-1",
+   "object": "CHILLER1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "supply_c",
+     "var": "SupplyC",
+     "typical": [
+      -20,
+      15
+     ]
+    },
+    {
+     "field": "return_c",
+     "var": "ReturnC",
+     "typical": [
+      -15,
+      20
+     ]
+    },
+    {
+     "field": "flow_m3_h",
+     "var": "FlowM3H",
+     "typical": [
+      5,
+      500
+     ]
+    }
+   ]
+  },
+  {
+   "type": "boiler",
+   "name": "BOILER-1",
+   "object": "BOILER1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "steam_bar",
+     "var": "SteamBar",
+     "typical": [
+      3,
+      17
+     ]
+    },
+    {
+     "field": "feedwater_c",
+     "var": "FeedwaterC",
+     "typical": [
+      60,
+      110
+     ]
+    },
+    {
+     "field": "load_pct",
+     "var": "LoadPct",
+     "typical": [
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  {
+   "type": "cold_room",
+   "name": "COLD-ROOM-1",
+   "object": "COLDROOM1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "temp_c",
+     "var": "TempC",
+     "typical": [
+      -25,
+      25
+     ]
+    },
+    {
+     "field": "door_open",
+     "var": "DoorOpen",
+     "typical": [
+      0,
+      1
+     ]
+    }
+   ]
+  },
+  {
+   "type": "stability_chamber",
+   "name": "STABILITY-CHAMBER-1",
+   "object": "STABILITYCHAMBER1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "chamber_c",
+     "var": "ChamberC",
+     "typical": [
+      4,
+      60
+     ]
+    },
+    {
+     "field": "chamber_rh_pct",
+     "var": "ChamberRhPct",
+     "typical": [
+      10,
+      95
+     ]
+    }
+   ]
+  },
+  {
+   "type": "warehouse",
+   "name": "WAREHOUSE-1",
+   "object": "WAREHOUSE1",
+   "batch": false,
+   "signals": [
+    {
+     "field": "temp_c",
+     "var": "TempC",
+     "typical": [
+      2,
+      35
+     ]
+    },
+    {
+     "field": "rh_pct",
+     "var": "RhPct",
+     "typical": [
+      20,
+      80
+     ]
+    }
+   ]
+  },
+  {
+   "type": "dissolution_tester",
+   "name": "DISSOLUTION-TESTER-1",
+   "object": "DISSOLUTIONTESTER1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "bath_c",
+     "var": "BathC",
+     "typical": [
+      36.5,
+      37.5
+     ]
+    },
+    {
+     "field": "rpm",
+     "var": "Rpm",
+     "typical": [
+      25,
+      150
+     ]
+    }
+   ]
+  },
+  {
+   "type": "hplc",
+   "name": "HPLC-1",
+   "object": "HPLC1",
+   "batch": true,
+   "signals": [
+    {
+     "field": "assay_pct",
+     "var": "AssayPct",
+     "typical": [
+      85,
+      115
+     ]
+    },
+    {
+     "field": "impurity_pct",
+     "var": "ImpurityPct",
+     "typical": [
+      0,
+      2
+     ]
+    }
+   ]
+  }
+ ],
+ "s7": {
+  "type": "ahu",
+  "db": 1,
+  "port": 1102,
+  "object": "AHU1"
+ }
+}

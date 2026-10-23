@@ -1,5 +1,16 @@
-"""Eurveda edge agent: reads plant machines over OPC UA or Modbus TCP, read-only, and streams the readings to
-Eurveda's Plant data (POST /api/ingest/plant-data), where they join the batch records and the failure tree.
+"""Eurveda edge agent: reads plant machines and systems, read-only, and streams the readings to Eurveda (Plant data and
+Connect), where they join the batch records and the failure tree.
+
+Protocols (`protocol:` per machine; each library is imported only when a machine uses it):
+    opcua         OPC UA (asyncua)                          tags: ns=2;s=FBD1.InletTemp
+    modbus        Modbus TCP (pymodbus)                     tags: 40001:float32 · hr100:int16*0.1 · ir5:uint16 · {register: …}
+    modbus_rtu    Modbus RTU over RS-485 (pymodbus)         same tags; serial_port, baudrate, parity, unit
+    s7            Siemens S7 (python-snap7, ISO-on-TCP)     tags: DB1.DBD0:REAL · DB10.DBW4:INT · DB1.DBX2.1:BOOL · MD100:REAL
+    ethernet_ip   Rockwell Logix (pycomm3, CIP)             tags: Dryer_InletTemp · Program:Main.LOD
+    mqtt          MQTT broker (paho-mqtt)                   tags: plant/fbd1/inlet_temp · plant/fbd1/state|inlet.temp
+    rest          HTTP JSON, or AVEVA PI Web API (mode: pi) tags: data.inlet_temp · values[0].v · a PI WebId
+    sql           SQL historian (SQLAlchemy)                tags: the tag name, passed to `query` as :tag
+    serial_ascii  RS-232 balances (pyserial)                tags: the command, e.g. SI (Mettler MT-SICS), ESC P (Sartorius)
 
     python eurveda_agent.py --config config.yaml              run (poll machines, buffer, push)
     python eurveda_agent.py --config config.yaml --check      read every configured tag once and print it (commissioning)
@@ -21,6 +32,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import signal
 import socket
 import sqlite3
@@ -35,7 +47,7 @@ from typing import Any, Optional
 import requests
 import yaml
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 log = logging.getLogger("eurveda-agent")
 STOP = threading.Event()
 
@@ -89,7 +101,13 @@ class OpcUaSource(Source):
             self.client.set_user(self.cfg["username"])
             self.client.set_password(os.environ.get(self.cfg.get("password_env", ""), ""))
         self.client.connect()
-        self.nodes = {f: self.client.get_node(n) for f, n in self.cfg["tags"].items()}
+        self.nodes = {f: self._node(f, n) for f, n in self.cfg["tags"].items()}
+
+    def _node(self, field: str, node_id: str) -> Any:
+        try:
+            return self.client.get_node(str(node_id).strip())
+        except Exception as exc:  # asyncua's own message names the string, not the field
+            raise ValueError(f"{field}: {node_id!r} is not an OPC UA node id (they look like ns=2;s=FBD1.InletTemp)") from exc
 
     def close(self) -> None:
         try:
@@ -98,7 +116,7 @@ class OpcUaSource(Source):
             pass
 
     def _node_value(self, spec: dict[str, Any]) -> Any:
-        return self.client.get_node(spec["node"]).read_value()
+        return self._node("tag", spec.get("node") or spec.get("tag")).read_value()
 
     def read(self) -> tuple[dict[str, float], str, str]:
         vals = {}
@@ -109,21 +127,58 @@ class OpcUaSource(Source):
         return vals, self._meta(self.cfg.get("batch"), self._node_value), self._meta(self.cfg.get("product"), self._node_value)
 
 
+def parse_modbus(tag: Any) -> dict[str, Any]:
+    """A Modbus address as written in a manual or the setup wizard → {register, function, type, word_order, scale, length}.
+    40001 / 400001 → holding register 0 (1-based 4xxxx), 30001 → input register 0, hr100 / ir100 → register 100 as is,
+    a bare number below 30001 → holding register as is; then :float32|int16|uint16|int32|uint32|stringN, :big|little,
+    *scale. A dict is taken as it is (the config file's long form)."""
+    if isinstance(tag, dict):
+        return tag
+    m = re.fullmatch(r"(?i)(hr|ir)?(\d+)(?::(float32|int32|uint32|int16|uint16|string(\d+)))?(?::(big|little))?(?:\*(-?[\d.]+))?", str(tag).strip())
+    if not m:
+        raise ValueError(f"{tag!r} is not a Modbus address (e.g. 40001:float32, hr100:int16*0.1)")
+    pre, num, typ, slen, order, scale = m.groups()
+    n, fn = int(num), "holding"
+    if pre:
+        fn = "input" if pre.lower() == "ir" else "holding"
+    elif 300001 <= n <= 465536:
+        fn, n = ("input", n - 300001) if n < 400001 else ("holding", n - 400001)
+    elif 30001 <= n <= 49999:
+        fn, n = ("input", n - 30001) if n < 40001 else ("holding", n - 40001)
+    spec = {"register": n, "function": fn, "type": "string" if slen else (typ or "float32").lower(), "word_order": (order or "big").lower(),
+            "scale": float(scale) if scale else 1.0}
+    if slen:
+        spec["length"] = (int(slen) + 1) // 2
+    return spec
+
+
 class ModbusSource(Source):
-    """Modbus TCP (pymodbus). Tags: {register, type: float32|int16|uint16|int32|uint32, scale, function: holding|input,
-    word_order: big|little}. Batch numbers stored as ASCII in registers: {register, type: string, length: n}."""
+    """Modbus TCP or RTU (pymodbus). Tags: an address string (parse_modbus) or {register, type: float32|int16|uint16|
+    int32|uint32|string, scale, function: holding|input, word_order: big|little, length}."""
 
     SIZES = {"float32": 2, "int32": 2, "uint32": 2, "int16": 1, "uint16": 1}
 
     def connect(self) -> None:
-        from pymodbus.client import ModbusTcpClient
+        if self.cfg.get("protocol") == "modbus_rtu":
+            from pymodbus.client import ModbusSerialClient
 
-        self.client = ModbusTcpClient(self.cfg["host"], port=int(self.cfg.get("port", 502)), timeout=float(self.cfg.get("timeout_s", 5)))
+            self.client = ModbusSerialClient(port=self.cfg["serial_port"], baudrate=int(self.cfg.get("baudrate", 9600)),
+                                             parity=str(self.cfg.get("parity", "N"))[:1].upper(), stopbits=int(self.cfg.get("stopbits", 1)),
+                                             bytesize=8, timeout=float(self.cfg.get("timeout_s", 3)))
+            where = self.cfg["serial_port"]
+        else:
+            from pymodbus.client import ModbusTcpClient
+
+            self.client = ModbusTcpClient(self.cfg["host"], port=int(self.cfg.get("port", 502)), timeout=float(self.cfg.get("timeout_s", 5)))
+            where = f"{self.cfg['host']}:{self.cfg.get('port', 502)}"
         if not self.client.connect():
-            raise ConnectionError(f"Modbus {self.cfg['host']}:{self.cfg.get('port', 502)} unreachable")
+            raise ConnectionError(f"Modbus {where} unreachable")
 
     def close(self) -> None:
-        self.client.close()
+        try:
+            self.client.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _regs(self, spec: dict[str, Any], count: int) -> list[int]:
         fn = self.client.read_input_registers if spec.get("function") == "input" else self.client.read_holding_registers
@@ -136,7 +191,8 @@ class ModbusSource(Source):
             raise IOError(f"Modbus read {spec['register']}: {rr}")
         return list(rr.registers)
 
-    def _decode(self, spec: dict[str, Any]) -> Any:
+    def _decode(self, spec: Any) -> Any:
+        spec = parse_modbus(spec.get("tag", spec) if isinstance(spec, dict) and "tag" in spec else spec)
         t = spec.get("type", "float32")
         if t == "string":
             regs = self._regs(spec, int(spec.get("length", 8)))
@@ -153,13 +209,289 @@ class ModbusSource(Source):
         return vals, self._meta(self.cfg.get("batch"), self._decode), self._meta(self.cfg.get("product"), self._decode)
 
 
+class S7Source(Source):
+    """Siemens S7-300/400/1200/1500 over ISO-on-TCP (python-snap7). Tags: DB1.DBD0:REAL, DB10.DBW4:INT, DB1.DBX2.1:BOOL,
+    MD100:REAL, IW64:INT, DB2.DBB0:STRING20, optionally *scale. Without a type: D → REAL, W → INT, B → BYTE, X → BOOL."""
+
+    SIZE = {"REAL": 4, "LREAL": 8, "INT": 2, "DINT": 4, "WORD": 2, "DWORD": 4, "BYTE": 1, "BOOL": 1}
+    FMT = {"REAL": ">f", "LREAL": ">d", "INT": ">h", "DINT": ">i", "WORD": ">H", "DWORD": ">I", "BYTE": ">B"}
+    DEFAULT = {"D": "REAL", "W": "INT", "B": "BYTE", "X": "BOOL", "": "BYTE"}
+
+    @staticmethod
+    def parse(tag: str) -> dict[str, Any]:
+        m = re.fullmatch(r"(?i)(?:DB(\d+)\.DB([BWDX])(\d+)(?:\.(\d))?|([MIQE])([BWDX]?)(\d+)(?:\.(\d))?)(?::([A-Z]+)(\d*))?(?:\*(-?[\d.]+))?",
+                         str(tag).strip())
+        if not m:
+            raise ValueError(f"{tag!r} is not an S7 address (e.g. DB1.DBD0:REAL, MD100:REAL, DB1.DBX2.1:BOOL)")
+        db, w1, off1, bit1, area, w2, off2, bit2, typ, slen, scale = m.groups()
+        width = (w1 or w2 or "").upper()
+        t = (typ or S7Source.DEFAULT[width]).upper()
+        return {"area": "DB" if db else {"E": "I"}.get(area.upper(), area.upper()), "db": int(db or 0), "start": int(off1 or off2),
+                "bit": int(bit1 or bit2 or 0), "type": t, "strlen": int(slen) if t == "STRING" and slen else 254,
+                "scale": float(scale) if scale else 1.0}
+
+    def connect(self) -> None:
+        import snap7
+
+        self.client = snap7.client.Client()
+        self.client.connect(self.cfg["host"], int(self.cfg.get("rack", 0)), int(self.cfg.get("slot", 1)), int(self.cfg.get("port", 102)))
+        self.specs = {f: self.parse(t) for f, t in self.cfg["tags"].items()}
+
+    def close(self) -> None:
+        try:
+            self.client.disconnect()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _read(self, sp: dict[str, Any]) -> Any:
+        from snap7.type import Area
+
+        size = sp["strlen"] + 2 if sp["type"] == "STRING" else self.SIZE[sp["type"]]
+        if sp["area"] == "DB":
+            raw = bytes(self.client.db_read(sp["db"], sp["start"], size))
+        else:
+            raw = bytes(self.client.read_area({"M": Area.MK, "I": Area.PE, "Q": Area.PA}[sp["area"]], 0, sp["start"], size))
+        if sp["type"] == "BOOL":
+            return float((raw[0] >> sp["bit"]) & 1)
+        if sp["type"] == "STRING":  # S7 string: max length, actual length, characters
+            return raw[2:2 + raw[1]].decode("latin-1")
+        return struct.unpack(self.FMT[sp["type"]], raw)[0] * sp["scale"]
+
+    def _meta_read(self, spec: dict[str, Any]) -> Any:
+        return self._read(self.parse(spec.get("tag") or spec.get("node")))
+
+    def read(self) -> tuple[dict[str, float], str, str]:
+        vals = {f: float(self._read(sp)) for f, sp in self.specs.items()}
+        return vals, self._meta(self.cfg.get("batch"), self._meta_read), self._meta(self.cfg.get("product"), self._meta_read)
+
+
+class EtherNetIPSource(Source):
+    """Allen-Bradley ControlLogix / CompactLogix over EtherNet/IP (pycomm3 LogixDriver). Tags are Logix tag names."""
+
+    def connect(self) -> None:
+        from pycomm3 import LogixDriver
+
+        self.plc = LogixDriver(self.cfg["host"])
+        self.plc.open()
+
+    def close(self) -> None:
+        try:
+            self.plc.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _one(self, spec: dict[str, Any]) -> Any:
+        r = self.plc.read(spec.get("tag") or spec.get("node"))
+        if r.error:
+            raise IOError(f"{r.tag}: {r.error}")
+        return r.value
+
+    def read(self) -> tuple[dict[str, float], str, str]:
+        fields, names = list(self.cfg["tags"]), list(self.cfg["tags"].values())
+        res = self.plc.read(*names)
+        res = res if isinstance(res, list) else [res]
+        vals = {}
+        for f, r in zip(fields, res):
+            if r.error:
+                raise IOError(f"{f} ({r.tag}): {r.error}")
+            if isinstance(r.value, (int, float)) and not isinstance(r.value, bool):
+                vals[f] = float(r.value)
+            elif isinstance(r.value, bool):
+                vals[f] = float(r.value)
+        return vals, self._meta(self.cfg.get("batch"), self._one), self._meta(self.cfg.get("product"), self._one)
+
+
+def json_path(doc: Any, path: str) -> Any:
+    """data.items[0].value → doc["data"]["items"][0]["value"]; None when any step is missing."""
+    cur = doc
+    for key, idx in re.findall(r"([^.\[\]]+)|\[(\d+)\]", path):
+        try:
+            cur = cur[int(idx)] if idx else cur[key]
+        except (KeyError, IndexError, TypeError):
+            return None
+    return cur
+
+
+def _number(v: Any) -> Optional[float]:
+    if isinstance(v, bool):
+        return float(v)
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, dict) and "Value" in v:  # PI digital states and some gateways: {"Name": …, "Value": n}
+        return _number(v["Value"])
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+class MqttSource(Source):
+    """MQTT (paho-mqtt): subscribes to each tag's topic and keeps the last message. A tag is a topic whose payload is a
+    number, or topic|json.path for JSON payloads. Retained messages give a value at once; otherwise read() returns
+    what has arrived (and a test read waits up to `timeout_s` for every topic)."""
+
+    def connect(self) -> None:
+        from urllib.parse import urlparse
+
+        import paho.mqtt.client as mqtt
+
+        u = urlparse(self.cfg["broker"] if "://" in self.cfg["broker"] else "mqtt://" + self.cfg["broker"])
+        self.last: dict[str, Any] = {}
+        self.got = threading.Event()
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"eurveda-{socket.gethostname()}-{self.name}"[:60])
+        if self.cfg.get("username"):
+            self.client.username_pw_set(self.cfg["username"], os.environ.get(self.cfg.get("password_env", ""), None))
+        if u.scheme in ("mqtts", "ssl", "tls"):
+            self.client.tls_set()
+        self.topics = {f: str(t).split("|", 1) for f, t in self.cfg["tags"].items()}
+        extra = [str(s.get("tag")).split("|", 1) for s in (self.cfg.get("batch"), self.cfg.get("product")) if isinstance(s, dict) and s.get("tag")]
+
+        def on_message(_c, _u, msg):
+            self.last[msg.topic] = msg.payload
+            self.got.set()
+
+        def on_connect(c, _u, _f, rc, _p=None):
+            for topic in {t[0] for t in [*self.topics.values(), *extra]}:
+                c.subscribe(topic, qos=0)
+
+        self.client.on_message, self.client.on_connect = on_message, on_connect
+        self.client.connect(u.hostname, u.port or (8883 if u.scheme in ("mqtts", "ssl", "tls") else 1883), keepalive=30)
+        self.client.loop_start()
+        deadline = time.monotonic() + float(self.cfg.get("timeout_s", 5))
+        while time.monotonic() < deadline and len({t[0] for t in self.topics.values()} - set(self.last)) > 0:
+            time.sleep(0.1)
+
+    def close(self) -> None:
+        try:
+            self.client.loop_stop()
+            self.client.disconnect()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _value(self, topic_path: list[str]) -> Any:
+        raw = self.last.get(topic_path[0])
+        if raw is None:
+            return None
+        text = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        if len(topic_path) == 1:
+            return text
+        try:
+            return json_path(json.loads(text), topic_path[1])
+        except ValueError:
+            return None
+
+    def read(self) -> tuple[dict[str, float], str, str]:
+        vals = {f: n for f, tp in self.topics.items() if (n := _number(self._value(tp))) is not None}
+        if not vals:
+            raise IOError("no message yet on the configured topics")
+        meta = lambda spec: self._value(str(spec.get("tag")).split("|", 1))  # noqa: E731
+        return vals, self._meta(self.cfg.get("batch"), meta), self._meta(self.cfg.get("product"), meta)
+
+
+class RestSource(Source):
+    """HTTP JSON polled by the agent. mode json (default): one GET of `url`, each tag a path into the response.
+    mode pi: AVEVA PI Web API at `url` (…/piwebapi); each tag is a point's WebId, read from /streams/{webid}/value.
+    auth_env names an environment variable holding user:password (basic) or a bearer token."""
+
+    def connect(self) -> None:
+        self.s = requests.Session()
+        auth = os.environ.get(self.cfg.get("auth_env", ""), "") if self.cfg.get("auth_env") else ""
+        if ":" in auth:
+            self.s.auth = tuple(auth.split(":", 1))
+        elif auth:
+            self.s.headers["Authorization"] = f"Bearer {auth}"
+        self.s.headers["Accept"] = "application/json"
+        self.verify = str(self.cfg.get("verify_tls", "true")).lower() not in ("false", "0", "no")
+        self.timeout = float(self.cfg.get("timeout_s", 10))
+
+    def _get(self, url: str) -> Any:
+        r = self.s.get(url, timeout=self.timeout, verify=self.verify)
+        r.raise_for_status()
+        return r.json()
+
+    def read(self) -> tuple[dict[str, float], str, str]:
+        base = self.cfg["url"].rstrip("/")
+        if str(self.cfg.get("mode", "json")).lower() == "pi":
+            one = lambda tag: self._get(f"{base}/streams/{tag}/value").get("Value")  # noqa: E731
+        else:
+            doc = self._get(base)
+            one = lambda tag: json_path(doc, tag)  # noqa: E731
+        vals = {f: n for f, t in self.cfg["tags"].items() if (n := _number(one(t))) is not None}
+        meta = lambda spec: one(spec.get("tag") or spec.get("node"))  # noqa: E731
+        return vals, self._meta(self.cfg.get("batch"), meta), self._meta(self.cfg.get("product"), meta)
+
+
+class SqlSource(Source):
+    """A historian kept in SQL (SQLAlchemy URL from the environment variable `dsn_env`, e.g.
+    mssql+pymssql://user:pass@host/Runtime). `query` returns a tag's latest value in its first column, :tag bound."""
+
+    DEFAULT_QUERY = "SELECT value FROM readings WHERE tag = :tag ORDER BY ts DESC LIMIT 1"
+
+    def connect(self) -> None:
+        from sqlalchemy import create_engine, text
+
+        dsn = os.environ.get(self.cfg.get("dsn_env", ""), "") or self.cfg.get("dsn", "")
+        if not dsn:
+            raise ValueError(f"set the connection URL in the environment variable {self.cfg.get('dsn_env')!r} on the agent's PC")
+        self.engine = create_engine(dsn, pool_pre_ping=True)
+        self.q = text(self.cfg.get("query") or self.DEFAULT_QUERY)
+
+    def close(self) -> None:
+        try:
+            self.engine.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _one(self, conn, tag: str) -> Any:
+        row = conn.execute(self.q, {"tag": tag}).first()
+        return row[0] if row else None
+
+    def read(self) -> tuple[dict[str, float], str, str]:
+        with self.engine.connect() as conn:
+            vals = {f: n for f, t in self.cfg["tags"].items() if (n := _number(self._one(conn, t))) is not None}
+            meta = lambda spec: self._one(conn, spec.get("tag") or spec.get("node"))  # noqa: E731
+            return vals, self._meta(self.cfg.get("batch"), meta), self._meta(self.cfg.get("product"), meta)
+
+
+class SerialAsciiSource(Source):
+    """Balances and instruments that answer a text command on RS-232 (pyserial): each tag is the command (SI for
+    Mettler-Toledo MT-SICS, "ESC P" for Sartorius); the first number in the reply is the value, in the unit it shows."""
+
+    def connect(self) -> None:
+        import serial
+
+        self.port = serial.Serial(self.cfg["serial_port"], baudrate=int(self.cfg.get("baudrate", 9600)), timeout=float(self.cfg.get("timeout_s", 2)))
+
+    def close(self) -> None:
+        try:
+            self.port.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _ask(self, cmd: str) -> Optional[float]:
+        raw = cmd.replace("ESC ", "\x1b").replace("ESC", "\x1b")
+        self.port.reset_input_buffer()
+        self.port.write((raw + str(self.cfg.get("eol", "\r\n")).encode().decode("unicode_escape")).encode("ascii"))
+        reply = self.port.readline().decode("ascii", errors="replace")
+        m = re.search(r"[-+]?\s*\d+(?:\.\d+)?", reply)
+        if not m:
+            raise IOError(f"{cmd!r}: no number in the reply {reply.strip()!r}")
+        return float(m.group(0).replace(" ", ""))
+
+    def read(self) -> tuple[dict[str, float], str, str]:
+        vals = {f: self._ask(str(c)) for f, c in self.cfg["tags"].items()}
+        return vals, self._meta(self.cfg.get("batch"), lambda s: s.get("tag")), self._meta(self.cfg.get("product"), lambda s: s.get("tag"))
+
+
+SOURCES = {"opcua": OpcUaSource, "modbus": ModbusSource, "modbus_tcp": ModbusSource, "modbus_rtu": ModbusSource, "s7": S7Source,
+           "ethernet_ip": EtherNetIPSource, "mqtt": MqttSource, "rest": RestSource, "sql": SqlSource, "serial_ascii": SerialAsciiSource}
+
+
 def make_source(cfg: dict[str, Any]) -> Source:
     proto = cfg.get("protocol", "opcua")
-    if proto == "opcua":
-        return OpcUaSource(cfg)
-    if proto == "modbus":
-        return ModbusSource(cfg)
-    raise ValueError(f"{cfg['name']}: unknown protocol {proto!r} (opcua | modbus)")
+    if proto not in SOURCES:
+        raise ValueError(f"{cfg['name']}: unknown protocol {proto!r} ({' | '.join(SOURCES)})")
+    return SOURCES[proto](cfg)
 
 
 # --- buffer -------------------------------------------------------------------------------------------------------
@@ -210,7 +542,7 @@ def poll(cfg: dict[str, Any], buf: Optional[Buffer], dry: bool = False, stop: Op
     while not STOP.is_set() and not halt.is_set():
         try:
             src.connect()
-            log.info("%s: connected (%s)", src.name, cfg.get("endpoint") or cfg.get("host"))
+            log.info("%s: connected (%s)", src.name, cfg.get("endpoint") or cfg.get("host") or cfg.get("broker") or cfg.get("url") or cfg.get("serial_port") or cfg.get("protocol"))
             backoff = 2.0
             while not STOP.is_set() and not halt.is_set():
                 t0 = time.monotonic()

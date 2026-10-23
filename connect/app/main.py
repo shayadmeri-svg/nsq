@@ -68,7 +68,8 @@ def health():
 
 @app.get(f"{P}/catalog")
 def get_catalog(user: dict = Depends(current_user)):
-    return {"protocols": catalog.PROTOCOLS, "equipment_types": catalog.EQUIPMENT_TYPES, "profiles": catalog.PROFILES, "dosage_forms": catalog.DOSAGE_FORMS}
+    return {"protocols": catalog.PROTOCOLS, "equipment_types": catalog.EQUIPMENT_TYPES, "areas": [{"id": a, "label": l} for a, l in catalog.AREAS],
+            "profiles": [p for p in catalog.PROFILES if not p.get("hidden")], "dosage_forms": catalog.DOSAGE_FORMS}
 
 
 def _get(db: Session, model: Any, id_: int, missing: str) -> Any:
@@ -144,6 +145,11 @@ def _apply_eq(e: Equipment, body: dict[str, Any]) -> None:
     if body.get("profile_id") and body["profile_id"] in catalog.PROFILE_BY_ID:  # a verified machine-model profile fills the mapping
         pr = catalog.PROFILE_BY_ID[body["profile_id"]]
         e.tag_map, e.batch_tag, e.product_tag, e.protocol = dict(pr["tags"]), pr["batch_tag"], pr.get("product_tag", ""), pr["protocol"]
+    pr = catalog.PROTOCOL_BY_ID[e.protocol]
+    bad = catalog.bad_tags(e.protocol, {**(e.tag_map or {}), **({"batch tag": e.batch_tag, "product tag": e.product_tag} if e.protocol == "opcua" else {})})
+    if bad:
+        raise HTTPException(400, f"{pr['label']} addresses look like {pr['tag']}"
+                                 + (" (Browse lists the machine's own)" if e.protocol == "opcua" else "") + ". Not an address: " + "; ".join(bad))
 
 
 @app.post(f"{P}/plants/{{plant_id}}/equipment")
@@ -256,10 +262,12 @@ def _machine_cfg(e: Equipment) -> dict[str, Any]:
     c = dict(e.connection or {})
     m = {"name": e.name, "format": e.type, "protocol": "modbus" if e.protocol == "modbus_tcp" else e.protocol,
          "poll_s": float(c.pop("poll_s", 5) or 5), "tags": e.tag_map or {}, **{k: v for k, v in c.items() if v not in (None, "")}}
-    if e.batch_tag:
-        m["batch"] = {"node": e.batch_tag} if e.protocol == "opcua" else {"fixed": e.batch_tag}
-    if e.product_tag:
-        m["product"] = {"node": e.product_tag} if e.protocol == "opcua" else {"fixed": e.product_tag}
+    if not catalog.TYPE_BY_ID.get(e.type, {}).get("batch", True):
+        m["skip_without_batch"] = False  # utilities and rooms run continuously: no batch number to wait for
+    for key, tag in (("batch", e.batch_tag), ("product", e.product_tag)):
+        if tag:  # an address in the machine's protocol is read from it; anything else is a fixed value
+            m[key] = ({"node": tag} if e.protocol == "opcua" else {"tag": tag}) if not catalog.bad_tags(e.protocol, {key: tag}) \
+                else {"fixed": tag}
     return m
 
 
@@ -267,8 +275,8 @@ def _job(db: Session, e: Equipment, kind: str, user: dict) -> dict[str, Any]:
     plant_for(db, e.plant_id, user)
     if not e.agent_id:
         raise HTTPException(400, "Choose which plant agent reaches this machine first.")
-    if e.protocol not in ("opcua", "modbus_tcp"):
-        raise HTTPException(400, f"{catalog.PROTOCOL_BY_ID[e.protocol]['label']}: browsing and test reads are for OPC UA and Modbus machines.")
+    if not catalog.PROTOCOL_BY_ID[e.protocol].get("agent"):
+        raise HTTPException(400, f"{catalog.PROTOCOL_BY_ID[e.protocol]['label']}: there is nothing for the plant agent to read.")
     if kind == "browse" and e.protocol != "opcua":
         raise HTTPException(400, "Modbus has no tag names to browse: enter the register addresses from the machine's manual.")
     j = Job(agent_id=e.agent_id, equipment_id=e.id, kind=kind, request={"machine": _machine_cfg(e)})

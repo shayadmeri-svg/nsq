@@ -17,27 +17,73 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
+from .equipment import AREAS, EQUIPMENT_TYPES, TYPE_BY_ID  # noqa: E402,F401  (re-exported)
+
+# `agent`: the edge agent reads it (test read works). `tag`: what one signal's address looks like, and `tag_rx` the
+# check made when a machine is saved (a typo is reported there, not as a failed read at the plant).
 PROTOCOLS: list[dict[str, Any]] = [
-    {"id": "opcua", "label": "OPC UA", "status": "available", "kind": "machine",
+    {"id": "opcua", "label": "OPC UA", "status": "available", "kind": "machine", "agent": True,
      "what": "Modern PLCs, SCADA and most new machines. Read-only, browsable tags.",
+     "tag": "ns=2;s=FBD1.InletTemp", "tag_rx": r"^(ns=\d+;|nsu=[^;]+;)?(i=\d+|s=.+|g=[0-9a-fA-F-]{36}|b=.+)$",
      "fields": [{"id": "endpoint", "label": "Endpoint", "placeholder": "opc.tcp://10.0.0.20:4840", "required": True},
                 {"id": "security", "label": "Security", "placeholder": "Basic256Sha256,SignAndEncrypt,cert.der,key.pem"},
                 {"id": "poll_s", "label": "Poll every (s)", "placeholder": "5"}]},
-    {"id": "modbus_tcp", "label": "Modbus TCP", "status": "available", "kind": "machine",
+    {"id": "modbus_tcp", "label": "Modbus TCP", "status": "available", "kind": "machine", "agent": True,
      "what": "Older panels, dryers, utilities, meters. Register addresses from the machine's manual.",
+     "tag": "40001:float32  ·  hr100:int16*0.1  ·  ir5:uint16  ·  40021:string16",
+     "tag_rx": r"^(hr|ir|[34])?\d+(:(float32|int32|uint32|int16|uint16|string\d+))?(:(big|little))?(\*-?[\d.]+)?$",
      "fields": [{"id": "host", "label": "Host", "placeholder": "192.168.1.30", "required": True},
                 {"id": "port", "label": "Port", "placeholder": "502"}, {"id": "unit", "label": "Unit id", "placeholder": "1"},
                 {"id": "poll_s", "label": "Poll every (s)", "placeholder": "5"}]},
-    {"id": "mqtt", "label": "MQTT / Sparkplug B", "status": "beta", "kind": "machine",
-     "what": "IoT gateways and newer edge boxes publishing to a broker.",
-     "fields": [{"id": "broker", "label": "Broker", "placeholder": "mqtt://10.0.0.5:1883", "required": True},
-                {"id": "topic", "label": "Topic", "placeholder": "plant/line1/fbd1/#"}]},
-    {"id": "s7", "label": "Siemens S7 (native)", "status": "planned", "kind": "machine",
-     "what": "S7-300/400/1200/1500 PLCs without OPC UA (via Apache PLC4X / snap7).", "fields": []},
-    {"id": "ethernet_ip", "label": "Rockwell EtherNet/IP", "status": "planned", "kind": "machine",
-     "what": "ControlLogix / CompactLogix tag reads (via pycomm3 / PLC4X).", "fields": []},
-    {"id": "historian", "label": "Historian (PI, SQL)", "status": "planned", "kind": "system",
-     "what": "AVEVA PI Web API, SQL-based historians: read what SCADA already stores.", "fields": []},
+    {"id": "s7", "label": "Siemens S7", "status": "available", "kind": "machine", "agent": True,
+     "what": "S7-300/400/1200/1500 PLCs read directly (ISO-on-TCP, python-snap7): no OPC UA server needed. "
+             "On S7-1200/1500, allow PUT/GET and use non-optimised data blocks.",
+     "tag": "DB1.DBD0:REAL  ·  DB10.DBW4:INT  ·  DB1.DBX2.1:BOOL  ·  MD100:REAL  ·  DB2.DBB0:STRING20",
+     "tag_rx": r"^(DB\d+\.DB[BWDX]\d+(\.\d)?|[MIQE][BWDX]?\d+(\.\d)?)(:(REAL|LREAL|INT|DINT|WORD|DWORD|BYTE|BOOL|STRING\d*))?(\*-?[\d.]+)?$",
+     "fields": [{"id": "host", "label": "PLC address", "placeholder": "192.168.0.1", "required": True},
+                {"id": "rack", "label": "Rack", "placeholder": "0"}, {"id": "slot", "label": "Slot", "placeholder": "1 (S7-1200/1500: 1; S7-300: 2)"},
+                {"id": "port", "label": "Port", "placeholder": "102"}, {"id": "poll_s", "label": "Poll every (s)", "placeholder": "5"}]},
+    {"id": "ethernet_ip", "label": "Rockwell EtherNet/IP", "status": "beta", "kind": "machine", "agent": True,
+     "what": "Allen-Bradley ControlLogix / CompactLogix tags by name (CIP, pycomm3).",
+     "tag": "Dryer_InletTemp  ·  Program:Main.LOD  ·  Recipe.BatchNo", "tag_rx": r"^[A-Za-z_][\w:.\[\]]*$",
+     "fields": [{"id": "host", "label": "Controller path", "placeholder": "192.168.1.10 or 192.168.1.10/0", "required": True},
+                {"id": "poll_s", "label": "Poll every (s)", "placeholder": "5"}]},
+    {"id": "modbus_rtu", "label": "Modbus RTU (RS-485)", "status": "beta", "kind": "machine", "agent": True,
+     "what": "Serial meters, controllers and older panels on an RS-485 line (USB adapter on the agent's PC).",
+     "tag": "40001:float32  ·  hr100:int16*0.1", "tag_rx": r"^(hr|ir|[34])?\d+(:(float32|int32|uint32|int16|uint16|string\d+))?(:(big|little))?(\*-?[\d.]+)?$",
+     "fields": [{"id": "serial_port", "label": "Serial port", "placeholder": "/dev/ttyUSB0 or COM3", "required": True},
+                {"id": "baudrate", "label": "Baud rate", "placeholder": "9600"}, {"id": "parity", "label": "Parity", "placeholder": "N, E or O"},
+                {"id": "unit", "label": "Unit id", "placeholder": "1"}, {"id": "poll_s", "label": "Poll every (s)", "placeholder": "5"}]},
+    {"id": "mqtt", "label": "MQTT", "status": "beta", "kind": "machine", "agent": True,
+     "what": "IoT gateways and edge boxes publishing to a broker: a topic per value, or JSON with a path to the value.",
+     "tag": "plant/fbd1/inlet_temp  ·  plant/fbd1/state|inlet.temp", "tag_rx": r"^[^#+|]+(\|[\w.\[\]-]+)?$",
+     "fields": [{"id": "broker", "label": "Broker", "placeholder": "mqtt://10.0.0.5:1883 (mqtts:// for TLS)", "required": True},
+                {"id": "username", "label": "User"}, {"id": "password_env", "label": "Password from env var", "placeholder": "MQTT_PASSWORD"}]},
+    {"id": "rest", "label": "HTTP / REST (incl. PI Web API)", "status": "beta", "kind": "system", "agent": True,
+     "what": "A JSON endpoint polled by the agent: gateways (Kepware IoT Gateway), building systems, or AVEVA PI Web API "
+             "(tag = the point's WebId).",
+     "tag": "data.inlet_temp  ·  values[0].v  ·  (PI) F1DPm0SX…", "tag_rx": r"^[\w.\[\]-]+$",
+     "fields": [{"id": "url", "label": "URL", "placeholder": "https://gw.plant/api/values  or  https://pi/piwebapi", "required": True},
+                {"id": "mode", "label": "Mode", "placeholder": "json (default) or pi"},
+                {"id": "auth_env", "label": "Auth from env var", "placeholder": "PI_AUTH (user:password or a bearer token)"},
+                {"id": "poll_s", "label": "Poll every (s)", "placeholder": "10"}]},
+    {"id": "sql", "label": "SQL historian", "status": "beta", "kind": "system", "agent": True,
+     "what": "Historians that keep values in SQL (AVEVA Historian, Wonderware, SCADA logs in SQL Server, PostgreSQL, "
+             "MySQL): one query returns a tag's latest value.",
+     "tag": "the tag name, passed to the query as :tag", "tag_rx": r"^.+$",
+     "fields": [{"id": "dsn_env", "label": "Connection from env var", "placeholder": "HISTORIAN_DSN (mssql+pymssql://…)", "required": True},
+                {"id": "query", "label": "Query", "placeholder": "SELECT TOP 1 Value FROM History WHERE TagName = :tag ORDER BY DateTime DESC"},
+                {"id": "poll_s", "label": "Poll every (s)", "placeholder": "30"}]},
+    {"id": "serial_ascii", "label": "Serial balance (RS-232)", "status": "beta", "kind": "machine", "agent": True,
+     "what": "Balances and scales that answer a text command: Mettler-Toledo MT-SICS (SI), Sartorius SBI (ESC P), "
+             "and similar.",
+     "tag": "SI  ·  S  ·  ESC P   (the command; the first number in the reply is read)", "tag_rx": r"^.{1,20}$",
+     "fields": [{"id": "serial_port", "label": "Serial port", "placeholder": "/dev/ttyUSB0 or COM3", "required": True},
+                {"id": "baudrate", "label": "Baud rate", "placeholder": "9600"}, {"id": "poll_s", "label": "Poll every (s)", "placeholder": "5"}]},
+    {"id": "bacnet", "label": "BACnet/IP", "status": "planned", "kind": "machine",
+     "what": "Building management and HVAC controllers (AHUs, chillers, room sensors).", "fields": []},
+    {"id": "opc_da", "label": "OPC DA (classic)", "status": "planned", "kind": "machine",
+     "what": "Older Windows SCADA servers (DCOM): read through an OPC UA wrapper or gateway on the SCADA PC.", "fields": []},
     {"id": "ebmr", "label": "eBMR / LIMS export", "status": "planned", "kind": "system",
      "what": "Batch records and QC results from AmpleLogic-, Caliber-type systems (API or scheduled export).", "fields": []},
     {"id": "file", "label": "File drop (CSV / Excel)", "status": "available", "kind": "file",
@@ -46,87 +92,82 @@ PROTOCOLS: list[dict[str, Any]] = [
      "what": "Paper-based steps: the operator types readings on a tablet.", "fields": []},
 ]
 PROTOCOL_BY_ID = {p["id"]: p for p in PROTOCOLS}
+DOSAGE_FORMS = ["tablet", "film-coated tablet", "capsule", "oral liquid", "ointment / cream", "injectable"]
 
 
-def _s(id: str, label: str, unit: str, lo: float, hi: float, hints: str, key: bool = False) -> dict[str, Any]:
-    return {"id": id, "label": label, "unit": unit, "typical": [lo, hi], "hints": hints, "key": key}
+def _camel(field: str) -> str:
+    return "".join(w[:1].upper() + w[1:] for w in field.split("_"))
 
 
-EQUIPMENT_TYPES: list[dict[str, Any]] = [
-    {"id": "rmg", "label": "Rapid mixer granulator", "stage": "Granulation", "dosage_forms": ["tablet", "capsule"], "signals": [
-        _s("binder_kg", "Binder solution added", "kg", 5, 60, r"binder|solution|liquid|water.?add", True),
-        _s("dry_mix_kg", "Dry mix", "kg", 20, 300, r"dry.?mix|batch.?size|load"),
-        _s("wet_mix_min", "Wet mixing time", "min", 0.5, 15, r"wet.?mix|knead"),
-        _s("impeller_kw", "Impeller power", "kW", 0, 30, r"impeller|power|kw|load")]},
-    {"id": "fbd", "label": "Fluid-bed dryer", "stage": "Drying", "dosage_forms": ["tablet", "capsule"], "signals": [
-        _s("lod_pct", "Loss on drying", "%", 0, 25, r"\blod\b|moist", True),
-        _s("inlet_c", "Inlet air temperature", "°C", 25, 95, r"inlet.?t|supply.?t|tt.?1?01", True),
-        _s("outlet_c", "Outlet air temperature", "°C", 20, 80, r"outlet|exhaust"),
-        _s("product_c", "Product temperature", "°C", 20, 70, r"product|bed"),
-        _s("inlet_rh_pct", "Inlet relative humidity", "%RH", 0, 90, r"\brh\b|humid"),
-        _s("air_m3_h", "Air flow", "m³/h", 500, 6000, r"air.?flow|cmh|airflow"),
-        _s("elapsed_min", "Elapsed drying time", "min", 0, 180, r"elapsed|timer|run.?time")]},
-    {"id": "blender", "label": "Blender", "stage": "Blending", "dosage_forms": ["tablet", "capsule"], "signals": [
-        _s("blend_min", "Blend time", "min", 0.5, 40, r"blend|mix.?time|lube", True),
-        _s("blender_rpm", "Blender speed", "rpm", 2, 40, r"rpm|speed")]},
-    {"id": "press", "label": "Tablet press", "stage": "Compression", "dosage_forms": ["tablet"], "signals": [
-        _s("force_kn", "Main compression force", "kN", 1, 60, r"main.?force|compression|mcf|\bforce", True),
-        _s("tablet_weight_mg", "Tablet weight", "mg", 100, 1500, r"weight|\bwt\b", True),
-        _s("precompression_kn", "Pre-compression force", "kN", 0, 10, r"pre.?comp|pcf"),
-        _s("press_rpm", "Turret speed", "rpm", 5, 90, r"turret|speed|rpm"),
-        _s("punch_diameter_mm", "Punch diameter", "mm", 5, 25, r"punch|dia")]},
-    {"id": "coater", "label": "Pan coater", "stage": "Coating", "dosage_forms": ["tablet"], "signals": [
-        _s("weight_gain_pct", "Coating weight gain", "%", 0, 6, r"weight.?gain|gain", True),
-        _s("coat_inlet_c", "Inlet air temperature", "°C", 30, 80, r"inlet.?t|supply", True),
-        _s("exhaust_c", "Exhaust temperature", "°C", 25, 60, r"exhaust|outlet"),
-        _s("spray_g_min", "Spray rate", "g/min", 10, 400, r"spray"),
-        _s("pan_rpm", "Pan speed", "rpm", 1, 20, r"pan|drum|rpm"),
-        _s("atomizing_bar", "Atomizing air pressure", "bar", 0.5, 4, r"atomi|aap")]},
-    {"id": "capsule_filler", "label": "Capsule filler", "stage": "Encapsulation", "dosage_forms": ["capsule"], "signals": [
-        _s("fill_weight_mg", "Fill weight", "mg", 50, 1000, r"fill.?w|weight", True),
-        _s("filler_speed_cph", "Speed", "capsules/h", 1000, 200000, r"speed|output|cph")]},
-    {"id": "liquid_vessel", "label": "Liquid manufacturing vessel", "stage": "Compounding", "dosage_forms": ["oral liquid", "injectable"], "signals": [
-        _s("vessel_c", "Product temperature", "°C", 5, 90, r"temp|tt", True),
-        _s("agitator_rpm", "Agitator speed", "rpm", 10, 1500, r"agit|stirr|rpm"),
-        _s("ph", "pH", "pH", 1, 13, r"\bph\b"),
-        _s("level_l", "Level", "L", 0, 10000, r"level|volume")]},
-    {"id": "filling_line", "label": "Filling line", "stage": "Filling", "dosage_forms": ["oral liquid", "injectable"], "signals": [
-        _s("fill_volume_ml", "Fill volume", "mL", 1, 1000, r"fill.?vol|volume", True),
-        _s("line_speed_bpm", "Line speed", "units/min", 10, 600, r"speed|bpm|upm")]},
-    {"id": "autoclave", "label": "Autoclave / sterilizer", "stage": "Sterilisation", "dosage_forms": ["injectable"], "signals": [
-        _s("chamber_c", "Chamber temperature", "°C", 20, 140, r"chamber|temp", True),
-        _s("chamber_bar", "Chamber pressure", "bar", 0, 4, r"press"),
-        _s("f0_min", "F0", "min", 0, 60, r"\bf0\b|lethal")]},
-    {"id": "hvac_room", "label": "Room / HVAC monitoring", "stage": "Environment", "dosage_forms": ["tablet", "capsule", "oral liquid", "injectable"], "signals": [
-        _s("room_c", "Room temperature", "°C", 15, 30, r"temp|tt", True),
-        _s("room_rh_pct", "Room humidity", "%RH", 20, 70, r"\brh\b|humid", True),
-        _s("dp_pa", "Differential pressure", "Pa", 0, 60, r"\bdp\b|diff.?press|pa\b")]},
-]
-TYPE_BY_ID = {t["id"]: t for t in EQUIPMENT_TYPES}
-DOSAGE_FORMS = ["tablet", "film-coated tablet", "capsule", "oral liquid", "injectable"]
+def sim_object(type_id: str) -> str:
+    """The simulator's object for a type: SIFTER1, PW_SYSTEM → PWSYSTEM1."""
+    return type_id.upper().replace("_", "") + "1"
 
-# Machine-model tag maps, verified against the machine they describe (protocol, type, {signal: tag}).
-PROFILES: list[dict[str, Any]] = [
-    {"id": "eurveda-sim-rmg", "label": "Eurveda plant simulator · RMG1", "type": "rmg", "protocol": "opcua", "verified": "simulator",
-     "batch_tag": "ns=2;s=RMG1.BatchNo", "product_tag": "ns=2;s=RMG1.Product",
-     "tags": {"binder_kg": "ns=2;s=RMG1.BinderKg", "dry_mix_kg": "ns=2;s=RMG1.DryMixKg", "wet_mix_min": "ns=2;s=RMG1.WetMixMin", "impeller_kw": "ns=2;s=RMG1.ImpellerKW"}},
-    {"id": "eurveda-sim-fbd", "label": "Eurveda plant simulator · FBD1", "type": "fbd", "protocol": "opcua", "verified": "simulator",
-     "batch_tag": "ns=2;s=FBD1.BatchNo", "product_tag": "ns=2;s=FBD1.Product",
-     "tags": {"inlet_c": "ns=2;s=FBD1.InletTemp", "outlet_c": "ns=2;s=FBD1.OutletTemp", "product_c": "ns=2;s=FBD1.ProductTemp",
-              "inlet_rh_pct": "ns=2;s=FBD1.InletRH", "air_m3_h": "ns=2;s=FBD1.AirFlow", "lod_pct": "ns=2;s=FBD1.LOD", "elapsed_min": "ns=2;s=FBD1.ElapsedMin"}},
-    {"id": "eurveda-sim-blender", "label": "Eurveda plant simulator · BLEND1", "type": "blender", "protocol": "opcua", "verified": "simulator",
-     "batch_tag": "ns=2;s=BLEND1.BatchNo", "product_tag": "ns=2;s=BLEND1.Product",
-     "tags": {"blend_min": "ns=2;s=BLEND1.BlendMin", "blender_rpm": "ns=2;s=BLEND1.SpeedRPM"}},
-    {"id": "eurveda-sim-press", "label": "Eurveda plant simulator · PRESS1", "type": "press", "protocol": "opcua", "verified": "simulator",
-     "batch_tag": "ns=2;s=PRESS1.BatchNo", "product_tag": "ns=2;s=PRESS1.Product",
-     "tags": {"force_kn": "ns=2;s=PRESS1.ForceKN", "precompression_kn": "ns=2;s=PRESS1.PrecompKN", "tablet_weight_mg": "ns=2;s=PRESS1.TabletWeightMg",
-              "punch_diameter_mm": "ns=2;s=PRESS1.PunchDiameterMm", "press_rpm": "ns=2;s=PRESS1.TurretRPM"}},
-    {"id": "eurveda-sim-coater", "label": "Eurveda plant simulator · COAT1", "type": "coater", "protocol": "opcua", "verified": "simulator",
-     "batch_tag": "ns=2;s=COAT1.BatchNo", "product_tag": "ns=2;s=COAT1.Product",
-     "tags": {"weight_gain_pct": "ns=2;s=COAT1.WeightGain", "coat_inlet_c": "ns=2;s=COAT1.InletTemp", "exhaust_c": "ns=2;s=COAT1.ExhaustTemp",
-              "spray_g_min": "ns=2;s=COAT1.SprayRate", "pan_rpm": "ns=2;s=COAT1.PanRPM", "atomizing_bar": "ns=2;s=COAT1.AtomizingBar"}},
-]
+
+# The line's machines and the two utilities keep their own simulator names; every other type has a generic one
+# (edge-agent/simulator.py serves all of them, each signal named after its field id in CamelCase).
+_SIM_NAMED = {
+    "rmg": ("RMG1", {"binder_kg": "BinderKg", "dry_mix_kg": "DryMixKg", "wet_mix_min": "WetMixMin", "impeller_kw": "ImpellerKW"}),
+    "fbd": ("FBD1", {"inlet_c": "InletTemp", "outlet_c": "OutletTemp", "product_c": "ProductTemp", "inlet_rh_pct": "InletRH",
+                     "air_m3_h": "AirFlow", "lod_pct": "LOD", "elapsed_min": "ElapsedMin"}),
+    "blender": ("BLEND1", {"blend_min": "BlendMin", "blender_rpm": "SpeedRPM"}),
+    "press": ("PRESS1", {"force_kn": "ForceKN", "precompression_kn": "PrecompKN", "tablet_weight_mg": "TabletWeightMg",
+                         "punch_diameter_mm": "PunchDiameterMm", "press_rpm": "TurretRPM"}),
+    "coater": ("COAT1", {"weight_gain_pct": "WeightGain", "coat_inlet_c": "InletTemp", "exhaust_c": "ExhaustTemp",
+                         "spray_g_min": "SprayRate", "pan_rpm": "PanRPM", "atomizing_bar": "AtomizingBar"}),
+    "autoclave": ("AUTOCLAVE1", {"chamber_c": "ChamberTemp", "chamber_bar": "ChamberPressure", "f0_min": "F0"}),
+    "hvac_room": ("HVAC1", {"room_c": "RoomTemp", "room_rh_pct": "RoomRH", "dp_pa": "DiffPressure"}),
+}
+
+
+def sim_tags(type_id: str) -> tuple[str, dict[str, str]]:
+    """(object, {field: variable}) the simulator serves for a type."""
+    if type_id in _SIM_NAMED:
+        return _SIM_NAMED[type_id]
+    return sim_object(type_id), {s["id"]: _camel(s["id"]) for s in TYPE_BY_ID[type_id]["signals"]}
+
+
+def _sim_profile(t: dict[str, Any]) -> dict[str, Any]:
+    obj, tags = sim_tags(t["id"])
+    return {"id": f"eurveda-sim-{t['id'].replace('_', '-')}", "label": f"Eurveda plant simulator · {obj}", "type": t["id"], "protocol": "opcua",
+            "verified": "simulator", "batch_tag": f"ns=2;s={obj}.BatchNo" if t["batch"] else "",
+            "product_tag": f"ns=2;s={obj}.Product" if t["batch"] else "", "tags": {f: f"ns=2;s={obj}.{v}" for f, v in tags.items()}}
+
+
+# The simulator's AHU is also served over Siemens S7 (DB1, one REAL per signal, 4 bytes apart, in signal order),
+# so the S7 path can be tried end to end.
+S7_SIM = {"type": "ahu", "db": 1, "port": 1102}
+
+
+def _s7_profile() -> dict[str, Any]:
+    t = TYPE_BY_ID[S7_SIM["type"]]
+    return {"id": "eurveda-sim-ahu-s7", "label": "Eurveda plant simulator · AHU1 over Siemens S7", "type": t["id"], "protocol": "s7",
+            "verified": "simulator", "batch_tag": "", "product_tag": "",
+            "tags": {s["id"]: f"DB{S7_SIM['db']}.DBD{4 * i}:REAL" for i, s in enumerate(t["signals"])}}
+
+
+# Machine-model tag maps, verified against the machine they describe (protocol, type, {signal: tag}). The simulator's
+# models are generated (one per type); OEM models are added from a real machine during onboarding.
+PROFILES: list[dict[str, Any]] = [_sim_profile(t) for t in EQUIPMENT_TYPES] + [_s7_profile()]
+# the ids plants already saved for the line's machines
+for _old, _new in (("eurveda-sim-rmg", "rmg"), ("eurveda-sim-fbd", "fbd"), ("eurveda-sim-blender", "blender"),
+                   ("eurveda-sim-press", "press"), ("eurveda-sim-coater", "coater"), ("eurveda-sim-hvac", "hvac_room")):
+    if not any(p["id"] == _old for p in PROFILES):
+        PROFILES.append({**_sim_profile(TYPE_BY_ID[_new]), "id": _old, "hidden": True})
 PROFILE_BY_ID = {p["id"]: p for p in PROFILES}
+
+
+def bad_tags(protocol: str, tags: dict[str, Any]) -> list[str]:
+    """The entries of {field: address} that are not addresses in this protocol's syntax."""
+    rx = PROTOCOL_BY_ID.get(protocol, {}).get("tag_rx")
+    if not rx:
+        return []
+    r = re.compile(rx, re.I if protocol in ("modbus_tcp", "modbus_rtu", "s7") else 0)
+    return [f"{k} = {v!r}" for k, v in tags.items() if v not in (None, "") and not r.match(str(v).strip())]
+
+
+def bad_node_ids(tags: dict[str, Any]) -> list[str]:
+    return bad_tags("opcua", tags)
 
 
 def _norm(s: str) -> str:

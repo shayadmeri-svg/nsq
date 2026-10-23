@@ -5,7 +5,7 @@ FROM python:3.12-slim
 WORKDIR /agent
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY eurveda_agent.py simulator.py sim_defaults.json demo-entrypoint.sh ./
+COPY eurveda_agent.py simulator.py sim_defaults.json sim_machines.json demo-entrypoint.sh ./
 RUN chmod +x demo-entrypoint.sh && useradd -r agent && chown -R agent /agent
 USER agent
 ENV PYTHONUNBUFFERED=1

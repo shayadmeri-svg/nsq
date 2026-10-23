@@ -49,7 +49,9 @@ function PlantStep({ d, plantId, refresh }: { d: any; plantId: number; refresh: 
 function MachinesStep({ d, cat, plantId, refresh }: { d: any; cat: any; plantId: number; refresh: () => void }) {
   const [type, setType] = useState<string | null>(null);
   const [f, setF] = useState({ name: "", make: "", model: "" });
+  const [find, setFind] = useState("");
   const toast = useToast();
+  const makers: string[] = cat.equipment_types.find((t: any) => t.id === type)?.makers ?? [];
   const add = async () => {
     try { await post(`/api/connect/plants/${plantId}/equipment`, { ...f, type, protocol: "opcua" }); setType(null); setF({ name: "", make: "", model: "" }); refresh(); }
     catch (e) { toast((e as Error).message, "error"); }
@@ -79,23 +81,36 @@ function MachinesStep({ d, cat, plantId, refresh }: { d: any; cat: any; plantId:
         })}
       </div>
       <div>
-        <div className="label mb-2">Add a machine</div>
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-          {cat.equipment_types.map((t: any) => {
-            const I = TYPE_ICON[t.id] ?? Plus;
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="label">Add a machine · {cat.equipment_types.length} kinds</span>
+          <input className="input h-8 w-60 text-xs" placeholder="Find a machine or a maker" value={find} onChange={(e) => setFind(e.target.value)} /></div>
+        <div className="space-y-3">
+          {(cat.areas ?? [{ id: undefined, label: "" }]).map((a: any) => {
+            const list = cat.equipment_types.filter((t: any) => (a.id === undefined || t.area === a.id)
+              && (!find || `${t.label} ${t.stage} ${(t.makers ?? []).join(" ")}`.toLowerCase().includes(find.toLowerCase())));
+            if (!list.length) return null;
             return (
-              <button key={t.id} onClick={() => { setType(t.id); setF({ ...f, name: f.name || `${t.id.toUpperCase().replace("_", "-")}-${d.equipment.filter((e: any) => e.type === t.id).length + 1}` }); }}
-                className={cn("rounded-xl p-3 text-left ring-1 ring-inset transition hover:bg-gold-50", type === t.id ? "bg-gold-50 ring-2 ring-gold-400" : "ring-line")}>
-                <I size={16} className="text-gold-600" /><div className="mt-1 text-[12px] font-semibold leading-tight">{t.label}</div>
-                <div className="text-[10px] text-ink-faint">{t.stage} · {t.signals.length} signals</div>
-              </button>);
+              <div key={a.id ?? "all"}>
+                {a.label && <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">{a.label}</div>}
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                  {list.map((t: any) => {
+                    const I = TYPE_ICON[t.id] ?? Plus;
+                    return (
+                      <button key={t.id} onClick={() => { setType(t.id); setF({ ...f, name: f.name || `${t.id.toUpperCase().replace(/_/g, "-")}-${d.equipment.filter((e: any) => e.type === t.id).length + 1}` }); }}
+                        className={cn("rounded-xl p-3 text-left ring-1 ring-inset transition hover:bg-gold-50", type === t.id ? "bg-gold-50 ring-2 ring-gold-400" : "ring-line")}>
+                        <I size={16} className="text-gold-600" /><div className="mt-1 text-[12px] font-semibold leading-tight">{t.label}</div>
+                        <div className="text-[10px] text-ink-faint">{t.stage} · {t.signals.length} signals{t.batch === false ? " · continuous" : ""}</div>
+                      </button>);
+                  })}
+                </div>
+              </div>);
           })}
         </div>
         {type && (
           <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl bg-slate-50 p-3">
             <label className="w-40"><span className="label">Name</span><input className="input mt-1 h-9" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
-            <label className="w-40"><span className="label">Make</span><input className="input mt-1 h-9" placeholder="e.g. ACG" value={f.make} onChange={(e) => setF({ ...f, make: e.target.value })} /></label>
-            <label className="w-40"><span className="label">Model</span><input className="input mt-1 h-9" value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} /></label>
+            <label className="w-48"><span className="label">Make</span><input className="input mt-1 h-9" list="cx-makers" placeholder={makers[0] ? `e.g. ${makers[0]}` : "manufacturer"} value={f.make} onChange={(e) => setF({ ...f, make: e.target.value })} />
+              <datalist id="cx-makers">{makers.map((m) => <option key={m} value={m} />)}</datalist></label>
+            <label className="w-40"><span className="label">Model</span><input className="input mt-1 h-9" placeholder="as on the nameplate" value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} /></label>
             <Button onClick={add}><Plus size={14} /> Add</Button><Button variant="ghost" onClick={() => setType(null)}>Cancel</Button>
           </div>)}
       </div>
@@ -176,7 +191,8 @@ function ConnectStep({ d, cat, refresh }: { d: any; cat: any; refresh: () => voi
             <SearchSelect size="sm" value={f.profile_id ?? ""} onChange={(v) => { setF({ ...f, profile_id: v }); if (v) save({ profile_id: v }); }} clearLabel="None" placeholder="None"
               options={profiles.map((p: any) => ({ value: p.id, label: p.label, sub: `verified on: ${p.verified}` }))} /></div>}
         </div>
-        {["opcua", "modbus_tcp"].includes(f.protocol) && (
+        {proto?.tag && <div className="text-[11px] text-ink-muted">Addresses for {proto.label}: <span className="font-mono text-ink-soft">{proto.tag}</span></div>}
+        {proto?.agent && (
           <div className="flex flex-wrap items-center gap-2">
             {f.protocol === "opcua" && <Button variant="secondary" onClick={() => run("browse")} disabled={!!busy || !f.agent_id}>{busy.startsWith("browse") ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Browse tags</Button>}
             <Button variant="secondary" onClick={() => run("test")} disabled={!!busy || !f.agent_id || !mapped(f)}>{busy.startsWith("test") ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Test read</Button>
@@ -195,7 +211,7 @@ function ConnectStep({ d, cat, refresh }: { d: any; cat: any; refresh: () => voi
                   <div className="w-48 shrink-0 text-xs">{val ? <Check size={11} className="mr-1 inline text-emerald-600" /> : null}<span className={cn(s.key && "font-semibold")}>{s.label}</span>{s.unit && <span className="text-ink-faint"> ({s.unit})</span>}</div>
                   <div className="min-w-0 flex-1">{tags
                     ? <SearchSelect size="sm" value={val} onChange={set} clearLabel="Not read" placeholder="Not read" options={tagOpts} />
-                    : <input className="input h-8 font-mono text-[11px]" placeholder={f.protocol === "modbus_tcp" ? "register, e.g. 40001" : "ns=2;s=…"} value={val} onChange={(ev) => set(ev.target.value)} />}</div>
+                    : <input className="input h-8 font-mono text-[11px]" placeholder={(proto?.tag ?? "address").split("  ·  ")[0]} value={val} onChange={(ev) => set(ev.target.value)} />}</div>
                   {test && s.kind === "signal" && <span className="w-20 text-right text-[11px] font-semibold tabular-nums">{test.values?.[s.id] != null ? Number(test.values[s.id]).toPrecision(4) : "—"}</span>}
                   {test && s.kind !== "signal" && <span className="w-20 truncate text-right text-[11px] font-semibold">{s.kind === "batch" ? test.batch : test.product}</span>}
                 </div>);

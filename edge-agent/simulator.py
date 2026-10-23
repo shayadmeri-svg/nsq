@@ -1,6 +1,9 @@
-"""Plant simulator for testing the Eurveda edge agent without a plant: an OPC UA server with four machines running
+"""Plant simulator for testing the Eurveda edge agent without a plant: an OPC UA server with five machines running
 batches in sequence — rapid mixer granulator (RMG1) → fluid-bed dryer (FBD1) → blender (BLEND1) → tablet press
-(PRESS1) — and optionally the press over Modbus TCP.
+(PRESS1) → pan coater (COAT1) — two utilities running on their own (an autoclave, AUTOCLAVE1, cycling loads; a
+cleanroom's HVAC, HVAC1), one machine of every other type in Connect's catalogue (sim_machines.json: sifter, mill,
+blister line, purified-water loop, AHU, cold room, lyophiliser…), the AHU also over Siemens S7, and optionally the
+press over Modbus TCP.
 
     python simulator.py                                       defaults from sim_defaults.json
     python simulator.py --config-url http://api:8001/api/ingest/plant-data/sim-config   settings from Eurveda (Sim engine)
@@ -44,7 +47,8 @@ from asyncua import Server, ua
 log = logging.getLogger("sim")
 HERE = Path(__file__).resolve().parent
 ORDER = ["RMG-1", "FBD-1", "BLENDER-1", "PRESS-1", "COATER-1"]  # the order a batch goes through the plant
-OBJECT = {"RMG-1": "RMG1", "FBD-1": "FBD1", "BLENDER-1": "BLEND1", "PRESS-1": "PRESS1", "COATER-1": "COAT1"}
+OBJECT = {"RMG-1": "RMG1", "FBD-1": "FBD1", "BLENDER-1": "BLEND1", "PRESS-1": "PRESS1", "COATER-1": "COAT1",
+          "AUTOCLAVE-1": "AUTOCLAVE1", "HVAC-ROOM-1": "HVAC1"}
 # OPC UA variable names (NodeId ns=2;s=<OBJECT>.<name>)
 TAGS = {
     "RMG-1": {"dry_mix_kg": "DryMixKg", "binder_kg": "BinderKg", "wet_mix_min": "WetMixMin", "impeller_kw": "ImpellerKW"},
@@ -55,6 +59,8 @@ TAGS = {
                 "punch_diameter_mm": "PunchDiameterMm", "press_rpm": "TurretRPM"},
     "COATER-1": {"weight_gain_pct": "WeightGain", "coat_inlet_c": "InletTemp", "exhaust_c": "ExhaustTemp", "spray_g_min": "SprayRate",
                  "pan_rpm": "PanRPM", "atomizing_bar": "AtomizingBar"},
+    "AUTOCLAVE-1": {"chamber_c": "ChamberTemp", "chamber_bar": "ChamberPressure", "f0_min": "F0"},
+    "HVAC-ROOM-1": {"room_c": "RoomTemp", "room_rh_pct": "RoomRH", "dp_pa": "DiffPressure"},
 }
 # Modbus holding registers for PRESS1 (float32, big-endian words); batch number as ASCII at 20..27
 MODBUS_MAP = {"force_kn": 0, "precompression_kn": 2, "tablet_weight_mg": 4, "punch_diameter_mm": 6, "press_rpm": 8}
@@ -199,6 +205,109 @@ class Engine:
                 "COATER-1": {"weight_gain_pct": 0.0, "coat_inlet_c": 30.0, "exhaust_c": 29.0, "spray_g_min": 0.0, "pan_rpm": 0.0, "atomizing_bar": 0.0}}[m]
 
 
+# A plant's other machines (sim_machines.json, exported from Connect's catalogue): each signal swings slowly around a
+# working point inside its typical range, with noise; batch machines number a batch every hour of simulated time.
+# Working points where the middle of the range would be wrong for a pharma plant:
+WORKING_POINT = {("cold_room", "temp_c"): 5.0, ("cold_room", "door_open"): 0.0, ("stability_chamber", "chamber_c"): 25.0,
+                 ("stability_chamber", "chamber_rh_pct"): 60.0, ("pw_system", "conductivity_us_cm"): 0.6, ("pw_system", "toc_ppb"): 120.0,
+                 ("pw_system", "loop_c"): 80.0, ("dissolution_tester", "bath_c"): 37.0, ("dissolution_tester", "rpm"): 50.0,
+                 ("compressed_air", "dew_point_c"): -40.0, ("compressed_air", "pressure_bar"): 7.0, ("lyophilizer", "shelf_c"): -40.0,
+                 ("lyophilizer", "product_c"): -42.0, ("lyophilizer", "chamber_ubar"): 100.0, ("lyophilizer", "condenser_c"): -70.0,
+                 ("isolator", "h2o2_ppm"): 0.5, ("isolator", "particles_05_m3"): 300.0, ("particle_counter", "particles_05_m3"): 2000.0,
+                 ("particle_counter", "particles_5_m3"): 20.0, ("depyrogenation_tunnel", "hot_zone_c"): 300.0, ("chiller", "supply_c"): 7.0,
+                 ("chiller", "return_c"): 12.0, ("hplc", "assay_pct"): 99.5, ("hplc", "impurity_pct"): 0.12}
+
+
+class Generic:
+    def __init__(self, spec: dict[str, Any], rng: random.Random, prefix: str):
+        self.spec, self.rng, self.prefix = spec, rng, prefix
+        self.phase = rng.random() * 6.28
+
+    def readings(self, clock: float) -> tuple[str, dict[str, float], str]:
+        vals = {}
+        for sg in self.spec["signals"]:
+            lo, hi = (float(x) for x in sg["typical"])
+            span = hi - lo
+            wp = WORKING_POINT.get((self.spec["type"], sg["field"]))
+            if wp is None:
+                wp = lo + (0.1 if "count" in sg["var"].lower() or sg["field"] in ("rejects",) else 0.45) * span
+            if sg["field"] == "door_open":
+                vals[sg["field"]] = 1.0 if self.rng.random() < 0.01 else 0.0
+                continue
+            v = wp + 0.04 * span * math.sin(2 * math.pi * clock / 180 + self.phase) + self.rng.gauss(0, 0.008 * span)
+            vals[sg["field"]] = min(hi, max(lo, v))
+        batch = f"{self.spec['object'][:3]}{self.prefix}{int(clock // 60) + 1:03d}" if self.spec["batch"] else ""
+        return batch, vals, ""
+
+
+def sim_machines() -> dict[str, Any]:
+    p = HERE / "sim_machines.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"machines": []}
+
+
+def start_s7(port: int, size: int):
+    """Serve DB1 over Siemens S7 (python-snap7's server); the AHU's values are written into it as REALs."""
+    from snap7 import server as s7server
+    from snap7.type import SrvArea
+
+    srv = s7server.Server()
+    db = bytearray(size)
+    srv.register_area(SrvArea.DB, 1, db)
+    srv.start(tcp_port=port)
+    return srv, db
+
+
+class Utilities:
+    """The autoclave and the room's HVAC: not on the batch route, running on the simulated clock.
+
+    Autoclave: load after load — heat-up to 121.5 °C (15 min), exposure (15 min), exhaust and cool (15 min), unloading
+    (5 min). Chamber pressure is saturated steam's (Antoine equation for water), as gauge pressure; F0 is the lethality
+    accumulated over the cycle, ∫10^((T − 121.1)/10) dt. Every 4th load holds 0.9 °C low during exposure (a recurring
+    steam-supply fault, F0 short). Room: temperature and humidity swing slowly around 22 °C / 45 %RH; the pressure
+    differential to the corridor dips when a door opens. Illustrative, as the line's couplings are."""
+
+    CYCLE = (("heat", 15.0), ("exposure", 15.0), ("exhaust", 15.0), ("unload", 5.0))
+
+    def __init__(self, rng: random.Random, prefix: str):
+        self.rng, self.prefix = rng, prefix
+        self.load, self.t, self.f0, self.last = 1, 0.0, 0.0, 0.0
+        self.door = 0.0
+
+    def step(self, clock: float) -> None:
+        dt, self.last = clock - self.last, clock
+        self.t += dt
+        if self.t >= sum(d for _, d in self.CYCLE):
+            self.load, self.t, self.f0 = self.load + 1, 0.0, 0.0
+        self.f0 += 10 ** ((self._chamber() - 121.1) / 10) * dt
+        self.door = max(0.0, self.door - dt) if self.door else (1.5 if self.rng.random() < 0.004 else 0.0)
+
+    def _phase(self) -> tuple[str, float]:
+        t = self.t
+        for name, d in self.CYCLE:
+            if t < d:
+                return name, t / d
+            t -= d
+        return "unload", 1.0
+
+    def _chamber(self) -> float:
+        phase, f = self._phase()
+        hold = 121.5 - (0.9 if self.load % 4 == 0 else 0.0)
+        return {"heat": 25 + (hold - 25) * f, "exposure": hold, "exhaust": hold - (hold - 45) * f, "unload": 45 - 15 * f}[phase]
+
+    def readings(self, clock: float) -> dict[str, tuple[str, dict[str, float], str]]:
+        T = self._chamber() + self.rng.gauss(0, 0.15)
+        p_abs = 10 ** (8.14019 - 1810.94 / (244.485 + T)) * 0.00133322 if T >= 100 else 1.013  # mmHg → bar
+        phase, _ = self._phase()
+        load = f"AC{self.prefix}{self.load:03d}" if phase != "unload" else ""
+        cyc = 2 * math.pi * clock / 240
+        return {
+            "AUTOCLAVE-1": (load, {"chamber_c": T, "chamber_bar": max(0.0, p_abs - 1.013 + self.rng.gauss(0, 0.005)), "f0_min": self.f0}, ""),
+            "HVAC-ROOM-1": ("", {"room_c": 22 + 0.6 * math.sin(cyc) + self.rng.gauss(0, 0.08),
+                                 "room_rh_pct": 45 + 4 * math.sin(cyc + 1.1) + self.rng.gauss(0, 0.3),
+                                 "dp_pa": (3.0 if self.door else 15.0) + self.rng.gauss(0, 0.6)}, ""),
+        }
+
+
 def fetch_config(url: str, token: str) -> dict[str, Any]:
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "x-nsq-client": "simulator"})
     with urllib.request.urlopen(req, timeout=10) as r:
@@ -254,6 +363,7 @@ async def main(a: argparse.Namespace) -> None:
     elif a.fault == "short-dry":
         sig["FBD-1"]["signals"]["drying_min"]["every"] = a.fault_every
     eng = Engine(base, a.seed)
+    util = Utilities(random.Random(a.seed + 1), eng.prefix)
 
     server = Server()
     await server.init()
@@ -266,6 +376,23 @@ async def main(a: argparse.Namespace) -> None:
         nodes[m] = {f: await obj.add_variable(ua.NodeId(f"{obj_name}.{tag}", idx), ua.QualifiedName(tag, idx), 0.0) for f, tag in TAGS[m].items()}
         nodes[m]["_batch"] = await obj.add_variable(ua.NodeId(f"{obj_name}.BatchNo", idx), ua.QualifiedName("BatchNo", idx), "")
         nodes[m]["_product"] = await obj.add_variable(ua.NodeId(f"{obj_name}.Product", idx), ua.QualifiedName("Product", idx), "")
+    extra = sim_machines()
+    generic = {m["name"]: Generic(m, random.Random(a.seed + i + 2), eng.prefix) for i, m in enumerate(extra["machines"])}
+    for m in extra["machines"]:
+        obj = await server.nodes.objects.add_object(ua.NodeId(m["object"], idx), ua.QualifiedName(m["object"], idx))
+        nodes[m["name"]] = {sg["field"]: await obj.add_variable(ua.NodeId(f"{m['object']}.{sg['var']}", idx), ua.QualifiedName(sg["var"], idx), 0.0)
+                            for sg in m["signals"]}
+        nodes[m["name"]]["_batch"] = await obj.add_variable(ua.NodeId(f"{m['object']}.BatchNo", idx), ua.QualifiedName("BatchNo", idx), "")
+        nodes[m["name"]]["_product"] = await obj.add_variable(ua.NodeId(f"{m['object']}.Product", idx), ua.QualifiedName("Product", idx), "")
+    s7 = extra.get("s7")
+    s7_machine = next((m for m in extra["machines"] if s7 and m["type"] == s7["type"]), None)
+    s7db = None
+    if s7_machine and a.s7:
+        try:
+            _s7srv, s7db = start_s7(int(s7["port"]), 4 * len(s7_machine["signals"]))
+            log.info("Siemens S7 on :%s (DB1: %s)", s7["port"], ", ".join(sg["field"] for sg in s7_machine["signals"]))
+        except Exception as exc:  # noqa: BLE001 — OPC UA keeps working without it
+            log.warning("S7 server not started: %s", exc)
     regs = await start_modbus(a.modbus) if a.modbus else None
     token = os.environ.get(a.token_env, "")
     last_fetch = 0.0
@@ -281,7 +408,12 @@ async def main(a: argparse.Namespace) -> None:
                 except Exception as exc:  # noqa: BLE001 — keep simulating with the last settings
                     log.warning("could not read settings from Eurveda: %s", exc)
             eng.step(float(eng.cfg.get("speed", 30)) / 60.0)
-            for m, (batch, vals, product) in eng.readings().items():
+            util.step(eng.clock)
+            every = {**eng.readings(), **util.readings(eng.clock), **{n: g.readings(eng.clock) for n, g in generic.items()}}
+            if s7db is not None:
+                for i, sg in enumerate(s7_machine["signals"]):
+                    s7db[4 * i:4 * i + 4] = struct.pack(">f", float(every[s7_machine["name"]][1][sg["field"]]))
+            for m, (batch, vals, product) in every.items():
                 for f, v in vals.items():
                     await nodes[m][f].write_value(float(v))
                 await nodes[m]["_batch"].write_value(batch)
@@ -297,6 +429,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=4840)
     ap.add_argument("--modbus", type=int, default=0, help="also serve PRESS1 over Modbus TCP on this port")
+    ap.add_argument("--no-s7", dest="s7", action="store_false", help="do not serve the AHU over Siemens S7 (port in sim_machines.json)")
     ap.add_argument("--speed", type=float, default=0, help="simulated seconds per real second (default from the settings: 30)")
     ap.add_argument("--fault", choices=["none", "short-dry", "over-compress", "humid-air"], default="short-dry",
                     help="starting pattern without --config-url (default: every 3rd batch dried 21 min short)")
